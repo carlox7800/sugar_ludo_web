@@ -1,8 +1,11 @@
 'use client'
 
 import { Coins, Gem, Plus, Settings } from 'lucide-react'
+import { usePlayer } from '@/lib/player-context'
 
 export function TopBar({ onSettingsOpen }: { onSettingsOpen?: () => void }) {
+  const { coins, gems, level, xp, xpMax } = usePlayer()
+
   return (
     <header className="glass flex flex-wrap items-center gap-4 rounded-3xl p-4">
       {/* Mobile brand mark */}
@@ -24,7 +27,7 @@ export function TopBar({ onSettingsOpen }: { onSettingsOpen?: () => void }) {
                 Nvl
               </span>
               <span className="font-display text-xl font-extrabold leading-none text-[var(--candy-cyan)]">
-                13
+                {level}
               </span>
             </div>
           </div>
@@ -33,12 +36,12 @@ export function TopBar({ onSettingsOpen }: { onSettingsOpen?: () => void }) {
         <div className="w-32 sm:w-44">
           <div className="mb-1 flex items-center justify-between">
             <span className="font-display text-xs font-bold text-foreground">XP</span>
-            <span className="text-xs font-semibold text-muted-foreground">2,340 / 3,000</span>
+            <span className="text-xs font-semibold text-muted-foreground">{xp.toLocaleString('es')} / {xpMax.toLocaleString('es')}</span>
           </div>
           <div className="h-3 overflow-hidden rounded-full border border-border bg-[oklch(0.12_0.02_285)]">
             <div
               className="h-full rounded-full bg-[linear-gradient(90deg,oklch(0.82_0.15_200),oklch(0.7_0.27_350))] shadow-[0_0_14px_oklch(0.7_0.27_350/0.8)]"
-              style={{ width: '78%' }}
+              style={{ width: `${(xp / xpMax) * 100}%` }}
             />
           </div>
         </div>
@@ -48,13 +51,13 @@ export function TopBar({ onSettingsOpen }: { onSettingsOpen?: () => void }) {
       <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
         <Counter
           icon={Coins}
-          value="1,450"
+          value={coins.toLocaleString('es')}
           iconClass="text-[var(--candy-gold)]"
           glow="oklch(0.85 0.16 90 / 0.55)"
         />
         <Counter
           icon={Gem}
-          value="45"
+          value={gems.toLocaleString('es')}
           iconClass="text-[var(--candy-violet)]"
           glow="oklch(0.62 0.22 300 / 0.6)"
         />

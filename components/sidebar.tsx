@@ -14,23 +14,28 @@ import { cn } from '@/lib/utils'
 
 type NavItem = {
   label: string
+  screen: string
   icon: LucideIcon
-  active?: boolean
   badge?: string
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Tienda', icon: Store },
-  { label: 'Billetera', icon: Wallet },
-  { label: 'Amigos', icon: Users },
-  { label: 'Inicio', icon: Home, active: true },
-  { label: 'Eventos', icon: CalendarDays },
-  { label: 'Correo', icon: Mail, badge: '2' },
-  { label: 'Colección', icon: LayoutGrid },
+  { label: 'Tienda', screen: 'tienda', icon: Store },
+  { label: 'Billetera', screen: 'billetera', icon: Wallet },
+  { label: 'Amigos', screen: 'amigos', icon: Users },
+  { label: 'Inicio', screen: 'lobby', icon: Home },
+  { label: 'Eventos', screen: 'eventos', icon: CalendarDays },
+  { label: 'Correo', screen: 'correo', icon: Mail, badge: '2' },
+  { label: 'Colección', screen: 'coleccion', icon: LayoutGrid },
 ]
 
+interface SidebarProps {
+  currentScreen?: string
+  onNavigate?: (screen: string) => void
+}
+
 /* ---------- Desktop: fixed left sidebar ---------- */
-export function Sidebar() {
+export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
   return (
     <aside className="glass fixed inset-y-4 left-4 z-30 hidden w-72 flex-col gap-6 rounded-3xl p-5 md:flex">
       {/* Logo */}
@@ -51,7 +56,12 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex flex-col gap-2 overflow-y-auto" aria-label="Menú principal">
         {NAV_ITEMS.map((item) => (
-          <NavButton key={item.label} item={item} />
+          <NavButton 
+            key={item.label} 
+            item={item} 
+            isActive={currentScreen === item.screen}
+            onClick={() => onNavigate?.(item.screen)}
+          />
         ))}
       </nav>
 
@@ -68,14 +78,15 @@ export function Sidebar() {
   )
 }
 
-function NavButton({ item }: { item: NavItem }) {
+function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boolean; onClick: () => void }) {
   const Icon = item.icon
   return (
     <button
-      aria-current={item.active ? 'page' : undefined}
+      onClick={onClick}
+      aria-current={isActive ? 'page' : undefined}
       className={cn(
         'group relative flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-300',
-        item.active
+        isActive
           ? 'bg-[linear-gradient(120deg,oklch(0.7_0.27_350/0.9),oklch(0.62_0.22_300/0.9))] text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.35),0_8px_22px_oklch(0.7_0.27_350/0.45)]'
           : 'text-muted-foreground hover:bg-[oklch(1_0_0/0.06)] hover:text-foreground',
       )}
@@ -83,7 +94,7 @@ function NavButton({ item }: { item: NavItem }) {
       <span
         className={cn(
           'flex size-9 items-center justify-center rounded-xl transition-all',
-          item.active
+          isActive
             ? 'bg-[oklch(1_0_0/0.2)] text-primary-foreground'
             : 'bg-[oklch(1_0_0/0.05)] text-[var(--candy-cyan)] group-hover:bg-[oklch(1_0_0/0.1)]',
         )}
@@ -102,7 +113,7 @@ function NavButton({ item }: { item: NavItem }) {
 }
 
 /* ---------- Mobile: fixed bottom navigation bar ---------- */
-export function MobileNav() {
+export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
   return (
     <nav
       aria-label="Menú principal"
@@ -110,14 +121,16 @@ export function MobileNav() {
     >
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon
+        const isActive = currentScreen === item.screen
         return (
           <button
             key={item.label}
-            aria-current={item.active ? 'page' : undefined}
+            onClick={() => onNavigate?.(item.screen)}
+            aria-current={isActive ? 'page' : undefined}
             aria-label={item.label}
             className={cn(
               'relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-0.5 py-1.5 transition-all',
-              item.active
+              isActive
                 ? 'bg-[linear-gradient(120deg,oklch(0.7_0.27_350/0.9),oklch(0.62_0.22_300/0.9))] text-primary-foreground shadow-[0_6px_16px_oklch(0.7_0.27_350/0.5)]'
                 : 'text-muted-foreground active:bg-[oklch(1_0_0/0.06)]',
             )}
