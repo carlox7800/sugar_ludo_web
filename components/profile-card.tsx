@@ -1,8 +1,20 @@
 'use client'
 
 import { Crown, Sparkles } from 'lucide-react'
+import { useAuth } from '@/lib/auth-context'
+import { PRESET_AVATARS } from './avatar-selector-modal'
 
 export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
+  const { user } = useAuth()
+
+  // Use preset avatars or default
+  const getActiveAvatar = () => {
+    if (!user) return PRESET_AVATARS[0]
+    return PRESET_AVATARS.find(a => a.id === user.photoURL) || PRESET_AVATARS[0]
+  }
+  const activeAvatar = getActiveAvatar()
+  const nickname = user?.nickname || 'Jugador'
+
   return (
     <section 
       onClick={onOpen}
@@ -14,12 +26,11 @@ export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
       {/* Avatar */}
       <div className="relative">
         <div className="absolute -inset-1 rounded-full bg-[conic-gradient(from_0deg,oklch(0.7_0.27_350),oklch(0.82_0.15_200),oklch(0.78_0.18_55),oklch(0.62_0.22_300),oklch(0.7_0.27_350))] blur-[2px]" />
-        <div className="relative size-28 overflow-hidden rounded-full border-2 border-[oklch(1_0_0/0.3)] shadow-[inset_0_2px_8px_oklch(0_0_0/0.4)]">
-          <img
-            src="/avatar-ludo.png"
-            alt="Avatar del jugador"
-            className="object-cover w-full h-full"
-          />
+        <div 
+          className="relative flex size-28 items-center justify-center overflow-hidden rounded-full border-2 border-[oklch(1_0_0/0.3)] shadow-[inset_0_2px_8px_oklch(0_0_0/0.4)] text-[64px]"
+          style={{ backgroundColor: `${activeAvatar.color}33`, color: activeAvatar.color }}
+        >
+          {activeAvatar.emoji}
         </div>
         <span className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[var(--candy-gold)] px-2.5 py-1 font-display text-[11px] font-extrabold text-[oklch(0.25_0.08_60)] shadow-[0_4px_10px_oklch(0.85_0.16_90/0.6)]">
           <Crown className="size-3" strokeWidth={2.6} />
@@ -31,7 +42,7 @@ export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--candy-cyan)]">
           Bienvenido
         </p>
-        <h2 className="font-display text-2xl font-extrabold text-foreground">Jugador Ludo</h2>
+        <h2 className="font-display text-2xl font-extrabold text-foreground">{nickname}</h2>
       </div>
 
       {/* Status badge */}
