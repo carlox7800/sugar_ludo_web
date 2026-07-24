@@ -19,7 +19,7 @@ export default function Page() {
   }
 
   if (view === 'game' && config) {
-    return <GameEngine initialConfig={config} onExit={() => setView('lobby')} />
+    return <GameEngine initialConfig={config} onExit={() => setView('training')} />
   }
 
   return (

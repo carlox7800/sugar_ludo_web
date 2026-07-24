@@ -978,27 +978,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
               </div>
             </>
           )
-        ) : (
-          <div className="w-full flex items-center justify-center">
-            <GameControls
-              appTheme={appTheme}
-              setAppTheme={setAppTheme}
-              isPlaying={isPlaying}
-              onStartGame={handleStartGame}
-              onRollDice={handleRollDice}
-              diceValues={diceValues}
-              remainingMoves={remainingMoves}
-              isRolling={isRolling}
-              currentTurnPlayer={activePlayer}
-              hasRolled={hasRolled}
-              timer={timer}
-              winnerPlayer={winner !== null ? players[winner] : null}
-              onResetGame={handleResetGame}
-              isHumanTurnToRoll={activePlayer?.type === 'human' && !hasRolled && !isRolling && !isAnimatingMove}
-              isGlowActive={isGlowActive}
-            />
-          </div>
-        )}
+        ) : null}
       </main>
 
       {/* Exit Confirmation Modal */}
@@ -1019,6 +999,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                   setIsExitModalOpen(false);
                   handleResetGame();
                   setIsPlaying(false);
+                  onExit();
                 }}
                 className="flex-1 py-3 rounded-xl bg-p-red text-white hover:bg-red-600 transition-colors font-bold shadow-lg shadow-p-red/20"
               >
