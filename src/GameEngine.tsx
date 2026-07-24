@@ -889,7 +889,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   return (
     <div className={`min-h-screen bg-root text-t-primary flex flex-col relative pb-8 font-sans ${appTheme === 'sugar' ? 'theme-sugar' : ''}`}>
       {/* Upper Navigation & Sound controls */}
-      <header className="w-full bg-root/80 backdrop-blur-md border-b border-border px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+      <header className="w-full bg-root/80 backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-4 py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-[0_4px_30px_oklch(0.82_0.15_200/0.05)]">
         <div className="flex items-center gap-2">
           <button 
             onClick={() => {
@@ -899,13 +899,13 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                 onExit();
               }
             }}
-            className="p-1.5 -ml-2 rounded-xl text-t-muted hover:text-t-primary hover:bg-panel transition-colors cursor-pointer"
+            className="p-1.5 -ml-2 rounded-xl text-t-muted hover:text-[var(--candy-cyan,oklch(0.82_0.15_200))] hover:bg-[var(--candy-cyan,oklch(0.82_0.15_200))/0.1] transition-colors cursor-pointer"
             title="Volver"
           >
             <ArrowLeft size={22} />
           </button>
-          <Sparkles className="text-p-blue animate-pulse shrink-0" size={20} />
-          <span className="font-extrabold text-lg text-t-primary tracking-widest font-mono uppercase">Entrenamiento con IA</span>
+          <Sparkles className="text-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse shrink-0 drop-shadow-[0_0_8px_var(--candy-magenta,oklch(0.7_0.27_350))]" size={20} />
+          <span className="font-extrabold text-lg text-t-primary tracking-widest font-mono uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">Entrenamiento con IA</span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -983,14 +983,14 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
       {/* Exit Confirmation Modal */}
       {isExitModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-panel w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-border relative animate-in zoom-in duration-200 text-center flex flex-col gap-4">
-            <h2 className="text-xl font-black text-t-primary">¿Estás seguro de que deseas salir?</h2>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md cyber-game-panel">
+          <div className="w-full max-w-sm rounded-3xl p-6 shadow-[0_10px_40px_rgba(0,0,0,0.5)] border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] relative animate-in zoom-in duration-200 text-center flex flex-col gap-4 bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))]">
+            <h2 className="text-xl font-black text-t-primary drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">¿Estás seguro de que deseas salir?</h2>
             <p className="text-sm text-t-muted">Si abandonas la partida actual, perderás todo tu progreso.</p>
             <div className="flex items-center gap-3 mt-2">
               <button
                 onClick={() => setIsExitModalOpen(false)}
-                className="flex-1 py-3 rounded-xl border border-border text-t-primary hover:bg-border transition-colors font-bold"
+                className="flex-1 py-3 rounded-2xl border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground hover:text-foreground transition-colors font-bold shadow-[inset_0_1px_0_oklch(1_0_0/0.15)]"
               >
                 Cancelar
               </button>
@@ -1001,7 +1001,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                   setIsPlaying(false);
                   onExit();
                 }}
-                className="flex-1 py-3 rounded-xl bg-p-red text-white hover:bg-red-600 transition-colors font-bold shadow-lg shadow-p-red/20"
+                className="flex-1 py-3 rounded-2xl bg-[linear-gradient(145deg,oklch(0.7_0.27_350),color-mix(in_oklch,oklch(0.7_0.27_350),black_12%))] text-[oklch(0.16_0.03_285)] font-extrabold shadow-[inset_0_2px_0_oklch(1_0_0/0.45),0_5px_0_oklch(0.45_0.2_350),0_10px_20px_color-mix(in_oklch,oklch(0.45_0.2_350),transparent_45%)] hover:brightness-110 active:scale-95 transition-all"
               >
                 Aceptar / Salir
               </button>

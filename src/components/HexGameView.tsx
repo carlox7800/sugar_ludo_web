@@ -740,16 +740,16 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       {/* Right Column: Unified Game Control Panel & Console Logs */}
       <div className="w-full lg:w-2/5 flex flex-col gap-3 shrink-0">
         {/* Unified Control Panel */}
-        <div className="w-full bg-root rounded-2xl p-4 shadow-[0_0_30px_rgba(0,242,255,0.04)] border border-border flex flex-col gap-3.5 select-none">
+        <div className="w-full rounded-2xl p-4 shadow-[0_0_30px_rgba(0,242,255,0.04)] border flex flex-col gap-3.5 select-none cyber-game-panel bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] backdrop-blur-xl border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
           {/* Game Mode Title Badge */}
-          <div className="flex items-center justify-between border-b border-border/35 pb-1.5">
+          <div className="flex items-center justify-between border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] pb-1.5">
             <div className="flex items-center gap-1.5">
-              <Sparkles className="text-p-purple animate-pulse" size={15} />
-              <span className="text-[11px] font-black text-t-primary uppercase tracking-wider font-mono">
+              <Sparkles className="text-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse drop-shadow-[0_0_8px_var(--candy-magenta,oklch(0.7_0.27_350))]" size={15} />
+              <span className="text-[11px] font-black text-t-primary uppercase tracking-wider font-mono drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">
                 Modo Hexagonal ({playerCount} Jugadores)
               </span>
             </div>
-            <span className="text-[9px] font-bold text-p-blue font-mono uppercase tracking-wider bg-p-blue/10 px-1.5 py-0.5 rounded border border-p-blue/20">
+            <span className="text-[9px] font-bold text-[var(--candy-cyan,oklch(0.82_0.15_200))] font-mono uppercase tracking-wider bg-[var(--candy-cyan,oklch(0.82_0.15_200))]/10 px-1.5 py-0.5 rounded border border-[var(--candy-cyan,oklch(0.82_0.15_200))]/20 shadow-[0_0_8px_var(--candy-cyan,oklch(0.82_0.15_200))/0.3]">
               {playerCount} Jugadores
             </span>
           </div>
@@ -761,7 +761,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                 <span className="text-[9px] text-t-muted font-mono uppercase tracking-wider">Turno Actual</span>
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${bgColors[activePlayer.color]} animate-pulse shadow-[0_0_8px_currentColor]`} />
-                  <span className={`text-sm font-bold ${textColors[activePlayer.color]}`}>
+                  <span className={`text-sm font-bold ${textColors[activePlayer.color]} drop-shadow-[0_0_6px_currentColor]`}>
                     {activePlayer.name} ({turnTitles[activePlayer.color]})
                   </span>
                   <span className="text-[9px] px-1.5 py-0.5 bg-panel text-t-muted rounded border border-border font-semibold uppercase font-mono">
@@ -777,9 +777,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                   <span className={`text-xs font-bold font-mono ${timer <= 3 ? 'text-p-red animate-pulse' : 'text-t-primary'}`}>
                     {timer}s
                   </span>
-                  <div className="w-14 h-1.5 bg-panel rounded-full overflow-hidden border border-border">
+                  <div className="w-14 h-1.5 bg-panel rounded-full overflow-hidden border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
                     <div
-                      className={`h-full transition-all duration-1000 ${timer <= 3 ? 'bg-p-red animate-pulse shadow-[0_0_8px_var(--color-p-red)]' : 'bg-[var(--color-p-blue)] shadow-[0_0_8px_var(--color-p-blue)]'}`}
+                      className={`h-full transition-all duration-1000 shadow-[0_0_8px_currentColor] ${timer <= 3 ? 'bg-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse' : 'bg-[var(--candy-cyan,oklch(0.82_0.15_200))]'}`}
                       style={{ width: `${(timer / 10) * 100}%` }}
                     />
                   </div>
@@ -790,9 +790,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
           {/* Dice Container & Roll Buttons */}
           {!gameState.winner && (
-            <div className="flex items-center justify-center py-2.5 bg-[var(--bg-root)] rounded-xl border border-border gap-5 relative overflow-hidden">
+            <div className="flex items-center justify-center py-2.5 bg-[oklch(0.08_0.02_285)] rounded-xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.12))] gap-5 relative overflow-hidden">
               {isGlowActive && (
-                <div className="absolute inset-0 bg-[var(--color-p-blue)]/5 animate-pulse pointer-events-none" />
+                <div className="absolute inset-0 bg-[var(--candy-cyan,oklch(0.82_0.15_200))]/5 animate-pulse pointer-events-none" />
               )}
 
               <div className="flex flex-col items-center gap-1">
@@ -835,9 +835,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                     {!gameState.hasRolled && !gameState.isRolling ? (
                       <button
                         onClick={handleRollDice}
-                        className="py-2.5 px-5 bg-[var(--color-p-blue)] text-[var(--bg-root)] font-bold text-sm rounded-xl shadow-[0_0_15px_rgba(0,242,255,0.2)] hover:bg-[#33f5ff] hover:shadow-[0_0_20px_rgba(0,242,255,0.4)] active:scale-98 transition-all cursor-pointer flex items-center gap-1.5 font-mono uppercase tracking-wider"
+                        className="flex items-center justify-center gap-2 py-2.5 px-5 bg-[linear-gradient(145deg,oklch(0.78_0.2_150),color-mix(in_oklch,oklch(0.78_0.2_150),black_12%))] text-[oklch(0.18_0.03_285)] font-extrabold text-sm rounded-2xl shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_5px_0_oklch(0.5_0.14_155),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.14_155),transparent_55%)] hover:brightness-110 active:scale-95 transition-all cursor-pointer font-mono uppercase tracking-wider"
                       >
-                        <Zap size={14} className="animate-bounce" />
+                        <Zap size={14} className="animate-bounce fill-current" />
                         Lanzar Dado
                       </button>
                     ) : (
@@ -871,7 +871,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             </div>
             <button
               onClick={handleReset}
-              className="flex items-center gap-1 text-t-muted hover:text-p-red transition-colors cursor-pointer"
+              className="flex items-center gap-1 text-t-muted hover:text-[var(--candy-magenta,oklch(0.7_0.27_350))] transition-colors cursor-pointer"
             >
               <RotateCcw size={13} />
               <span>Reiniciar Partida</span>
@@ -929,10 +929,10 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         }
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[210] flex items-center justify-center p-4">
-            <div className="bg-panel border border-border p-4 rounded-2xl shadow-xl flex flex-col gap-3 max-w-[180px] w-full animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[210] flex items-center justify-center p-4 cyber-game-panel">
+            <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] p-4 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex flex-col gap-3 max-w-[180px] w-full animate-in fade-in zoom-in-95 duration-200">
               <div className="flex flex-col items-center gap-1">
-                <h3 className="text-t-primary font-bold text-xs text-center font-mono uppercase tracking-wider">Mover</h3>
+                <h3 className="text-t-primary font-black text-xs text-center font-mono uppercase tracking-wider drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Mover</h3>
               </div>
               <div className="flex flex-row flex-wrap justify-center gap-2 mt-1">
                 {options.map((opt, i) => (
@@ -950,7 +950,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               </div>
               <button
                 onClick={() => setMoveSelectorTokenId(null)}
-                className="mt-1 text-t-muted hover:text-t-primary text-[10px] font-bold tracking-widest uppercase transition-colors text-center cursor-pointer"
+                className="mt-1 py-1 text-t-muted hover:text-foreground hover:bg-[oklch(1_0_0/0.05)] rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all text-center cursor-pointer"
               >
                 Cancelar
               </button>
@@ -961,25 +961,25 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
       {/* Winner Celebration Modal */}
       {gameState.winner && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
-          <div className="bg-panel max-w-md w-full rounded-3xl p-8 border border-border shadow-2xl flex flex-col items-center text-center gap-6 animate-in zoom-in duration-300">
-            <Trophy className="text-p-yellow animate-bounce" size={64} />
-            <h2 className="text-3xl font-black text-t-primary">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[oklch(0.7_0.27_350/0.3)] backdrop-blur-xl p-4 cyber-game-panel">
+          <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] max-w-md w-full rounded-3xl p-8 border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_60px_oklch(0.7_0.27_350/0.15)] flex flex-col items-center text-center gap-6 animate-in zoom-in duration-300">
+            <Trophy className="text-[var(--candy-green,oklch(0.78_0.2_150))] animate-bounce drop-shadow-[0_0_15px_var(--candy-green,oklch(0.78_0.2_150))]" size={64} />
+            <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[var(--candy-magenta,oklch(0.7_0.27_350))] to-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_oklch(0.7_0.27_350/0.5)]">
               ¡{gameState.winner.name} ha GANADO!
             </h2>
-            <p className="text-t-muted">
+            <p className="text-t-primary/80 font-medium">
               Ha completado las 3 fichas en la meta del tablero hexagonal.
             </p>
-            <div className="flex flex-col gap-2 w-full">
+            <div className="flex flex-col gap-3 w-full mt-2">
               <button
                 onClick={handleReset}
-                className="w-full py-4 bg-p-green text-white font-black rounded-2xl text-lg hover:brightness-110 transition-all cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-4 bg-[linear-gradient(145deg,oklch(0.78_0.2_150),color-mix(in_oklch,oklch(0.78_0.2_150),black_12%))] text-[oklch(0.18_0.03_285)] font-black rounded-2xl text-lg hover:brightness-110 active:scale-95 shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.5_0.14_155),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.14_155),transparent_55%)] transition-all cursor-pointer uppercase tracking-wider font-display"
               >
                 Jugar de Nuevo
               </button>
               <button
                 onClick={onExit}
-                className="w-full py-2.5 bg-root text-t-muted hover:text-t-primary rounded-xl font-bold transition-all cursor-pointer text-sm"
+                className="w-full py-3.5 rounded-2xl border border-border bg-[oklch(1_0_0/0.05)] text-foreground font-bold hover:bg-[oklch(1_0_0/0.1)] shadow-[inset_0_1px_0_oklch(1_0_0/0.15)] transition-all cursor-pointer text-sm tracking-wide uppercase"
               >
                 Volver al Menú
               </button>

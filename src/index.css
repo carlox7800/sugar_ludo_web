@@ -56,6 +56,15 @@
     --shadow-color: rgba(255, 182, 193, 0.5);
   }
 
+  .cyber-game-panel {
+    --candy-magenta: oklch(0.7 0.27 350);
+    --candy-cyan: oklch(0.82 0.15 200);
+    --candy-green: oklch(0.78 0.2 150);
+    --panel-bg: oklch(0.12 0.02 285 / 0.85);
+    --panel-border: oklch(0.7 0.27 350 / 0.15);
+    --panel-header-border: oklch(0.82 0.15 200 / 0.2);
+  }
+
   body {
     background-color: var(--bg-root);
     color: var(--text-primary);

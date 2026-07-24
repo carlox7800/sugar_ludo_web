@@ -115,19 +115,19 @@ export const GameControls: React.FC<GameControlsProps> = ({
   };
 
   return (
-    <div className="w-full max-w-[550px] mx-auto bg-root rounded-3xl p-5 shadow-[0_0_40px_rgba(0,242,255,0.05)] border border-border flex flex-col gap-4 select-none">
+    <div className="w-full max-w-[550px] mx-auto rounded-3xl p-5 shadow-[0_0_40px_rgba(0,242,255,0.05)] border flex flex-col gap-4 select-none cyber-game-panel bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] backdrop-blur-xl border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
       
       {/* 1. Winner Celebration overlay */}
       {winnerPlayer && (
-        <div className="bg-[var(--color-p-green)]/5 border border-[var(--color-p-green)]/20 rounded-2xl p-4 flex flex-col items-center text-center gap-2 animate-pulse">
-          <Award size={40} className="text-p-green drop-shadow-[0_0_8px_var(--color-p-green)]" />
-          <h2 className="text-xl font-bold text-p-green">¡Tenemos un Ganador!</h2>
+        <div className="bg-[oklch(0.82_0.15_200/0.1)] border border-[var(--candy-cyan,oklch(0.82_0.15_200/0.3))] rounded-2xl p-4 flex flex-col items-center text-center gap-2 animate-pulse shadow-[0_0_20px_oklch(0.82_0.15_200/0.15)]">
+          <Award size={40} className="text-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_var(--candy-cyan,oklch(0.82_0.15_200))]" />
+          <h2 className="text-xl font-bold text-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_oklch(0.82_0.15_200/0.5)]">¡Tenemos un Ganador!</h2>
           <p className="text-sm text-t-primary">
             El jugador <strong className={textColors[winnerPlayer.color]}>{winnerPlayer.name}</strong> ({turnTitles[winnerPlayer.color]}) ha ganado la partida!
           </p>
           <button
             onClick={onResetGame}
-            className="mt-2 flex items-center gap-1.5 py-2 px-5 bg-[var(--color-p-green)] text-[var(--bg-root)] font-bold rounded-xl shadow-[0_0_15px_rgba(0,255,149,0.3)] hover:bg-[#33ffb5] cursor-pointer text-sm transition-all"
+            className="mt-2 flex items-center gap-1.5 py-2.5 px-6 rounded-2xl bg-[linear-gradient(145deg,oklch(0.82_0.15_200),color-mix(in_oklch,oklch(0.82_0.15_200),black_12%))] text-[oklch(0.16_0.03_285)] font-extrabold shadow-[inset_0_2px_0_oklch(1_0_0/0.45),0_5px_0_oklch(0.5_0.12_210),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.12_210),transparent_45%)] hover:brightness-110 active:scale-95 transition-all text-sm uppercase tracking-wide font-mono"
           >
             <RotateCcw size={15} />
             Jugar de Nuevo
@@ -142,7 +142,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
             <span className="text-[10px] text-t-muted font-mono uppercase tracking-wider">Turno Actual</span>
             <div className="flex items-center gap-2">
               <div className={`w-3.5 h-3.5 rounded-full ${bgColors[currentTurnPlayer.color]} animate-pulse shadow-[0_0_8px_currentColor]`} />
-              <span className={`text-base font-bold ${textColors[currentTurnPlayer.color]}`}>
+              <span className={`text-base font-bold ${textColors[currentTurnPlayer.color]} drop-shadow-[0_0_6px_currentColor]`}>
                 {currentTurnPlayer.name} ({turnTitles[currentTurnPlayer.color]})
               </span>
               <span className="text-[10px] px-2 py-0.5 bg-panel text-t-muted rounded border border-border font-semibold uppercase font-mono">
@@ -159,9 +159,9 @@ export const GameControls: React.FC<GameControlsProps> = ({
                 {timer}s
               </span>
               {/* Circular or horizontal timer track bar */}
-              <div className="w-16 h-2 bg-panel rounded-full overflow-hidden border border-border">
+              <div className="w-16 h-2 bg-panel rounded-full overflow-hidden border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
                 <div
-                  className={`h-full transition-all duration-1000 ${timer <= 3 ? 'bg-p-red animate-pulse shadow-[0_0_8px_var(--color-p-red)]' : 'bg-[var(--color-p-blue)] shadow-[0_0_8px_var(--color-p-blue)]'}`}
+                  className={`h-full transition-all duration-1000 shadow-[0_0_8px_currentColor] ${timer <= 3 ? 'bg-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse' : 'bg-[var(--candy-cyan,oklch(0.82_0.15_200))]'}`}
                   style={{ width: `${(timer / 10) * 100}%` }}
                 />
               </div>
@@ -172,10 +172,10 @@ export const GameControls: React.FC<GameControlsProps> = ({
 
       {/* 3. Dice Container & Roll Buttons */}
       {!winnerPlayer && (
-        <div className="flex items-center justify-center py-4 bg-[var(--bg-root)] rounded-2xl border border-border gap-8 relative overflow-hidden">
+        <div className="flex items-center justify-center py-4 bg-[oklch(0.08_0.02_285)] rounded-2xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.12))] gap-8 relative overflow-hidden">
           {/* Subtle background glow for user action */}
           {isGlowActive && (
-            <div className="absolute inset-0 bg-[var(--color-p-blue)]/5 animate-pulse pointer-events-none" />
+            <div className="absolute inset-0 bg-[var(--candy-cyan,oklch(0.82_0.15_200))]/5 animate-pulse pointer-events-none" />
           )}
 
           <div className="flex flex-col items-center gap-1">
@@ -225,9 +225,9 @@ export const GameControls: React.FC<GameControlsProps> = ({
                 {!hasRolled && !isRolling ? (
                   <button
                     onClick={onRollDice}
-                    className="py-2.5 px-5 bg-[var(--color-p-blue)] text-[var(--bg-root)] font-bold text-sm rounded-xl shadow-[0_0_15px_rgba(0,242,255,0.2)] hover:bg-[#33f5ff] hover:shadow-[0_0_20px_rgba(0,242,255,0.4)] active:scale-98 transition-all cursor-pointer flex items-center gap-1.5"
+                    className="flex items-center justify-center gap-2 py-2.5 px-5 bg-[linear-gradient(145deg,oklch(0.78_0.2_150),color-mix(in_oklch,oklch(0.78_0.2_150),black_12%))] text-[oklch(0.18_0.03_285)] font-extrabold text-sm rounded-2xl shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_5px_0_oklch(0.5_0.14_155),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.14_155),transparent_55%)] hover:brightness-110 active:scale-95 transition-all cursor-pointer font-mono uppercase tracking-wider"
                   >
-                    <Zap size={14} className="animate-bounce" />
+                    <Zap size={14} className="animate-bounce fill-current" />
                     Lanzar Dado
                   </button>
                 ) : (
@@ -261,7 +261,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
         </div>
         <button
           onClick={onResetGame}
-          className="flex items-center gap-1 text-t-muted hover:text-p-red transition-colors cursor-pointer"
+          className="flex items-center gap-1 text-t-muted hover:text-[var(--candy-magenta,oklch(0.7_0.27_350))] transition-colors cursor-pointer"
         >
           <RotateCcw size={13} />
           <span>Reiniciar Partida</span>
