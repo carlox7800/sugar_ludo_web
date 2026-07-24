@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { X, Settings, Volume2, VolumeX, Smartphone, Palette, Copy, Check, LogOut, Info } from 'lucide-react'
+import { useAuth } from '@/lib/auth-context'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -9,10 +10,16 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+  const { logout } = useAuth()
   const [isMuted, setIsMuted] = useState(false)
   const [vibration, setVibration] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'sugar'>('dark')
   const [copiedLogs, setCopiedLogs] = useState(false)
+
+  const handleLogout = async () => {
+    await logout()
+    onClose()
+  }
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -203,7 +210,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </button>
 
             <button
-              onClick={onClose}
+              onClick={handleLogout}
               className="btn-3d flex items-center justify-center gap-2 rounded-2xl border border-border bg-[oklch(0.7_0.27_350/0.1)] px-4 py-3 text-sm font-bold text-[var(--candy-magenta)] hover:bg-[oklch(0.7_0.27_350/0.2)] transition-all"
             >
               <LogOut className="size-4" />

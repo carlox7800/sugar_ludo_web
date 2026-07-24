@@ -1,6 +1,21 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth'
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  onSnapshot, 
+  serverTimestamp 
+} from 'firebase/firestore'
+import { auth, db, googleProvider } from './firebase'
 
 export interface User {
   uid: string
@@ -9,15 +24,16 @@ export interface User {
   photoURL: string | null
   nickname: string | null
   nicknameUpdatedAt: number | null
+  isDev?: boolean
 }
 
 interface AuthState {
   user: User | null
-  loginWithGoogle: () => void
+  loginWithGoogle: () => Promise<void>
   loginDev: () => void
-  logout: () => void
-  setNickname: (nickname: string) => void
-  setAvatar: (photoURL: string) => void
+  logout: () => Promise<void>
+  setNickname: (nickname: string) => Promise<void>
+  setAvatar: (photoURL: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined)
@@ -27,14 +43,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false)
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('sugar_auth_user')
-    if (savedUser) {
-      setUser(JSON.parse(savedUser))
-    }
-    setIsLoaded(true)
+    // Listen to Firebase Auth state
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // User is logged in via Firebase
+        const userRef = doc(db, 'users', firebaseUser.uid)
+        
+        // Listen to Firestore document for user profile changes
+        const unsubscribeSnapshot = onSnapshot(
+          userRef, 
+          (docSnap) => {
+            if (docSnap.exists()) {
+              const data = docSnap.data()
+              setUser({
+                uid: firebaseUser.uid,
+                displayName: firebaseUser.displayName,
+                email: firebaseUser.email,
+                photoURL: data.photoURL || firebaseUser.photoURL || '1',
+                nickname: data.nickname || null,
+                nicknameUpdatedAt: data.nicknameUpdatedAt || null,
+                isDev: false,
+              })
+            }
+          },
+          (error) => {
+            console.warn('Firestore auth snapshot error (handled):', error.message)
+          }
+        )
+
+        setIsLoaded(true)
+        return () => unsubscribeSnapshot()
+      } else {
+        // Not logged in via Firebase Auth, check if there's a Dev user in localStorage
+        const savedUser = localStorage.getItem('sugar_auth_user')
+        if (savedUser) {
+          const parsed = JSON.parse(savedUser)
+          if (parsed.isDev) {
+            setUser(parsed)
+          } else {
+            setUser(null)
+          }
+        } else {
+          setUser(null)
+        }
+        setIsLoaded(true)
+      }
+    })
+
+    return () => unsubscribeAuth()
   }, [])
 
-  const saveUser = (newUser: User | null) => {
+  const saveDevUser = (newUser: User | null) => {
     setUser(newUser)
     if (newUser) {
       localStorage.setItem('sugar_auth_user', JSON.stringify(newUser))
@@ -43,57 +102,96 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const loginWithGoogle = () => {
-    // Placeholder for real Firebase integration
-    const mockUser: User = {
-      uid: 'google_user_123',
-      displayName: 'Jugador Google',
-      email: 'jugador@gmail.com',
-      photoURL: null, // Will use default or ask
-      nickname: null,
-      nicknameUpdatedAt: null,
+  const loginWithGoogle = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider)
+      const firebaseUser = result.user
+      const userRef = doc(db, 'users', firebaseUser.uid)
+      const docSnap = await getDoc(userRef)
+
+      if (!docSnap.exists()) {
+        // New user default state in Firestore
+        const newUserData = {
+          nickname: null,
+          nicknameUpdatedAt: null,
+          photoURL: '1',
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          createdAt: serverTimestamp(),
+          coins: 200,
+          diamonds: 0,
+          level: 1,
+          xp: 0,
+          unlockedSkins: ['classic'],
+          selectedSkin: 'classic',
+          totalWins: 0,
+          totalLosses: 0,
+          totalGames: 0,
+          rankPoints: 0,
+        }
+        await setDoc(userRef, newUserData)
+      }
+
+      // Clear any dev user session from local storage
+      localStorage.removeItem('sugar_auth_user')
+    } catch (error) {
+      console.error('Error initiating Google Login:', error)
+      throw error
     }
-    saveUser(mockUser)
   }
 
   const loginDev = () => {
-    const mockUser: User = {
+    const devUser: User = {
       uid: 'dev_user_999',
       displayName: 'Dev Tester',
       email: 'dev@sugar.com',
-      photoURL: '1', // Default avatar ID
-      nickname: null, // Let them set it up
+      photoURL: '1',
+      nickname: null,
       nicknameUpdatedAt: null,
+      isDev: true,
     }
-    saveUser(mockUser)
+    saveDevUser(devUser)
   }
 
-  const logout = () => {
-    saveUser(null)
-  }
-
-  const setNickname = (nickname: string) => {
-    if (user) {
-      const updatedUser = { 
-        ...user, 
-        nickname, 
-        nicknameUpdatedAt: Date.now() 
-      }
-      saveUser(updatedUser)
+  const logout = async () => {
+    if (user?.isDev) {
+      saveDevUser(null)
+    } else {
+      await signOut(auth)
+      setUser(null)
     }
   }
 
-  const setAvatar = (photoURL: string) => {
-    if (user) {
-      const updatedUser = {
-        ...user,
-        photoURL
-      }
-      saveUser(updatedUser)
+  const setNickname = async (nickname: string) => {
+    if (!user) return
+    const timestamp = Date.now()
+
+    if (user.isDev) {
+      const updatedUser = { ...user, nickname, nicknameUpdatedAt: timestamp }
+      saveDevUser(updatedUser)
+    } else {
+      const userRef = doc(db, 'users', user.uid)
+      await updateDoc(userRef, {
+        nickname,
+        nicknameUpdatedAt: timestamp,
+      })
     }
   }
 
-  // Prevent hydration mismatch by not rendering until loaded
+  const setAvatar = async (photoURL: string) => {
+    if (!user) return
+
+    if (user.isDev) {
+      const updatedUser = { ...user, photoURL }
+      saveDevUser(updatedUser)
+    } else {
+      const userRef = doc(db, 'users', user.uid)
+      await updateDoc(userRef, {
+        photoURL,
+      })
+    }
+  }
+
   if (!isLoaded) return null
 
   return (

@@ -2,7 +2,13 @@
 
 import { Play, Bot, Globe, Trophy } from 'lucide-react'
 
-export function GameModes({ onStartTraining }: { onStartTraining: () => void }) {
+export function GameModes({ 
+  onStartTraining, 
+  onStartOnlineTraining 
+}: { 
+  onStartTraining: () => void
+  onStartOnlineTraining?: () => void
+}) {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center gap-3 px-1">
@@ -57,6 +63,7 @@ export function GameModes({ onStartTraining }: { onStartTraining: () => void }) 
           subtitle="Online"
           accent="oklch(0.82 0.15 200)"
           gradient="oklch(0.82 0.15 200), oklch(0.62 0.22 300)"
+          onClick={onStartOnlineTraining}
         />
         <ModeCard
           icon={Trophy}
@@ -78,6 +85,7 @@ function ModeCard({
   accent,
   gradient,
   tag,
+  onClick,
 }: {
   icon: typeof Globe
   title: string
@@ -85,9 +93,10 @@ function ModeCard({
   accent: string
   gradient: string
   tag?: string
+  onClick?: () => void
 }) {
   return (
-    <button className="glass glass-hover group relative overflow-hidden rounded-3xl p-5 text-left">
+    <button onClick={onClick} className="glass glass-hover group relative overflow-hidden rounded-3xl p-5 text-left">
       {tag && (
         <span className="absolute right-4 top-4 rounded-full bg-[var(--candy-orange)] px-3 py-1 font-display text-[11px] font-extrabold uppercase tracking-wide text-[oklch(0.2_0.05_40)] shadow-[0_0_16px_oklch(0.78_0.18_55/0.9)]">
           {tag}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil, LogOut } from 'lucide-react'
+import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { AvatarSelectorModal, PRESET_AVATARS } from './avatar-selector-modal'
 
@@ -13,7 +13,7 @@ interface ProfileModalProps {
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
 
 export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
-  const { user, setNickname, setAvatar, logout } = useAuth()
+  const { user, setNickname, setAvatar } = useAuth()
   const [isAvatarSelectorOpen, setIsAvatarSelectorOpen] = useState(false)
   const [isEditingNick, setIsEditingNick] = useState(false)
   const [newNick, setNewNick] = useState('')
@@ -57,11 +57,6 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     setErrorNick('')
   }
 
-  const handleLogout = () => {
-    logout()
-    onClose()
-  }
-
   return (
     <>
       <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center p-0 sm:p-4">
@@ -86,23 +81,13 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 Perfil de Jugador
               </h2>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleLogout}
-                className="btn-3d flex items-center justify-center gap-1.5 rounded-xl border border-[var(--candy-orange)]/40 bg-[var(--candy-orange)]/10 px-3 py-1.5 text-xs font-bold text-[var(--candy-orange)] hover:bg-[var(--candy-orange)]/20"
-                aria-label="Cerrar sesión"
-              >
-                <LogOut className="size-3.5" />
-                Salir
-              </button>
-              <button
-                onClick={onClose}
-                className="btn-3d flex size-9 items-center justify-center rounded-xl border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground hover:text-foreground"
-                aria-label="Cerrar modal"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
+            <button
+              onClick={onClose}
+              className="btn-3d flex size-9 items-center justify-center rounded-xl border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground hover:text-foreground"
+              aria-label="Cerrar modal"
+            >
+              <X className="size-5" />
+            </button>
           </div>
 
           {/* Scrollable Body */}

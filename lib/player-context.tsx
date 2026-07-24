@@ -1,6 +1,9 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore'
+import { db } from './firebase'
+import { useAuth } from './auth-context'
 
 interface PlayerState {
   coins: number
@@ -15,29 +18,64 @@ interface PlayerState {
 const PlayerContext = createContext<PlayerState | undefined>(undefined)
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
-  const [coins, setCoinsState] = useState(1450)
-  const [gems, setGemsState] = useState(45)
-  const [level, setLevel] = useState(13)
-  const [xp, setXp] = useState(2340)
-  const [xpMax, setXpMax] = useState(3000)
+  const { user } = useAuth()
+  
+  const [coins, setCoinsState] = useState(200)
+  const [gems, setGemsState] = useState(0) // Mapped from 'diamonds' in Firestore
+  const [level, setLevel] = useState(1)
+  const [xp, setXp] = useState(0)
+  const [xpMax] = useState(3000)
 
-  // Initialize from local storage on first mount
   useEffect(() => {
-    const savedCoins = localStorage.getItem('sugar_player_coins')
-    const savedGems = localStorage.getItem('sugar_player_gems')
-    
-    if (savedCoins) setCoinsState(parseInt(savedCoins, 10))
-    if (savedGems) setGemsState(parseInt(savedGems, 10))
-  }, [])
+    if (user && user.uid && !user.isDev) {
+      // Real user logged in via Firebase: subscribe to Firestore user document
+      const userRef = doc(db, 'users', user.uid)
+      const unsubscribe = onSnapshot(
+        userRef, 
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data()
+            if (typeof data.coins === 'number') setCoinsState(data.coins)
+            if (typeof data.diamonds === 'number') setGemsState(data.diamonds)
+            if (typeof data.level === 'number') setLevel(data.level)
+            if (typeof data.xp === 'number') setXp(data.xp)
+          }
+        },
+        (error) => {
+          console.warn('Firestore player snapshot error (handled):', error.message)
+        }
+      )
+      return () => unsubscribe()
+    } else {
+      // Dev mode or unauthenticated fallback
+      const savedCoins = localStorage.getItem('sugar_player_coins')
+      const savedGems = localStorage.getItem('sugar_player_gems')
+      
+      setCoinsState(savedCoins ? parseInt(savedCoins, 10) : 1450)
+      setGemsState(savedGems ? parseInt(savedGems, 10) : 45)
+      setLevel(13)
+      setXp(2340)
+    }
+  }, [user])
 
-  const setCoins = (amount: number) => {
+  const setCoins = async (amount: number) => {
     setCoinsState(amount)
-    localStorage.setItem('sugar_player_coins', amount.toString())
+    if (user && !user.isDev) {
+      const userRef = doc(db, 'users', user.uid)
+      await updateDoc(userRef, { coins: amount })
+    } else {
+      localStorage.setItem('sugar_player_coins', amount.toString())
+    }
   }
 
-  const setGems = (amount: number) => {
+  const setGems = async (amount: number) => {
     setGemsState(amount)
-    localStorage.setItem('sugar_player_gems', amount.toString())
+    if (user && !user.isDev) {
+      const userRef = doc(db, 'users', user.uid)
+      await updateDoc(userRef, { diamonds: amount })
+    } else {
+      localStorage.setItem('sugar_player_gems', amount.toString())
+    }
   }
 
   return (

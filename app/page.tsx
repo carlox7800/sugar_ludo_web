@@ -6,6 +6,7 @@ import { TopBar } from '@/components/top-bar'
 import { ProfileCard } from '@/components/profile-card'
 import { GameModes } from '@/components/game-modes'
 import { AiTraining } from '@/components/ai-training'
+import { OnlineTraining } from '@/components/online-training'
 import { ProfileModal } from '@/components/profile-modal'
 import { SettingsModal } from '@/components/settings-modal'
 import GameEngine from '@/src/GameEngine'
@@ -30,6 +31,7 @@ export type Screen =
   | 'landing'
   | 'lobby'
   | 'training'
+  | 'online-training'
   | 'game'
   | 'tienda'
   | 'billetera'
@@ -97,13 +99,22 @@ function PageContent() {
         return (
           <div className="grid flex-1 gap-5 lg:gap-6 xl:grid-cols-[340px_1fr]">
             <ProfileCard onOpen={() => setIsProfileOpen(true)} />
-            <GameModes onStartTraining={() => setScreen('training')} />
+            <GameModes 
+              onStartTraining={() => setScreen('training')} 
+              onStartOnlineTraining={() => setScreen('online-training')} 
+            />
           </div>
         )
       case 'training':
         return (
           <div className="mx-auto w-full max-w-3xl flex-1">
             <AiTraining onBack={() => setScreen('lobby')} onStartGame={handleStartGame} />
+          </div>
+        )
+      case 'online-training':
+        return (
+          <div className="mx-auto w-full max-w-3xl flex-1">
+            <OnlineTraining onBack={() => setScreen('lobby')} />
           </div>
         )
       case 'billetera':
