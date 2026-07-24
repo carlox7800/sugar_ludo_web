@@ -2,7 +2,7 @@
 
 import { Coins, Gem, Plus, Settings } from 'lucide-react'
 
-export function TopBar() {
+export function TopBar({ onSettingsOpen }: { onSettingsOpen?: () => void }) {
   return (
     <header className="glass flex flex-wrap items-center gap-4 rounded-3xl p-4">
       {/* Mobile brand mark */}
@@ -60,8 +60,9 @@ export function TopBar() {
         />
 
         <button
-          aria-label="Ajustes"
-          className="btn-3d flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.2),0_5px_12px_oklch(0_0_0/0.35)] hover:text-foreground sm:size-12 sm:rounded-2xl"
+          onClick={onSettingsOpen}
+          aria-label="Ajustes del Sistema"
+          className="btn-3d flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.2),0_5px_12px_oklch(0_0_0/0.35)] hover:text-foreground sm:size-12 sm:rounded-2xl cursor-pointer"
         >
           <Settings className="size-[18px] sm:size-6" strokeWidth={2.2} />
         </button>

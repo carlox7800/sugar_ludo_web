@@ -2,9 +2,15 @@
 
 import { Crown, Sparkles } from 'lucide-react'
 
-export function ProfileCard() {
+export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
   return (
-    <section className="glass glass-hover flex flex-col items-center gap-4 rounded-3xl p-6 text-center">
+    <section 
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      aria-label="Ver Perfil de Jugador"
+      className="glass glass-hover flex flex-col items-center gap-4 rounded-3xl p-6 text-center cursor-pointer"
+    >
       {/* Avatar */}
       <div className="relative">
         <div className="absolute -inset-1 rounded-full bg-[conic-gradient(from_0deg,oklch(0.7_0.27_350),oklch(0.82_0.15_200),oklch(0.78_0.18_55),oklch(0.62_0.22_300),oklch(0.7_0.27_350))] blur-[2px]" />

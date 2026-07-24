@@ -6,12 +6,16 @@ import { TopBar } from '@/components/top-bar'
 import { ProfileCard } from '@/components/profile-card'
 import { GameModes } from '@/components/game-modes'
 import { AiTraining } from '@/components/ai-training'
+import { ProfileModal } from '@/components/profile-modal'
+import { SettingsModal } from '@/components/settings-modal'
 import GameEngine from '@/src/GameEngine'
 import { GameConfig } from '@/src/types'
 
 export default function Page() {
   const [view, setView] = useState<'lobby' | 'training' | 'game'>('lobby')
   const [config, setConfig] = useState<GameConfig | null>(null)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   const handleStartGame = (gameConfig: GameConfig) => {
     setConfig(gameConfig)
@@ -29,11 +33,11 @@ export default function Page() {
 
       {/* Content area: offset for the fixed sidebar on desktop */}
       <div className="flex min-h-screen flex-col gap-5 px-4 pb-24 pt-4 sm:px-6 md:gap-6 md:pb-6 md:pl-[19.5rem] md:pr-6">
-        <TopBar />
+        <TopBar onSettingsOpen={() => setIsSettingsOpen(true)} />
 
         {view === 'lobby' ? (
           <div className="grid flex-1 gap-5 lg:gap-6 xl:grid-cols-[340px_1fr]">
-            <ProfileCard />
+            <ProfileCard onOpen={() => setIsProfileOpen(true)} />
             <GameModes onStartTraining={() => setView('training')} />
           </div>
         ) : (
@@ -45,6 +49,10 @@ export default function Page() {
 
       {/* Bottom navigation (mobile) */}
       <MobileNav />
+
+      {/* Modals */}
+      <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </main>
   )
 }
