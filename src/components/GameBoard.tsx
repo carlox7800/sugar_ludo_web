@@ -9,6 +9,7 @@ interface GameBoardProps {
   playableTokenIds: number[];
   onTokenClick: (tokenId: number) => void;
   humanPlayerId: number;
+  isZeroIndexed?: boolean;
 }
 
 // 52 Perimeter cells in clockwise order starting from Amarillo's start at (6,14) as per specification
@@ -174,16 +175,20 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   onTokenClick,
   humanPlayerId,
   appTheme,
+  isZeroIndexed = false,
 }) => {
   const cellSize = 50;
 
   // Compute visual coordinates for all tokens, resolving overlaps on the same cell
-  const getTokenVisualCoord = (token: Token): { x: number; y: number } => {
-    if (token.step === -1) {
+  const getTokenVisualCoord = (rawToken: Token): { x: number; y: number } => {
+    // Normalize step to 1-indexed (Base: 0, Path: 1..51, Goal: 57) for rendering if source is 0-indexed (-1, 0..50, 56)
+    const token = isZeroIndexed ? { ...rawToken, step: rawToken.step + 1 } : rawToken;
+
+    if (token.step === 0) {
       return getBaseSlotCoord(token.color, token.id);
     }
 
-    if (token.step >= 56) {
+    if (token.step === 57) {
       // Offset slightly inside goal triangles
       let baseX = 375;
       let baseY = 375;
@@ -205,8 +210,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
     // Find all tokens currently sharing this same grid position (excluding those in base or goal)
     const activeTokensOnCell = tokens.filter((t) => {
-      if (t.step === -1 || t.step >= 56) return false;
-      const otherCoord = getCellCoord(t.color, t.step);
+      const normStep = isZeroIndexed ? t.step + 1 : t.step;
+      if (normStep === 0 || normStep === 57) return false;
+      const otherCoord = getCellCoord(t.color, normStep);
       return otherCoord.row === gridCoord.row && otherCoord.col === gridCoord.col;
     });
 

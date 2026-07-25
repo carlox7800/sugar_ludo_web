@@ -503,17 +503,21 @@ export function OnlineGameEngine({
       const goalStep = getGoalStep(pCount)
       const perimeter = getTotalPerimeter(pCount)
 
-      // Calculate consumed move value strictly like Android (relative animation)
-      let moveValue = 0
+      // Calculate consumed move value vs visual animation steps
+      let consumedVal = 0
+      let animSteps = 0
+
       if (startStep === -1) {
-        moveValue = 5
+        consumedVal = 5
+        animSteps = 1 // Direct 1 step from Base (-1) to First Cell (0)
       } else {
-        moveValue = targetStep - startStep
+        consumedVal = targetStep - startStep
+        animSteps = targetStep - startStep
       }
 
-      if (moveValue <= 0) {
+      if (consumedVal <= 0 || animSteps <= 0) {
         // Ignora eventos duplicados o ráfagas de red si la ficha ya avanzó
-        globalLogger.log('SOCKET', `Ignorando evento duplicado o no válido (moveValue: ${moveValue})`)
+        globalLogger.log('SOCKET', `Ignorando evento duplicado o no válido (consumedVal: ${consumedVal})`)
         return
       }
 
@@ -523,8 +527,8 @@ export function OnlineGameEngine({
       let iteration = 0
       const stepInterval = setInterval(() => {
         iteration += 1
-        if (iteration <= moveValue) {
-          const newStep = startStep === -1 ? 0 + (iteration - 1) : startStep + iteration
+        if (iteration <= animSteps) {
+          const newStep = startStep === -1 ? 0 : startStep + iteration
           setTokens((prev) =>
             prev.map((t) =>
               t.playerId === serverPlayerIdx && t.id === tokenIndex
@@ -537,11 +541,11 @@ export function OnlineGameEngine({
 
           // Animation finished: apply landing rules (captures & goals)
           let updatedMoves = [...remainingMovesRef.current]
-          if (moveValue > 0) {
-            const idx = updatedMoves.indexOf(moveValue)
+          if (consumedVal > 0) {
+            const idx = updatedMoves.indexOf(consumedVal)
             if (idx !== -1) {
               updatedMoves.splice(idx, 1)
-            } else if (updatedMoves.reduce((a, b) => a + b, 0) === moveValue) {
+            } else if (updatedMoves.reduce((a, b) => a + b, 0) === consumedVal) {
               updatedMoves = []
             } else if (updatedMoves.length > 0) {
               updatedMoves.shift()
@@ -830,6 +834,7 @@ export function OnlineGameEngine({
             onTokenClick={handleTokenClick}
             humanPlayerId={activePlayerIndex}
             appTheme="dark"
+            isZeroIndexed={true}
           />
         </div>
 
