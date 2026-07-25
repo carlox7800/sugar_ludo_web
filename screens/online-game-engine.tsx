@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle } from 'lucide-react'
 import { getSocket } from '@/lib/socket'
 import { useAuth } from '@/lib/auth-context'
-import { GameBoard } from '@/src/components/GameBoard'
+import { GameBoard, START_OFFSETS } from '@/src/components/GameBoard'
 import { GameControls } from '@/src/components/GameControls'
 import { Token, Player, PlayerColor } from '@/src/types'
 import { globalLogger } from '@/lib/logger'
@@ -37,7 +37,7 @@ export function OnlineGameEngine({
 
   const myPlayerId = gameData.myPlayerId || user?.uid || socket.id
 
-  // Map server players to GameBoard Player interface with explicit colors
+  // Map server players to GameBoard Player interface
   const formattedPlayers: Player[] = (gameData.players || []).map((p, idx) => {
     const isMe = p.playerId === myPlayerId || p.socketId === socket.id
     return {
@@ -49,7 +49,6 @@ export function OnlineGameEngine({
     }
   })
 
-  // Ensure there's always at least a fallback player to avoid undefined
   const defaultPlayer: Player = {
     id: 0,
     name: 'Jugador 1',
@@ -71,24 +70,26 @@ export function OnlineGameEngine({
     }
   })
 
-  // Game state driven by server
+  // Core Play State
   const [tokens, setTokens] = useState<Token[]>(initialTokensList)
   const [currentTurnPlayerId, setCurrentTurnPlayerId] = useState<string>(
     gameData.players?.[0]?.playerId || ''
   )
   const [diceValues, setDiceValues] = useState<[number, number] | null>(null)
   const [remainingMoves, setRemainingMoves] = useState<number[]>([])
+  const [moveSelectorTokenId, setMoveSelectorTokenId] = useState<number | null>(null)
   const [isRolling, setIsRolling] = useState(false)
   const [hasRolled, setHasRolled] = useState(false)
+  const [isAnimatingMove, setIsAnimatingMove] = useState(false)
   const [winnerPlayer, setWinnerPlayer] = useState<Player | null>(null)
   
-  // Timer & Toast notifications
+  // Timer & UI Notifications
   const [turnTimer, setTurnTimer] = useState<number>(10)
   const [notification, setNotification] = useState<string | null>(null)
   const [muted, setMuted] = useState(false)
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
 
-  // Map string currentTurnPlayerId to active player index and object
+  // Derived state
   const activePlayerIndex = Math.max(
     0,
     gameData.players.findIndex((p) => p.playerId === currentTurnPlayerId)
@@ -100,7 +101,7 @@ export function OnlineGameEngine({
     gameData.players[activePlayerIndex]?.socketId === socket.id
   )
 
-  // Ref to track latest tokens & remainingMoves without closure staleness
+  // Refs to prevent closure staleness and duplicate timer triggers
   const tokensRef = useRef(tokens)
   tokensRef.current = tokens
 
@@ -113,84 +114,151 @@ export function OnlineGameEngine({
   const activePlayerIndexRef = useRef(activePlayerIndex)
   activePlayerIndexRef.current = activePlayerIndex
 
+  const isProcessingTimeoutRef = useRef(false)
+
   const showToast = (msg: string) => {
     setNotification(msg)
     setTimeout(() => setNotification(null), 4000)
   }
 
-  // Calculate playable token IDs based on remainingMoves
-  const getPlayableTokenIds = (
-    currentTokens: Token[],
-    playerIdx: number,
-    moves: number[]
-  ): number[] => {
-    if (moves.length === 0) return []
-    const diceSum = moves.reduce((a, b) => a + b, 0)
-    const result: number[] = []
+  // ---------------------------------------------------------------------------
+  // Ludo Rules Engine Ported from GameEngine.tsx
+  // ---------------------------------------------------------------------------
 
-    currentTokens.forEach((t) => {
-      if (t.playerId !== playerIdx) return
-      let isPlayable = false
-      if (t.step === 0) {
-        // Base exit: requires a 5 or sum = 5
-        isPlayable = moves.includes(5) || diceSum === 5
-      } else {
-        // On track: can move with any single remaining die or sum
-        isPlayable = moves.some((m) => t.step + m <= 57) || (t.step + diceSum <= 57)
-      }
-      if (isPlayable) {
-        result.push(t.playerId * 4 + t.id)
+  // Check if a perimeter cell has 2 or more tokens (forming a barrier/bloqueo)
+  const hasBarrierAt = (perimeterIndex: number, currentTokens: Token[] = tokensRef.current): boolean => {
+    if (perimeterIndex < 0 || perimeterIndex > 51) return false
+    let totalCount = 0
+    currentTokens.forEach((tk) => {
+      if (tk.step > 0 && tk.step <= 51) {
+        const tkIdx = (START_OFFSETS[tk.color] + tk.step - 1) % 52
+        if (tkIdx === perimeterIndex) {
+          totalCount++
+        }
       }
     })
-    return result
+    return totalCount >= 2
   }
 
-  const playableIds = (isMyTurn && hasRolled && remainingMoves.length > 0)
-    ? getPlayableTokenIds(tokens, activePlayerIndex, remainingMoves)
+  // Validate if a move is legal for a specific token
+  const checkMoveValid = (token: Token, moveVal: number, currentTokens: Token[] = tokensRef.current): boolean => {
+    if (token.step === 0) {
+      if (moveVal === 5) {
+        const startIdx = START_OFFSETS[token.color]
+        return !hasBarrierAt(startIdx, currentTokens)
+      }
+      return false
+    } else if (token.step > 0 && token.step < 57) {
+      const distanceToGoal = 57 - token.step
+      if (moveVal > distanceToGoal) return false
+      
+      let blocked = false
+      const stepsToCheck = Math.min(moveVal, distanceToGoal)
+      for (let stepOffset = 1; stepOffset <= stepsToCheck; stepOffset++) {
+        const pathStep = token.step + stepOffset
+        if (pathStep <= 51) {
+          const pIndex = (START_OFFSETS[token.color] + pathStep - 1) % 52
+          if (hasBarrierAt(pIndex, currentTokens)) {
+            blocked = true
+            break
+          }
+        }
+      }
+      return !blocked
+    }
+    return false
+  }
+
+  // Compute all playable globalTokenIds for active player given available moves
+  const getPlayableTokenIds = (
+    playerIdx: number,
+    moves: number[],
+    currentTokens: Token[] = tokensRef.current
+  ): number[] => {
+    if (moves.length === 0) return []
+    const playerTokens = currentTokens.filter((t) => t.playerId === playerIdx)
+    const playableIds: number[] = []
+
+    playerTokens.forEach((token) => {
+      const globalId = token.playerId * 4 + token.id
+      if (token.step === 0) {
+        const hasFive = moves.includes(5)
+        const hasSumFive = moves.length === 2 && (moves[0] + moves[1] === 5)
+        if (hasFive || hasSumFive) {
+          const startIdx = START_OFFSETS[token.color]
+          if (!hasBarrierAt(startIdx, currentTokens)) {
+            playableIds.push(globalId)
+          }
+        }
+      } else if (token.step > 0 && token.step < 57) {
+        let canMove = false
+        // Check single moves
+        for (const m of moves) {
+          if (checkMoveValid(token, m, currentTokens)) {
+            canMove = true
+            break
+          }
+        }
+        // Check sum move if 2 moves available
+        if (!canMove && moves.length === 2) {
+          if (checkMoveValid(token, moves[0] + moves[1], currentTokens)) {
+            canMove = true
+          }
+        }
+        if (canMove) {
+          playableIds.push(globalId)
+        }
+      }
+    })
+
+    return playableIds
+  }
+
+  // Playable token IDs for current turn
+  const playableTokenIds = (isMyTurn && hasRolled && !isRolling && !isAnimatingMove)
+    ? getPlayableTokenIds(activePlayerIndex, remainingMoves, tokens)
     : []
 
-  // Emit turn end helper
-  const checkAndEmitTurnEnd = (nextMoves: number[]) => {
+  // Helper to emit turn end when no valid moves remain
+  const emitEndTurnIfNeeded = (nextMoves: number[], currentTokens: Token[] = tokensRef.current) => {
     const activeIdx = activePlayerIndexRef.current
-    const currentPlayables = getPlayableTokenIds(tokensRef.current, activeIdx, nextMoves)
+    const playables = getPlayableTokenIds(activeIdx, nextMoves, currentTokens)
 
-    if (nextMoves.length === 0 || currentPlayables.length === 0) {
+    if (nextMoves.length === 0 || playables.length === 0) {
       const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
       const nextSlot = (activeIdx + 1) % gameData.players.length
       const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
 
-      globalLogger.log('GAME-FLOW', `No quedan movimientos o fichas válidas. Terminando turno -> Siguiente color ID: ${nextColorId}`)
-      globalLogger.log('SOCKET', 'Emitiendo intent_end_turn', { nextPlayerId: nextColorId })
-
+      globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> nextSlot: ${nextSlot}`)
       socket.emit('intent_end_turn', {
         roomId: gameData.roomId,
         nextPlayerId: nextColorId,
         nextTurnId: nextColorId,
       })
-    } else {
-      globalLogger.log('GAME-FLOW', `Turno continua. Dados pendientes: [${nextMoves.join(', ')}]`)
     }
   }
 
-  // Visual turn countdown timer
+  // ---------------------------------------------------------------------------
+  // Robust Single-Timer Effect (Prevents duplicate timeouts)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (winnerPlayer) return
 
+    isProcessingTimeoutRef.current = false
     const interval = setInterval(() => {
       setTurnTimer((prev) => {
         if (prev <= 1) {
-          // Timer reached 0
-          if (isMyTurn) {
+          if (isMyTurnRef.current && !isProcessingTimeoutRef.current) {
+            isProcessingTimeoutRef.current = true
             if (!hasRolled && !isRolling) {
-              globalLogger.log('GAME-FLOW', 'Tiempo agotado (Lanzar). Emitiendo lanzamiento automático.')
+              globalLogger.log('GAME-FLOW', 'Tiempo agotado (Lanzar). Emitiendo intent_roll_dice.')
               handleRollDice()
             } else if (hasRolled) {
-              globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover). Cediendo turno por inactividad.')
-              
+              globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover). Cediendo turno.')
               const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-              const nextSlot = (activePlayerIndex + 1) % gameData.players.length
+              const nextSlot = (activePlayerIndexRef.current + 1) % gameData.players.length
               const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
-          
+              
               socket.emit('intent_end_turn', {
                 roomId: gameData.roomId,
                 nextPlayerId: nextColorId,
@@ -205,9 +273,11 @@ export function OnlineGameEngine({
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [currentTurnPlayerId, winnerPlayer, isMyTurn, hasRolled, isRolling, activePlayerIndex, gameData.players.length, gameData.roomId])
+  }, [currentTurnPlayerId, winnerPlayer, hasRolled, isRolling])
 
+  // ---------------------------------------------------------------------------
   // Server Socket Event Listeners
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!socket) return
 
@@ -215,16 +285,19 @@ export function OnlineGameEngine({
     const handleTurnStarted = (data: { playerId: string; activePlayerId?: string }) => {
       const activeId = data.playerId || data.activePlayerId || ''
       globalLogger.log('SOCKET', 'Recibido event_turn_started', { activeId })
-      globalLogger.log('GAME-FLOW', `Turno iniciado para jugador: ${activeId}`)
+      
       setCurrentTurnPlayerId(activeId)
       setTurnTimer(10)
       setHasRolled(false)
       setDiceValues(null)
       setRemainingMoves([])
       setIsRolling(false)
+      setIsAnimatingMove(false)
+      setMoveSelectorTokenId(null)
+      isProcessingTimeoutRef.current = false
     }
 
-    // 2. Dice Result (intent_roll_dice -> event_dice_result)
+    // 2. Dice Result
     const handleDiceResult = (data: { playerId: string; diceValues?: [number, number]; diceRoll1?: number; diceRoll2?: number }) => {
       const vals: [number, number] = data.diceValues || [
         data.diceRoll1 || Math.floor(Math.random() * 6) + 1,
@@ -238,29 +311,26 @@ export function OnlineGameEngine({
         setDiceValues(vals)
         setRemainingMoves([...vals])
         setHasRolled(true)
-        globalLogger.log('GAME-FLOW', `Dado lanzado por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
+        globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
       }, 500)
     }
 
-    // 3. Token Moved (intent_move_token -> event_token_moved)
-    // Step-by-step animation implementation
+    // 3. Token Moved (with Step-by-Step animation & Rules checking)
     const handleTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number }) => {
       globalLogger.log('SOCKET', 'Recibido event_token_moved', data)
       const serverPlayerIdx = gameData.players.findIndex((p) => p.playerId === data.playerId)
-      if (serverPlayerIdx < 0) {
-        globalLogger.log('ERROR', 'event_token_moved: No se encontró al jugador local', { data })
-        return
-      }
+      if (serverPlayerIdx < 0) return
 
+      const tokenIndex = data.tokenId
       const currentToken = tokensRef.current.find(
-        (t) => t.playerId === serverPlayerIdx && t.id === data.tokenId
+        (t) => t.playerId === serverPlayerIdx && t.id === tokenIndex
       )
       const startStep = currentToken ? currentToken.step : 0
       const targetStep = data.newPathIndex
 
-      globalLogger.log('TOKENS', `Ficha ${data.tokenId} de jugador índice ${serverPlayerIdx}: animando de ${startStep} a ${targetStep}`)
+      setIsAnimatingMove(true)
 
-      // Calculate consumed die value
+      // Calculate consumed move value
       let consumedVal = 0
       if (startStep === 0 && targetStep === 1) {
         consumedVal = 5
@@ -268,76 +338,106 @@ export function OnlineGameEngine({
         consumedVal = targetStep - startStep
       }
 
-      // Deduct consumed die from remainingMoves
-      let updatedMoves = [...remainingMovesRef.current]
-      if (consumedVal > 0) {
-        const exactIndex = updatedMoves.indexOf(consumedVal)
-        if (exactIndex !== -1) {
-          updatedMoves.splice(exactIndex, 1)
-        } else if (updatedMoves.reduce((a, b) => a + b, 0) === consumedVal) {
-          updatedMoves = []
-        } else if (updatedMoves.length > 0) {
-          updatedMoves.shift()
-        }
-      } else {
-        if (updatedMoves.length > 0) updatedMoves.shift()
-      }
-      setRemainingMoves(updatedMoves)
-
-      // Step-by-Step Animation (120ms per step)
-      if (startStep === 0 || targetStep <= startStep) {
-        // Immediate jump from base
-        setTokens((prev) =>
-          prev.map((t) =>
-            t.playerId === serverPlayerIdx && t.id === data.tokenId
-              ? { ...t, step: targetStep }
-              : t
-          )
-        )
-        if (isMyTurnRef.current) {
-          checkAndEmitTurnEnd(updatedMoves)
-        }
-      } else {
-        // Step-by-step walk animation
-        let currentStep = startStep
-        const stepInterval = setInterval(() => {
+      // Step-by-step animation loop (120ms per step)
+      let currentStep = startStep
+      const stepInterval = setInterval(() => {
+        if (currentStep < targetStep) {
           currentStep += 1
           setTokens((prev) =>
             prev.map((t) =>
-              t.playerId === serverPlayerIdx && t.id === data.tokenId
+              t.playerId === serverPlayerIdx && t.id === tokenIndex
                 ? { ...t, step: currentStep }
                 : t
             )
           )
+        } else {
+          clearInterval(stepInterval)
 
-          if (currentStep >= targetStep) {
-            clearInterval(stepInterval)
-            if (isMyTurnRef.current) {
-              checkAndEmitTurnEnd(updatedMoves)
+          // Animation finished: apply landing rules (captures & goals)
+          let updatedMoves = [...remainingMovesRef.current]
+          if (consumedVal > 0) {
+            const idx = updatedMoves.indexOf(consumedVal)
+            if (idx !== -1) {
+              updatedMoves.splice(idx, 1)
+            } else if (updatedMoves.reduce((a, b) => a + b, 0) === consumedVal) {
+              updatedMoves = []
+            } else if (updatedMoves.length > 0) {
+              updatedMoves.shift()
             }
           }
-        }, 120)
-      }
+
+          let bonusSteps = 0
+          let capturedOpponents: { playerId: number; id: number }[] = []
+
+          // Goal Check
+          if (targetStep === 57) {
+            showToast('🎉 ¡Ficha en la meta! +10 pasos de bono')
+            bonusSteps += 10
+          }
+
+          // Capture Check (Perimeter cells)
+          if (targetStep >= 1 && targetStep <= 51 && currentToken) {
+            const pIndex = (START_OFFSETS[currentToken.color] + targetStep - 1) % 52
+            const isStartCell = [1, 14, 27, 40].includes(pIndex)
+            const isGoldStar = [8, 21, 34, 47].includes(pIndex)
+
+            if (!isStartCell && !isGoldStar) {
+              const opponents = tokensRef.current.filter((t) => {
+                if (t.playerId === serverPlayerIdx || t.step === 0 || t.step === 57) return false
+                const oppPIndex = (START_OFFSETS[t.color] + t.step - 1) % 52
+                return oppPIndex === pIndex
+              })
+
+              if (opponents.length > 0) {
+                capturedOpponents = opponents.map((o) => ({ playerId: o.playerId, id: o.id }))
+                showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`)
+                bonusSteps += 20
+              }
+            }
+          }
+
+          // Apply captured opponents returning to base
+          const finalTokens = tokensRef.current.map((t) => {
+            if (t.playerId === serverPlayerIdx && t.id === tokenIndex) {
+              return { ...t, step: targetStep }
+            }
+            if (capturedOpponents.some((o) => o.playerId === t.playerId && o.id === t.id)) {
+              return { ...t, step: 0 }
+            }
+            return t
+          })
+
+          if (bonusSteps > 0) {
+            updatedMoves.push(bonusSteps)
+          }
+
+          setTokens(finalTokens)
+          setRemainingMoves(updatedMoves)
+          setIsAnimatingMove(false)
+
+          // Check if turn should advance
+          if (isMyTurnRef.current) {
+            emitEndTurnIfNeeded(updatedMoves, finalTokens)
+          }
+        }
+      }, startStep === 0 ? 50 : 120)
     }
 
-    // 4. Player Disconnected
+    // Disconnection / Reconnection / GameOver Events
     const handlePlayerDisconnected = (data: { playerId: string }) => {
-      const discPlayer = gameData.players.find((p) => p.playerId === data.playerId)
-      showToast(`⚠️ Jugador ${discPlayer?.playerName || ''} desconectado.`)
+      const p = gameData.players.find((pl) => pl.playerId === data.playerId)
+      showToast(`⚠️ Jugador ${p?.playerName || ''} desconectado.`)
     }
 
-    // 5. Player Reconnected
     const handlePlayerReconnected = (data: { playerId: string }) => {
-      const recPlayer = gameData.players.find((p) => p.playerId === data.playerId)
-      showToast(`✅ Jugador ${recPlayer?.playerName || ''} se reconectó.`)
+      const p = gameData.players.find((pl) => pl.playerId === data.playerId)
+      showToast(`✅ Jugador ${p?.playerName || ''} se reconectó.`)
     }
 
-    // 6. Player Expelled
-    const handlePlayerExpelled = (data: { playerId: string }) => {
-      showToast(`🚨 Un jugador fue expulsado por inactividad.`)
+    const handlePlayerExpelled = () => {
+      showToast(`🚨 Jugador expulsado por inactividad.`)
     }
 
-    // 7. Game Over by Abandonment
     const handleGameOverAbandonment = (data: { winnerId: string }) => {
       const winnerIdx = gameData.players.findIndex((p) => p.playerId === data.winnerId)
       const wPlayer = formattedPlayers[winnerIdx >= 0 ? winnerIdx : 0]
@@ -345,7 +445,6 @@ export function OnlineGameEngine({
       showToast(`🏆 ¡Partida finalizada! Ganador: ${wPlayer.name}`)
     }
 
-    // 8. State Resynced
     const handleStateResynced = (gameState: any) => {
       if (gameState.tokens) setTokens(gameState.tokens)
       if (gameState.currentTurn) setCurrentTurnPlayerId(gameState.currentTurn)
@@ -373,7 +472,7 @@ export function OnlineGameEngine({
     }
   }, [socket, gameData.players, formattedPlayers])
 
-  // Action: Roll Dice (emits intent_roll_dice)
+  // Roll Dice Action
   const handleRollDice = () => {
     if (!isMyTurn || hasRolled || isRolling) return
     setIsRolling(true)
@@ -384,63 +483,73 @@ export function OnlineGameEngine({
     })
   }
 
-  // Action: Token Click (emits ONLY intent_move_token, NO intent_end_turn here)
-  const handleTokenClick = (globalTokenId: number) => {
-    if (!isMyTurn || !hasRolled || remainingMoves.length === 0) return
-    
-    // Extraer ID local de ficha
-    const tokenId = globalTokenId % 4
-    
-    const myPlayerIdx = gameData.players.findIndex(p => p.playerId === myPlayerId)
-    const clickedToken = tokens.find(t => t.playerId === myPlayerIdx && t.id === tokenId)
-    
-    if (!clickedToken) {
-      globalLogger.log('ERROR', `Ficha no encontrada: globalId=${globalTokenId}, localId=${tokenId}`)
-      return
-    }
-  
-    const startStep = clickedToken.step
-    let moveVal = 0
-    let targetStep = 0
+  // Execute single validated move intent
+  const executeMoveIntent = (tokenId: number, moveVal: number) => {
+    const tokenIndex = tokenId % 4
+    const playerIndex = Math.floor(tokenId / 4)
+    const token = tokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
+    if (!token) return
 
+    const startStep = token.step
+    let targetStep = startStep + moveVal
     if (startStep === 0) {
-      // Exit base: needs a 5 or sum of 5
       targetStep = 1
-      if (remainingMoves.includes(5)) {
-        moveVal = 5
-      } else {
-        moveVal = remainingMoves.reduce((a, b) => a + b, 0)
-      }
-    } else {
-      // Pick best valid move from remainingMoves (single die first, then sum)
-      const validSingle = remainingMoves.find(m => startStep + m <= 57)
-      if (validSingle) {
-        moveVal = validSingle
-        targetStep = startStep + moveVal
-      } else {
-        const diceSum = remainingMoves.reduce((a, b) => a + b, 0)
-        if (startStep + diceSum <= 57) {
-          moveVal = diceSum
-          targetStep = startStep + moveVal
-        } else {
-          return // invalid move
-        }
-      }
+    } else if (targetStep > 57) {
+      targetStep = 57
     }
 
-    if (targetStep > 57) targetStep = 57
-    
-    globalLogger.log('TOKENS', `Clic en ficha ${tokenId}. Movimiento calculado con valor ${moveVal} hacia step ${targetStep}`)
-    globalLogger.log('SOCKET', 'Emitiendo intent_move_token', { tokenId, newPathIndex: targetStep })
-    
-    // Only emit intent_move_token! Do NOT emit intent_end_turn here!
+    globalLogger.log('TOKENS', `Ejecutando movimiento: Ficha ${tokenIndex} hacia step ${targetStep} con valor ${moveVal}`)
+    globalLogger.log('SOCKET', 'Emitiendo intent_move_token', { tokenId: tokenIndex, newPathIndex: targetStep })
+
     socket.emit('intent_move_token', {
       roomId: gameData.roomId,
       playerId: myPlayerId,
-      tokenId,
+      tokenId: tokenIndex,
       newPathIndex: targetStep,
       isBotMove: false,
     })
+  }
+
+  // Handle Token Click from Board (with Dice Choice Modal detection)
+  const handleTokenClick = (tokenId: number) => {
+    if (!isMyTurn || isAnimatingMove || isRolling || !hasRolled) return
+
+    if (playableTokenIds.includes(tokenId)) {
+      const tokenIndex = tokenId % 4
+      const playerIndex = Math.floor(tokenId / 4)
+      const token = tokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
+      if (!token) return
+
+      if (token.step === 0) {
+        // Base exit
+        if (remainingMoves.includes(5)) {
+          executeMoveIntent(tokenId, 5)
+        } else if (remainingMoves.length === 2 && remainingMoves[0] + remainingMoves[1] === 5) {
+          executeMoveIntent(tokenId, 5)
+        }
+      } else {
+        // Track movement: check options
+        const validOptions: number[] = []
+        const seenVals = new Set<number>()
+
+        remainingMoves.forEach((m) => {
+          if (!seenVals.has(m) && checkMoveValid(token, m)) {
+            validOptions.push(m)
+            seenVals.add(m)
+          }
+        })
+
+        if (remainingMoves.length === 2 && checkMoveValid(token, remainingMoves[0] + remainingMoves[1])) {
+          validOptions.push(remainingMoves[0] + remainingMoves[1])
+        }
+
+        if (validOptions.length === 1) {
+          executeMoveIntent(tokenId, validOptions[0])
+        } else if (validOptions.length > 1) {
+          setMoveSelectorTokenId(tokenId)
+        }
+      }
+    }
   }
 
   const handleConfirmExit = () => {
@@ -451,29 +560,6 @@ export function OnlineGameEngine({
     })
     onExit()
   }
-
-  // Auto-skip when no valid moves exist after rolling
-  useEffect(() => {
-    if (isMyTurn && hasRolled && remainingMoves.length > 0) {
-      globalLogger.log('TOKENS', 'Fichas jugables evaluadas', { playableIds, remainingMoves })
-      
-      if (playableIds.length === 0) {
-        globalLogger.log('GAME-FLOW', 'No hay jugadas válidas. Saltando turno automáticamente en 1.5s')
-        const autoSkipTimer = setTimeout(() => {
-          const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-          const nextSlot = (activePlayerIndex + 1) % gameData.players.length
-          const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
-      
-          socket.emit('intent_end_turn', {
-            roomId: gameData.roomId,
-            nextPlayerId: nextColorId,
-            nextTurnId: nextColorId,
-          })
-        }, 1500)
-        return () => clearTimeout(autoSkipTimer)
-      }
-    }
-  }, [isMyTurn, hasRolled, remainingMoves, playableIds.length, activePlayerIndex, gameData.players.length, gameData.roomId])
 
   return (
     <div className="flex min-h-screen flex-col bg-[oklch(0.12_0.03_285)] text-foreground p-3 sm:p-6 gap-4">
@@ -507,7 +593,7 @@ export function OnlineGameEngine({
         </div>
       </div>
 
-      {/* Toast Notification Banner */}
+      {/* Toast Banner */}
       {notification && (
         <div className="animate-in fade-in slide-in-from-top-2 mx-auto flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/15 px-5 py-3 text-[var(--candy-cyan)] font-display text-sm font-bold shadow-lg">
           <Sparkles className="size-4" />
@@ -521,7 +607,7 @@ export function OnlineGameEngine({
           <GameBoard
             tokens={tokens}
             currentTurn={activePlayerIndex}
-            playableTokenIds={playableIds}
+            playableTokenIds={playableTokenIds}
             onTokenClick={handleTokenClick}
             humanPlayerId={activePlayerIndex}
             appTheme="dark"
@@ -542,13 +628,14 @@ export function OnlineGameEngine({
             timer={turnTimer}
             winnerPlayer={winnerPlayer}
             onResetGame={onExit}
-            isHumanTurnToRoll={isMyTurn}
+            isHumanTurnToRoll={isMyTurn && !hasRolled && !isRolling && !isAnimatingMove}
             isGlowActive={isMyTurn && !hasRolled && !isRolling}
             appTheme="dark"
           />
         </div>
       </div>
 
+      {/* Exit Modal */}
       {isExitModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="glass flex flex-col items-center gap-5 rounded-3xl border border-[var(--candy-magenta)] p-8 text-center max-w-sm w-full">
@@ -562,6 +649,62 @@ export function OnlineGameEngine({
           </div>
         </div>
       )}
+
+      {/* Dice Choice Modal Popover (Selector de Dados) */}
+      {moveSelectorTokenId !== null && (() => {
+        const tokenIndex = moveSelectorTokenId % 4
+        const playerIndex = Math.floor(moveSelectorTokenId / 4)
+        const token = tokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
+        if (!token) return null
+
+        const options: number[] = []
+        const seenVals = new Set<number>()
+
+        remainingMoves.forEach((m) => {
+          if (!seenVals.has(m) && checkMoveValid(token, m)) {
+            options.push(m)
+            seenVals.add(m)
+          }
+        })
+
+        if (remainingMoves.length === 2) {
+          const sum = remainingMoves[0] + remainingMoves[1]
+          if (checkMoveValid(token, sum)) {
+            options.push(sum)
+          }
+        }
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[oklch(0.16_0.03_285)] border border-[var(--candy-cyan)]/40 p-4 rounded-3xl shadow-2xl flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex flex-col items-center gap-1">
+                <h3 className="text-foreground font-extrabold text-sm text-center font-display uppercase tracking-wider">Mover Ficha</h3>
+                <p className="text-xs text-muted-foreground font-medium">Elige el dado:</p>
+              </div>
+              <div className="flex flex-row flex-wrap justify-center gap-2 mt-1">
+                {options.map((optVal, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setMoveSelectorTokenId(null)
+                      executeMoveIntent(moveSelectorTokenId, optVal)
+                    }}
+                    className="w-12 h-12 bg-[var(--candy-cyan)]/15 border border-[var(--candy-cyan)] hover:bg-[var(--candy-cyan)] hover:text-black text-[var(--candy-cyan)] rounded-2xl flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow-[0_0_12px_var(--candy-cyan)] font-display font-extrabold text-xl"
+                  >
+                    {optVal}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setMoveSelectorTokenId(null)}
+                className="mt-1 text-muted-foreground hover:text-foreground text-xs font-bold tracking-widest uppercase transition-colors text-center"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
