@@ -11,6 +11,7 @@ import { ProfileModal } from '@/components/profile-modal'
 import { SettingsModal } from '@/components/settings-modal'
 import GameEngine from '@/src/GameEngine'
 import { GameConfig } from '@/src/types'
+import { OnlineGameEngine, OnlineGameData } from '@/screens/online-game-engine'
 
 // Screens
 import { WalletScreen } from '@/screens/wallet-screen'
@@ -32,6 +33,7 @@ export type Screen =
   | 'lobby'
   | 'training'
   | 'online-training'
+  | 'online-game'
   | 'game'
   | 'tienda'
   | 'billetera'
@@ -46,6 +48,7 @@ function PageContent() {
   // Decide initial screen based on auth
   const [screen, setScreen] = useState<Screen>('landing')
   const [config, setConfig] = useState<GameConfig | null>(null)
+  const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
   
   // UI States
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -73,6 +76,11 @@ function PageContent() {
   const handleStartGame = (gameConfig: GameConfig) => {
     setConfig(gameConfig)
     setScreen('game')
+  }
+
+  const handleMatchFound = (gameData: OnlineGameData) => {
+    setOnlineGameData(gameData)
+    setScreen('online-game')
   }
 
   const handleLoginGoogle = () => {
@@ -114,7 +122,10 @@ function PageContent() {
       case 'online-training':
         return (
           <div className="mx-auto w-full max-w-3xl flex-1">
-            <OnlineTraining onBack={() => setScreen('lobby')} />
+            <OnlineTraining 
+              onBack={() => setScreen('lobby')} 
+              onMatchFound={handleMatchFound}
+            />
           </div>
         )
       case 'billetera':
@@ -149,9 +160,22 @@ function PageContent() {
     )
   }
 
-  // Game Engine runs independently outside the Lobby layout
+  // Offline Game Engine runs independently outside the Lobby layout
   if (screen === 'game' && config) {
     return <GameEngine initialConfig={config} onExit={() => setScreen('training')} />
+  }
+
+  // Online Game Engine runs independently outside the Lobby layout
+  if (screen === 'online-game' && onlineGameData) {
+    return (
+      <OnlineGameEngine 
+        gameData={onlineGameData} 
+        onExit={() => {
+          setOnlineGameData(null)
+          setScreen('online-training')
+        }} 
+      />
+    )
   }
 
   // Main Lobby Layout with PlayerProvider wrapping everything except GameEngine and Landing

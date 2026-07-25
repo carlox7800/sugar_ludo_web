@@ -1,12 +1,23 @@
 'use client'
 
-import { useState } from 'react'
-import { ArrowLeft, Volume2, VolumeX, Zap, Key, Users, PlusCircle, LogIn, Copy, Check, Sparkles } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { ArrowLeft, Volume2, VolumeX, Zap, Key, PlusCircle, LogIn, Copy, Check, Sparkles, Loader2, Wifi, WifiOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useSocket } from '@/lib/useSocket'
+import { useAuth } from '@/lib/auth-context'
 
 const PLAYER_OPTIONS = [2, 3, 4, 5, 6]
 
-export function OnlineTraining({ onBack }: { onBack: () => void }) {
+export function OnlineTraining({ 
+  onBack, 
+  onMatchFound 
+}: { 
+  onBack: () => void
+  onMatchFound?: (gameData: any) => void 
+}) {
+  const { connect, status, getSocketInstance } = useSocket()
+  const { user } = useAuth()
+
   // Tabs: 'quick' | 'friends'
   const [mainTab, setMainTab] = useState<'quick' | 'friends'>('quick')
 
@@ -15,6 +26,10 @@ export function OnlineTraining({ onBack }: { onBack: () => void }) {
 
   // Player counts
   const [quickPlayers, setQuickPlayers] = useState(4)
+  const quickPlayersRef = useRef(quickPlayers)
+  useEffect(() => {
+    quickPlayersRef.current = quickPlayers
+  }, [quickPlayers])
   const [createPlayers, setCreatePlayers] = useState(4)
 
   // Join Room State
@@ -24,21 +39,106 @@ export function OnlineTraining({ onBack }: { onBack: () => void }) {
   const [muted, setMuted] = useState(false)
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null)
   const [copiedCode, setCopiedCode] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
   const [notification, setNotification] = useState<string | null>(null)
+
+  // Auto-connect socket when opening Online Training
+  useEffect(() => {
+    const socket = connect()
+
+    // Register identity
+    const playerId = user?.uid || `guest_${Math.floor(Math.random() * 100000)}`
+    socket.emit('register_identity', { playerId })
+
+    const handlePrivateRoomCreated = (data: { roomCode?: string; id?: string }) => {
+      const code = data.roomCode || data.id || ''
+      setCreatedRoomCode(code)
+      showToast(`¡Sala ${code} creada con éxito!`)
+    }
+
+    const handleRoomUpdated = (data: { id?: string; players?: any[] }) => {
+      if (data.players) {
+        showToast(`Jugadores en sala: ${data.players.length}`)
+      }
+    }
+
+    const handleMatchFound = (gameData: any) => {
+      const receivedCount = gameData.players?.length ?? 0
+      if (receivedCount < quickPlayersRef.current) {
+        return // Ignore match if it doesn't meet our requested player count
+      }
+      setIsSearching(false)
+      showToast('¡Partida encontrada! Entrando a la mesa...')
+      
+      const enrichedGameData = {
+        ...gameData,
+        roomId: gameData.roomId || gameData.id,
+        myPlayerId: user?.uid || socket.id || playerId,
+      }
+
+      setTimeout(() => {
+        onMatchFound?.(enrichedGameData)
+      }, 800)
+    }
+
+    const handleRoomError = (data: { message: string }) => {
+      setIsSearching(false)
+      showToast(`⚠️ ${data.message || 'Error en la sala'}`)
+    }
+
+    socket.on('private_room_created', handlePrivateRoomCreated)
+    socket.on('room_updated', handleRoomUpdated)
+    socket.on('match_found', handleMatchFound)
+    socket.on('room_error', handleRoomError)
+
+    return () => {
+      socket.off('private_room_created', handlePrivateRoomCreated)
+      socket.off('room_updated', handleRoomUpdated)
+      socket.off('match_found', handleMatchFound)
+      socket.off('room_error', handleRoomError)
+    }
+  }, [connect, onMatchFound, user])
 
   const showToast = (msg: string) => {
     setNotification(msg)
-    setTimeout(() => setNotification(null), 3000)
+    setTimeout(() => setNotification(null), 3500)
   }
 
   const handleStartQuickMatch = () => {
+    const socket = getSocketInstance()
+    const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
+    const playerName = user?.nickname || user?.displayName || 'Jugador'
+
+    setIsSearching(true)
     showToast(`Buscando partida rápida para ${quickPlayers} jugadores...`)
+
+    socket.emit('join_matchmaking', {
+      playerId,
+      playerName,
+      targetPlayers: quickPlayers,
+      mode: 'online_training',
+    })
+  }
+
+  const handleCancelQuickMatch = () => {
+    const socket = getSocketInstance()
+    const playerId = user?.uid || socket.id
+    setIsSearching(false)
+    socket.emit('leave_matchmaking', { playerId })
+    showToast('Búsqueda cancelada.')
   }
 
   const handleCreateRoom = () => {
-    const randomCode = `SUGAR-${Math.floor(1000 + Math.random() * 9000)}`
-    setCreatedRoomCode(randomCode)
-    showToast(`¡Sala creada con éxito! Código: ${randomCode}`)
+    const socket = getSocketInstance()
+    const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
+    const playerName = user?.nickname || user?.displayName || 'Jugador'
+
+    showToast('Creando sala privada en el servidor...')
+    socket.emit('create_private_room', {
+      playerId,
+      playerName,
+      targetPlayers: createPlayers,
+    })
   }
 
   const handleCopyCode = () => {
@@ -52,7 +152,20 @@ export function OnlineTraining({ onBack }: { onBack: () => void }) {
   const handleJoinRoom = (e: React.FormEvent) => {
     e.preventDefault()
     if (!roomCode.trim()) return
-    showToast(`Conectando a la sala ${roomCode.toUpperCase()}...`)
+
+    const socket = getSocketInstance()
+    const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
+    const playerName = user?.nickname || user?.displayName || 'Jugador'
+    const code = roomCode.trim()
+
+    showToast(`Uniéndose a la sala ${code}...`)
+    socket.emit('join_private_room', {
+      playerId,
+      playerName,
+      targetPlayers: createPlayers,
+      roomCode: code,
+      code: code,
+    })
   }
 
   return (
@@ -72,14 +185,34 @@ export function OnlineTraining({ onBack }: { onBack: () => void }) {
           </span>
         </button>
 
-        <button
-          onClick={() => setMuted((m) => !m)}
-          aria-label={muted ? 'Activar sonido' : 'Silenciar'}
-          aria-pressed={muted}
-          className="glass glass-hover flex size-12 shrink-0 items-center justify-center rounded-2xl text-[var(--candy-cyan)]"
-        >
-          {muted ? <VolumeX className="size-5" strokeWidth={2.4} /> : <Volume2 className="size-5" strokeWidth={2.4} />}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Socket Connection Badge */}
+          <div className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 border font-display text-xs font-bold ${
+            status === 'connected' 
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+              : status === 'connecting' || status === 'reconnecting'
+              ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+              : 'border-red-500/30 bg-red-500/10 text-red-400'
+          }`}>
+            {status === 'connected' ? (
+              <Wifi className="size-3.5" />
+            ) : status === 'connecting' || status === 'reconnecting' ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <WifiOff className="size-3.5" />
+            )}
+            <span className="capitalize">{status === 'connected' ? 'En Línea' : status === 'connecting' ? 'Conectando...' : 'Desconectado'}</span>
+          </div>
+
+          <button
+            onClick={() => setMuted((m) => !m)}
+            aria-label={muted ? 'Activar sonido' : 'Silenciar'}
+            aria-pressed={muted}
+            className="glass glass-hover flex size-12 shrink-0 items-center justify-center rounded-2xl text-[var(--candy-cyan)]"
+          >
+            {muted ? <VolumeX className="size-5" strokeWidth={2.4} /> : <Volume2 className="size-5" strokeWidth={2.4} />}
+          </button>
+        </div>
       </div>
 
       {/* Main Container Card */}
@@ -168,12 +301,30 @@ export function OnlineTraining({ onBack }: { onBack: () => void }) {
                 </p>
               </fieldset>
 
-              <button
-                onClick={handleStartQuickMatch}
-                className="btn-3d flex w-full items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(145deg,oklch(0.82_0.15_200),oklch(0.7_0.18_190))] py-4 font-display text-lg font-extrabold uppercase tracking-wide text-[oklch(0.18_0.03_285)] shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.5_0.12_210),0_14px_26px_oklch(0.5_0.12_210/0.55)]"
-              >
-                ¡COMENZAR PARTIDA! ✨
-              </button>
+              {!isSearching ? (
+                <button
+                  onClick={handleStartQuickMatch}
+                  className="btn-3d flex w-full items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(145deg,oklch(0.82_0.15_200),oklch(0.7_0.18_190))] py-4 font-display text-lg font-extrabold uppercase tracking-wide text-[oklch(0.18_0.03_285)] shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.5_0.12_210),0_14px_26px_oklch(0.5_0.12_210/0.55)]"
+                >
+                  ¡COMENZAR PARTIDA! ✨
+                </button>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <button
+                    disabled
+                    className="flex w-full items-center justify-center gap-3 rounded-2xl bg-[var(--candy-cyan)]/20 py-4 font-display text-lg font-extrabold uppercase tracking-wide text-[var(--candy-cyan)] border border-[var(--candy-cyan)]/40"
+                  >
+                    <Loader2 className="size-6 animate-spin" />
+                    Buscando Contendientes...
+                  </button>
+                  <button
+                    onClick={handleCancelQuickMatch}
+                    className="text-xs font-bold text-muted-foreground hover:text-foreground text-center"
+                  >
+                    Cancelar búsqueda
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -296,8 +447,8 @@ export function OnlineTraining({ onBack }: { onBack: () => void }) {
                       type="text"
                       required
                       value={roomCode}
-                      onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                      placeholder="Ej. SUGAR-8492"
+                      onChange={(e) => setRoomCode(e.target.value)}
+                      placeholder="Ej. 123456"
                       className="w-full rounded-2xl border-2 border-[var(--candy-gold)]/40 bg-[oklch(0_0_0/0.3)] px-6 py-4 font-mono text-2xl font-extrabold text-center tracking-widest text-[var(--candy-gold)] outline-none transition-colors focus:border-[var(--candy-gold)] focus:bg-[oklch(0_0_0/0.5)] placeholder:text-muted-foreground/30 uppercase"
                     />
                   </div>

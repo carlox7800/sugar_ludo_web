@@ -5,6 +5,7 @@ import { GameBoard, getCellCoord, isSafeCell, START_OFFSETS } from './components
 import { GameControls } from './components/GameControls';
 import { ConsoleLogs } from './components/ConsoleLogs';
 import { audio } from './audio';
+import { globalLogger } from '@/lib/logger';
 import { Volume2, VolumeX, BookOpen, Sparkles, Trophy, ArrowLeft, Settings, X, Palette, Music, Terminal } from 'lucide-react';
 import { HexGameView } from './components/HexGameView';
 
@@ -96,6 +97,18 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       playerColor,
     };
     setLogs((prev) => [...prev, newLog]);
+    
+    // Log globally
+    const globalTypeMap: Record<string, any> = {
+      system: 'SYSTEM',
+      info: 'GAME-FLOW',
+      roll: 'ROLL',
+      capture: 'CAPTURE',
+      move: 'MOVE',
+      warning: 'ERROR',
+      win: 'GAME-FLOW',
+    };
+    globalLogger.log(globalTypeMap[type] || 'GAME-FLOW', message, { playerColor });
   };
 
   // Setup the Ludo Game

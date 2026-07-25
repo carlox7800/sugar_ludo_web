@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X, Settings, Volume2, VolumeX, Smartphone, Palette, Copy, Check, LogOut, Info } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
+import { globalLogger } from '@/lib/logger'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -71,8 +72,20 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   }
 
   const handleExportLogs = () => {
-    const logs = `[Sugar Ludo Logs Export]\nTimestamp: ${new Date().toISOString()}\nUser Agent: ${navigator.userAgent}\nTheme: ${theme}\nSound Muted: ${isMuted}\nStatus: System Nominal`
-    navigator.clipboard.writeText(logs)
+    const header = `[Sugar Ludo Logs Export]\nTimestamp: ${new Date().toISOString()}\nUser Agent: ${navigator.userAgent}\nTheme: ${theme}\nSound Muted: ${isMuted}\nStatus: System Nominal\n----------------------------------------\n`
+    const logs = globalLogger.exportLogs()
+    
+    // Create a blob and download it instead of just copying to clipboard to allow larger files
+    const blob = new Blob([header + logs], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `sugar-ludo-logs-${new Date().getTime()}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+
     setCopiedLogs(true)
     setTimeout(() => setCopiedLogs(false), 2500)
   }
