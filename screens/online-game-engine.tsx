@@ -410,7 +410,6 @@ export function OnlineGameEngine({
   useEffect(() => {
     if (winnerPlayer) return
 
-    isProcessingTimeoutRef.current = false
     const interval = setInterval(() => {
       setTurnTimer((prev) => {
         if (prev <= 1) {
@@ -518,6 +517,19 @@ export function OnlineGameEngine({
       if (consumedVal <= 0 || animSteps <= 0) {
         // Ignora eventos duplicados o ráfagas de red si la ficha ya avanzó
         globalLogger.log('SOCKET', `Ignorando evento duplicado o no válido (consumedVal: ${consumedVal})`)
+        if (isMyTurnRef.current && isProcessingTimeoutRef.current) {
+          const updatedMoves = [...remainingMovesRef.current]
+          if (updatedMoves.length > 0) updatedMoves.shift()
+          setRemainingMoves(updatedMoves)
+          setTimeout(() => {
+            const playables = getPlayableTokenIds(activePlayerIndexRef.current, updatedMoves, tokensRef.current)
+            if (updatedMoves.length === 0 || playables.length === 0) {
+              emitEndTurnIfNeeded(updatedMoves, tokensRef.current)
+            } else {
+              executeRandomValidMove(updatedMoves, tokensRef.current)
+            }
+          }, 300)
+        }
         return
       }
 
@@ -707,7 +719,7 @@ export function OnlineGameEngine({
   const executeMoveIntent = (tokenId: number, moveVal: number) => {
     const tokenIndex = tokenId % 4
     const playerIndex = Math.floor(tokenId / 4)
-    const token = tokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
+    const token = tokensRef.current.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
     if (!token) return
 
     const startStep = token.step
@@ -736,6 +748,7 @@ export function OnlineGameEngine({
   // Handle Token Click from Board (with Dice Choice Modal detection)
   const handleTokenClick = (tokenId: number) => {
     if (!isMyTurn || isAnimatingMove || isRolling || !hasRolled) return
+    isProcessingTimeoutRef.current = false
 
     if (playableTokenIds.includes(tokenId)) {
       const tokenIndex = tokenId % 4
