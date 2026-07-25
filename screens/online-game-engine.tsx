@@ -348,25 +348,41 @@ export function OnlineGameEngine({
               globalLogger.log('GAME-FLOW', 'Tiempo agotado (Lanzar). Emitiendo intent_roll_dice.')
               handleRollDice()
             } else if (hasRolled) {
-              globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover). Cediendo turno.')
-              const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-              let nextSlot = getNextActiveSlot(activePlayerIndexRef.current, gameData.players.length)
-              
-              if (pendingExtraTurnsRef.current > 0 && !finishedPlayerIndicesRef.current.includes(activePlayerIndexRef.current)) {
-                pendingExtraTurnsRef.current -= 1
-                nextSlot = activePlayerIndexRef.current
-                globalLogger.log('GAME-FLOW', `¡Jugador ${nextSlot} tiene turno extra! Reteniendo el turno por tiempo agotado.`)
+              if (playableTokenIds.length > 0) {
+                globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover). Ejecutando jugada automática aleatoria.')
+                const randomGlobalId = playableTokenIds[Math.floor(Math.random() * playableTokenIds.length)]
+                const tokenIndex = randomGlobalId % 4
+                const playerIndex = Math.floor(randomGlobalId / 4)
+                const token = tokensRef.current.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
+
+                if (token) {
+                  let chosenMove = -1
+                  if (token.step === 0) {
+                    chosenMove = 5
+                  } else {
+                    for (const m of remainingMovesRef.current) {
+                      if (checkMoveValid(token, m)) {
+                        chosenMove = m
+                        break
+                      }
+                    }
+                    if (chosenMove === -1 && remainingMovesRef.current.length === 2 && checkMoveValid(token, remainingMovesRef.current[0] + remainingMovesRef.current[1])) {
+                      chosenMove = remainingMovesRef.current[0] + remainingMovesRef.current[1]
+                    }
+                  }
+
+                  if (chosenMove !== -1) {
+                    executeMoveIntent(randomGlobalId, chosenMove)
+                  } else {
+                    emitEndTurnIfNeeded([])
+                  }
+                } else {
+                  emitEndTurnIfNeeded([])
+                }
               } else {
-                updateBarrierLifetimes()
+                globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover) sin jugadas válidas. Cediendo turno.')
+                emitEndTurnIfNeeded([])
               }
-              
-              const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
-              
-              socket.emit('intent_end_turn', {
-                roomId: gameData.roomId,
-                nextPlayerId: nextColorId,
-                nextTurnId: nextColorId,
-              })
             }
           }
           return 0
