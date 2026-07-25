@@ -4,12 +4,25 @@ import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle } from 'lucide-react'
 import { getSocket } from '@/lib/socket'
 import { useAuth } from '@/lib/auth-context'
-import { GameBoard, START_OFFSETS } from '@/src/components/GameBoard'
+import { GameBoard } from '@/src/components/GameBoard'
 import { GameControls } from '@/src/components/GameControls'
 import { Token, Player, PlayerColor } from '@/src/types'
 import { globalLogger } from '@/lib/logger'
 
 const COLORS_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'orange']
+
+// --- NATIVE 0-INDEXED MULTI-BOARD MATH HELPERS ---
+const getTrackSteps = (pCount: number): number => pCount === 6 ? 77 : 51
+const getGoalStep = (pCount: number): number => pCount === 6 ? 82 : 56
+const getTotalPerimeter = (pCount: number): number => pCount === 6 ? 78 : 52
+const getStartOffset = (color: PlayerColor, pCount: number): number => {
+  if (pCount === 6) {
+    const offsets6: Record<PlayerColor, number> = { blue: 1, green: 14, red: 27, yellow: 40, purple: 53, orange: 66 }
+    return offsets6[color] || 0
+  }
+  const offsets4: Record<PlayerColor, number> = { blue: 1, green: 14, red: 27, yellow: 40, purple: 0, orange: 0 }
+  return offsets4[color] || 0
+}
 
 export interface OnlineGameData {
   id?: string
@@ -65,7 +78,7 @@ export function OnlineGameEngine({
         id: tId,
         playerId: p.id,
         color: p.color,
-        step: 0, // Base
+        step: -1, // NATIVE Base = -1
       })
     }
   })
@@ -123,17 +136,21 @@ export function OnlineGameEngine({
   const updateBarrierLifetimes = (currentTokens: Token[] = tokensRef.current) => {
     const nextLifetimes: Record<number, number> = { ...barrierLifetimesRef.current }
     const cellCounts: Record<number, number> = {}
+    const pCount = gameData.players.length
+    const trackSteps = getTrackSteps(pCount)
+    const perimeter = getTotalPerimeter(pCount)
+
     currentTokens.forEach((tk) => {
-      if (tk.step > 0 && tk.step <= 51) {
-        const tkIdx = (START_OFFSETS[tk.color] + tk.step - 1) % 52
+      if (tk.step >= 0 && tk.step <= trackSteps) {
+        const tkIdx = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
         cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1
       }
     })
 
     currentTokens.forEach((t) => {
       const globalId = t.playerId * 4 + t.id
-      if (t.step > 0 && t.step <= 51) {
-        const tkIdx = (START_OFFSETS[t.color] + t.step - 1) % 52
+      if (t.step >= 0 && t.step <= trackSteps) {
+        const tkIdx = (getStartOffset(t.color, pCount) + t.step) % perimeter
         if (cellCounts[tkIdx] >= 2) {
           nextLifetimes[globalId] = (nextLifetimes[globalId] || 0) + 1
         } else {
@@ -167,11 +184,15 @@ export function OnlineGameEngine({
 
   // Check if a perimeter cell has 2 or more tokens (forming a barrier/bloqueo)
   const hasBarrierAt = (perimeterIndex: number, currentTokens: Token[] = tokensRef.current): boolean => {
-    if (perimeterIndex < 0 || perimeterIndex > 51) return false
+    const pCount = gameData.players.length
+    const trackSteps = getTrackSteps(pCount)
+    const perimeter = getTotalPerimeter(pCount)
+
+    if (perimeterIndex < 0 || perimeterIndex >= perimeter) return false
     let totalCount = 0
     currentTokens.forEach((tk) => {
-      if (tk.step > 0 && tk.step <= 51) {
-        const tkIdx = (START_OFFSETS[tk.color] + tk.step - 1) % 52
+      if (tk.step >= 0 && tk.step <= trackSteps) {
+        const tkIdx = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
         if (tkIdx === perimeterIndex) {
           totalCount++
         }
@@ -182,22 +203,27 @@ export function OnlineGameEngine({
 
   // Validate if a move is legal for a specific token
   const checkMoveValid = (token: Token, moveVal: number, currentTokens: Token[] = tokensRef.current): boolean => {
-    if (token.step === 0) {
+    const pCount = gameData.players.length
+    const trackSteps = getTrackSteps(pCount)
+    const goalStep = getGoalStep(pCount)
+    const perimeter = getTotalPerimeter(pCount)
+
+    if (token.step === -1) {
       if (moveVal === 5) {
-        const startIdx = START_OFFSETS[token.color]
+        const startIdx = getStartOffset(token.color, pCount)
         return !hasBarrierAt(startIdx, currentTokens)
       }
       return false
-    } else if (token.step > 0 && token.step < 57) {
-      const distanceToGoal = 57 - token.step
+    } else if (token.step >= 0 && token.step < goalStep) {
+      const distanceToGoal = goalStep - token.step
       if (moveVal > distanceToGoal) return false
       
       let blocked = false
       const stepsToCheck = Math.min(moveVal, distanceToGoal)
       for (let stepOffset = 1; stepOffset <= stepsToCheck; stepOffset++) {
         const pathStep = token.step + stepOffset
-        if (pathStep <= 51) {
-          const pIndex = (START_OFFSETS[token.color] + pathStep - 1) % 52
+        if (pathStep <= trackSteps) {
+          const pIndex = (getStartOffset(token.color, pCount) + pathStep) % perimeter
           if (hasBarrierAt(pIndex, currentTokens)) {
             blocked = true
             break
@@ -218,17 +244,21 @@ export function OnlineGameEngine({
     if (moves.length === 0) return []
     const playerTokens = currentTokens.filter((t) => t.playerId === playerIdx)
     const playableIds: number[] = []
+    const pCount = gameData.players.length
+    const trackSteps = getTrackSteps(pCount)
+    const goalStep = getGoalStep(pCount)
+    const perimeter = getTotalPerimeter(pCount)
 
     const forcedTokens = playerTokens
       .filter((t) => {
         const globalId = t.playerId * 4 + t.id
         if ((barrierLifetimesRef.current[globalId] || 0) >= 4) {
-          if (t.step > 0 && t.step <= 51) {
-            const tkIdx = (START_OFFSETS[t.color] + t.step - 1) % 52
+          if (t.step >= 0 && t.step <= trackSteps) {
+            const tkIdx = (getStartOffset(t.color, pCount) + t.step) % perimeter
             let totalCount = 0
             currentTokens.forEach((tk) => {
-              if (tk.step > 0 && tk.step <= 51) {
-                const tkIdx2 = (START_OFFSETS[tk.color] + tk.step - 1) % 52
+              if (tk.step >= 0 && tk.step <= trackSteps) {
+                const tkIdx2 = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
                 if (tkIdx2 === tkIdx) totalCount++
               }
             })
@@ -241,16 +271,16 @@ export function OnlineGameEngine({
 
     playerTokens.forEach((token) => {
       const globalId = token.playerId * 4 + token.id
-      if (token.step === 0) {
+      if (token.step === -1) {
         const hasFive = moves.includes(5)
         const hasSumFive = moves.length === 2 && (moves[0] + moves[1] === 5)
         if (hasFive || hasSumFive) {
-          const startIdx = START_OFFSETS[token.color]
+          const startIdx = getStartOffset(token.color, pCount)
           if (!hasBarrierAt(startIdx, currentTokens)) {
             playableIds.push(globalId)
           }
         }
-      } else if (token.step > 0 && token.step < 57) {
+      } else if (token.step >= 0 && token.step < goalStep) {
         let canMove = false
         // Check single moves
         for (const m of moves) {
@@ -349,7 +379,7 @@ export function OnlineGameEngine({
 
       if (token) {
         let chosenMove = -1
-        if (token.step === 0) {
+        if (token.step === -1) {
           chosenMove = 5
         } else {
           for (const m of currentMoves) {
@@ -465,28 +495,40 @@ export function OnlineGameEngine({
       const currentToken = tokensRef.current.find(
         (t) => t.playerId === serverPlayerIdx && t.id === tokenIndex
       )
-      const startStep = currentToken ? currentToken.step : 0
+      const startStep = currentToken ? currentToken.step : -1
       const targetStep = data.newPathIndex
+
+      const pCount = gameData.players.length
+      const trackSteps = getTrackSteps(pCount)
+      const goalStep = getGoalStep(pCount)
+      const perimeter = getTotalPerimeter(pCount)
+
+      // Calculate consumed move value strictly like Android (relative animation)
+      let moveValue = 0
+      if (startStep === -1) {
+        moveValue = 5
+      } else {
+        moveValue = targetStep - startStep
+      }
+
+      if (moveValue <= 0) {
+        // Ignora eventos duplicados o ráfagas de red si la ficha ya avanzó
+        globalLogger.log('SOCKET', `Ignorando evento duplicado o no válido (moveValue: ${moveValue})`)
+        return
+      }
 
       setIsAnimatingMove(true)
 
-      // Calculate consumed move value
-      let consumedVal = 0
-      if (startStep === 0 && targetStep === 1) {
-        consumedVal = 5
-      } else if (targetStep > startStep) {
-        consumedVal = targetStep - startStep
-      }
-
       // Step-by-step animation loop (120ms per step)
-      let currentStep = startStep
+      let iteration = 0
       const stepInterval = setInterval(() => {
-        if (currentStep < targetStep) {
-          currentStep += 1
+        iteration += 1
+        if (iteration <= moveValue) {
+          const newStep = startStep === -1 ? 0 + (iteration - 1) : startStep + iteration
           setTokens((prev) =>
             prev.map((t) =>
               t.playerId === serverPlayerIdx && t.id === tokenIndex
-                ? { ...t, step: currentStep }
+                ? { ...t, step: newStep }
                 : t
             )
           )
@@ -495,11 +537,11 @@ export function OnlineGameEngine({
 
           // Animation finished: apply landing rules (captures & goals)
           let updatedMoves = [...remainingMovesRef.current]
-          if (consumedVal > 0) {
-            const idx = updatedMoves.indexOf(consumedVal)
+          if (moveValue > 0) {
+            const idx = updatedMoves.indexOf(moveValue)
             if (idx !== -1) {
               updatedMoves.splice(idx, 1)
-            } else if (updatedMoves.reduce((a, b) => a + b, 0) === consumedVal) {
+            } else if (updatedMoves.reduce((a, b) => a + b, 0) === moveValue) {
               updatedMoves = []
             } else if (updatedMoves.length > 0) {
               updatedMoves.shift()
@@ -510,21 +552,22 @@ export function OnlineGameEngine({
           let capturedOpponents: { playerId: number; id: number }[] = []
 
           // Goal Check
-          if (targetStep === 57) {
+          if (targetStep === goalStep) {
             showToast('🎉 ¡Ficha en la meta! +10 pasos de bono')
             bonusSteps += 10
           }
 
           // Capture Check (Perimeter cells)
-          if (targetStep >= 1 && targetStep <= 51 && currentToken) {
-            const pIndex = (START_OFFSETS[currentToken.color] + targetStep - 1) % 52
-            const isStartCell = [1, 14, 27, 40].includes(pIndex)
-            const isGoldStar = [8, 21, 34, 47].includes(pIndex)
+          if (targetStep >= 0 && targetStep <= trackSteps && currentToken) {
+            const pIndex = (getStartOffset(currentToken.color, pCount) + targetStep) % perimeter
+            const isStartCell = [1, 14, 27, 40, 53, 66].includes(pIndex)
+            const isGoldStar = [8, 21, 34, 47, 60, 73].includes(pIndex)
 
             if (!isStartCell && !isGoldStar) {
               const opponents = tokensRef.current.filter((t) => {
-                if (t.playerId === serverPlayerIdx || t.step === 0 || t.step === 57) return false
-                const oppPIndex = (START_OFFSETS[t.color] + t.step - 1) % 52
+                if (t.playerId === serverPlayerIdx || t.step === -1 || t.step === goalStep) return false
+                if (t.step < 0 || t.step > trackSteps) return false
+                const oppPIndex = (getStartOffset(t.color, pCount) + t.step) % perimeter
                 return oppPIndex === pIndex
               })
 
@@ -542,7 +585,7 @@ export function OnlineGameEngine({
               return { ...t, step: targetStep }
             }
             if (capturedOpponents.some((o) => o.playerId === t.playerId && o.id === t.id)) {
-              return { ...t, step: 0 }
+              return { ...t, step: -1 }
             }
             return t
           })
@@ -556,8 +599,8 @@ export function OnlineGameEngine({
           setIsAnimatingMove(false)
 
           // Check for Player Win / Completion
-          if (targetStep === 57) {
-            const playerGoalTokens = finalTokens.filter((t) => t.playerId === serverPlayerIdx && t.step === 57)
+          if (targetStep === goalStep) {
+            const playerGoalTokens = finalTokens.filter((t) => t.playerId === serverPlayerIdx && t.step === goalStep)
             if (playerGoalTokens.length === 4 && !finishedPlayerIndicesRef.current.includes(serverPlayerIdx)) {
               finishedPlayerIndicesRef.current.push(serverPlayerIdx)
               const finishedPlayer = formattedPlayers[serverPlayerIdx]
@@ -665,10 +708,13 @@ export function OnlineGameEngine({
 
     const startStep = token.step
     let targetStep = startStep + moveVal
-    if (startStep === 0) {
-      targetStep = 1
-    } else if (targetStep > 57) {
-      targetStep = 57
+    const pCount = gameData.players.length
+    const goalStep = getGoalStep(pCount)
+
+    if (startStep === -1) {
+      targetStep = 0
+    } else if (targetStep > goalStep) {
+      targetStep = goalStep
     }
 
     globalLogger.log('TOKENS', `Ejecutando movimiento: Ficha ${tokenIndex} hacia step ${targetStep} con valor ${moveVal}`)
@@ -693,7 +739,7 @@ export function OnlineGameEngine({
       const token = tokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
       if (!token) return
 
-      if (token.step === 0) {
+      if (token.step === -1) {
         // Base exit
         if (remainingMoves.includes(5)) {
           executeMoveIntent(tokenId, 5)

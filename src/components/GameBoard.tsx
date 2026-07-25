@@ -179,11 +179,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
   // Compute visual coordinates for all tokens, resolving overlaps on the same cell
   const getTokenVisualCoord = (token: Token): { x: number; y: number } => {
-    if (token.step === 0) {
+    if (token.step === -1) {
       return getBaseSlotCoord(token.color, token.id);
     }
 
-    if (token.step === 57) {
+    if (token.step >= 56) {
       // Offset slightly inside goal triangles
       let baseX = 375;
       let baseY = 375;
@@ -205,7 +205,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
     // Find all tokens currently sharing this same grid position (excluding those in base or goal)
     const activeTokensOnCell = tokens.filter((t) => {
-      if (t.step === 0 || t.step === 57) return false;
+      if (t.step === -1 || t.step >= 56) return false;
       const otherCoord = getCellCoord(t.color, t.step);
       return otherCoord.row === gridCoord.row && otherCoord.col === gridCoord.col;
     });
