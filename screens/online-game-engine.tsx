@@ -332,6 +332,48 @@ export function OnlineGameEngine({
     }
   }
 
+  // Execute a random valid move for timeout / auto-play
+  const executeRandomValidMove = (
+    currentMoves: number[] = remainingMovesRef.current,
+    currentTokens: Token[] = tokensRef.current
+  ) => {
+    const activeIdx = activePlayerIndexRef.current
+    const playables = getPlayableTokenIds(activeIdx, currentMoves, currentTokens)
+
+    if (playables.length > 0) {
+      globalLogger.log('GAME-FLOW', 'Inactividad/Timeout: Ejecutando jugada automática aleatoria.')
+      const randomGlobalId = playables[Math.floor(Math.random() * playables.length)]
+      const tokenIndex = randomGlobalId % 4
+      const playerIndex = Math.floor(randomGlobalId / 4)
+      const token = currentTokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
+
+      if (token) {
+        let chosenMove = -1
+        if (token.step === 0) {
+          chosenMove = 5
+        } else {
+          for (const m of currentMoves) {
+            if (checkMoveValid(token, m, currentTokens)) {
+              chosenMove = m
+              break
+            }
+          }
+          if (chosenMove === -1 && currentMoves.length === 2 && checkMoveValid(token, currentMoves[0] + currentMoves[1], currentTokens)) {
+            chosenMove = currentMoves[0] + currentMoves[1]
+          }
+        }
+
+        if (chosenMove !== -1) {
+          executeMoveIntent(randomGlobalId, chosenMove)
+          return
+        }
+      }
+    }
+
+    globalLogger.log('GAME-FLOW', 'Inactividad: Sin jugadas válidas posibles. Cediendo turno.')
+    emitEndTurnIfNeeded([], currentTokens)
+  }
+
   // ---------------------------------------------------------------------------
   // Robust Single-Timer Effect (Prevents duplicate timeouts)
   // ---------------------------------------------------------------------------
@@ -348,41 +390,7 @@ export function OnlineGameEngine({
               globalLogger.log('GAME-FLOW', 'Tiempo agotado (Lanzar). Emitiendo intent_roll_dice.')
               handleRollDice()
             } else if (hasRolled) {
-              if (playableTokenIds.length > 0) {
-                globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover). Ejecutando jugada automática aleatoria.')
-                const randomGlobalId = playableTokenIds[Math.floor(Math.random() * playableTokenIds.length)]
-                const tokenIndex = randomGlobalId % 4
-                const playerIndex = Math.floor(randomGlobalId / 4)
-                const token = tokensRef.current.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
-
-                if (token) {
-                  let chosenMove = -1
-                  if (token.step === 0) {
-                    chosenMove = 5
-                  } else {
-                    for (const m of remainingMovesRef.current) {
-                      if (checkMoveValid(token, m)) {
-                        chosenMove = m
-                        break
-                      }
-                    }
-                    if (chosenMove === -1 && remainingMovesRef.current.length === 2 && checkMoveValid(token, remainingMovesRef.current[0] + remainingMovesRef.current[1])) {
-                      chosenMove = remainingMovesRef.current[0] + remainingMovesRef.current[1]
-                    }
-                  }
-
-                  if (chosenMove !== -1) {
-                    executeMoveIntent(randomGlobalId, chosenMove)
-                  } else {
-                    emitEndTurnIfNeeded([])
-                  }
-                } else {
-                  emitEndTurnIfNeeded([])
-                }
-              } else {
-                globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover) sin jugadas válidas. Cediendo turno.')
-                emitEndTurnIfNeeded([])
-              }
+              executeRandomValidMove()
             }
           }
           return 0
@@ -437,6 +445,13 @@ export function OnlineGameEngine({
         setRemainingMoves([...vals])
         setHasRolled(true)
         globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
+
+        // If timeout auto-roll was triggered, chain auto-move
+        if (isMyTurnRef.current && isProcessingTimeoutRef.current) {
+          setTimeout(() => {
+            executeRandomValidMove([...vals], tokensRef.current)
+          }, 500)
+        }
       }, 500)
     }
 
@@ -565,9 +580,17 @@ export function OnlineGameEngine({
             }
           }
 
-          // Check if turn should advance
+          // Check if turn should advance or continue auto-play
           if (isMyTurnRef.current) {
-            emitEndTurnIfNeeded(updatedMoves, finalTokens)
+            const playables = getPlayableTokenIds(activePlayerIndexRef.current, updatedMoves, finalTokens)
+            if (updatedMoves.length === 0 || playables.length === 0) {
+              emitEndTurnIfNeeded(updatedMoves, finalTokens)
+            } else if (isProcessingTimeoutRef.current) {
+              // Auto-play next move recursively with 500ms visual delay
+              setTimeout(() => {
+                executeRandomValidMove(updatedMoves, finalTokens)
+              }, 500)
+            }
           }
         }
       }, 240)
