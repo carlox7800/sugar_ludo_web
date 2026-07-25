@@ -825,21 +825,24 @@ export function OnlineGameEngine({
       )}
 
       {/* Visual Game Board & Controls */}
-      <div className="flex flex-1 flex-col items-center justify-center gap-6">
-        <div className="relative w-full max-w-2xl aspect-square glass rounded-3xl p-4 flex items-center justify-center">
-          <GameBoard
-            tokens={tokens}
-            currentTurn={activePlayerIndex}
-            playableTokenIds={playableTokenIds}
-            onTokenClick={handleTokenClick}
-            humanPlayerId={activePlayerIndex}
-            appTheme="dark"
-            isZeroIndexed={true}
-          />
+      <main className="w-full max-w-7xl mx-auto flex flex-1 flex-col lg:flex-row items-center lg:items-start justify-center gap-6">
+        {/* Left Column: Game Board */}
+        <div className="w-full lg:w-3/5 flex flex-col items-center justify-center">
+          <div className="relative w-full max-w-2xl aspect-square glass rounded-3xl p-4 flex items-center justify-center">
+            <GameBoard
+              tokens={tokens}
+              currentTurn={activePlayerIndex}
+              playableTokenIds={playableTokenIds}
+              onTokenClick={handleTokenClick}
+              humanPlayerId={activePlayerIndex}
+              appTheme="dark"
+              isZeroIndexed={true}
+            />
+          </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="w-full max-w-md">
+        {/* Right Column: Action Controls */}
+        <div className="w-full lg:w-2/5 max-w-md flex flex-col gap-4 shrink-0">
           <GameControls
             isPlaying={true}
             onStartGame={() => {}}
@@ -857,7 +860,7 @@ export function OnlineGameEngine({
             appTheme="dark"
           />
         </div>
-      </div>
+      </main>
 
       {/* Exit Modal */}
       {isExitModalOpen && (
