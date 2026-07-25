@@ -115,6 +115,7 @@ export function OnlineGameEngine({
   activePlayerIndexRef.current = activePlayerIndex
 
   const isProcessingTimeoutRef = useRef(false)
+  const pendingExtraTurnsRef = useRef<number>(0)
 
   const showToast = (msg: string) => {
     setNotification(msg)
@@ -219,6 +220,22 @@ export function OnlineGameEngine({
     ? getPlayableTokenIds(activePlayerIndex, remainingMoves, tokens)
     : []
 
+  // Auto-pass turn if no playable moves exist after rolling
+  useEffect(() => {
+    if (isMyTurn && hasRolled && !isRolling && !isAnimatingMove) {
+      if (playableTokenIds.length === 0 && remainingMoves.length > 0) {
+        const timeout = setTimeout(() => {
+          if (!isProcessingTimeoutRef.current) {
+            isProcessingTimeoutRef.current = true
+            globalLogger.log('GAME-FLOW', 'No hay movimientos válidos tras lanzar dados. Cediendo turno automático.')
+            emitEndTurnIfNeeded([])
+          }
+        }, 1200)
+        return () => clearTimeout(timeout)
+      }
+    }
+  }, [isMyTurn, hasRolled, isRolling, isAnimatingMove, playableTokenIds.length, remainingMoves.length])
+
   // Helper to emit turn end when no valid moves remain
   const emitEndTurnIfNeeded = (nextMoves: number[], currentTokens: Token[] = tokensRef.current) => {
     const activeIdx = activePlayerIndexRef.current
@@ -226,7 +243,14 @@ export function OnlineGameEngine({
 
     if (nextMoves.length === 0 || playables.length === 0) {
       const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-      const nextSlot = (activeIdx + 1) % gameData.players.length
+      let nextSlot = (activeIdx + 1) % gameData.players.length
+
+      if (pendingExtraTurnsRef.current > 0) {
+        pendingExtraTurnsRef.current -= 1
+        nextSlot = activeIdx
+        globalLogger.log('GAME-FLOW', `¡Turno extra! Manteniendo el turno en slot: ${nextSlot}`)
+      }
+
       const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
 
       globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> nextSlot: ${nextSlot}`)
@@ -256,7 +280,14 @@ export function OnlineGameEngine({
             } else if (hasRolled) {
               globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover). Cediendo turno.')
               const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-              const nextSlot = (activePlayerIndexRef.current + 1) % gameData.players.length
+              let nextSlot = (activePlayerIndexRef.current + 1) % gameData.players.length
+              
+              if (pendingExtraTurnsRef.current > 0) {
+                pendingExtraTurnsRef.current -= 1
+                nextSlot = activePlayerIndexRef.current
+                globalLogger.log('GAME-FLOW', `¡Jugador ${nextSlot} tiene turno extra! Reteniendo el turno por tiempo agotado.`)
+              }
+              
               const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
               
               socket.emit('intent_end_turn', {
@@ -305,6 +336,12 @@ export function OnlineGameEngine({
       ]
 
       globalLogger.log('SOCKET', 'Recibido event_dice_result', { playerId: data.playerId, vals })
+      
+      // Track extra turn for doubles
+      if (vals[0] === vals[1]) {
+        pendingExtraTurnsRef.current += 1
+      }
+
       setIsRolling(true)
       setTimeout(() => {
         setIsRolling(false)
@@ -420,7 +457,7 @@ export function OnlineGameEngine({
             emitEndTurnIfNeeded(updatedMoves, finalTokens)
           }
         }
-      }, startStep === 0 ? 50 : 120)
+      }, 240)
     }
 
     // Disconnection / Reconnection / GameOver Events
