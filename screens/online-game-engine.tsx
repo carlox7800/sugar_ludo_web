@@ -116,6 +116,45 @@ export function OnlineGameEngine({
 
   const isProcessingTimeoutRef = useRef(false)
   const pendingExtraTurnsRef = useRef<number>(0)
+  const barrierLifetimesRef = useRef<Record<number, number>>({})
+  const finishedPlayerIndicesRef = useRef<number[]>([])
+  const [rankings, setRankings] = useState<Player[]>([])
+
+  const updateBarrierLifetimes = (currentTokens: Token[] = tokensRef.current) => {
+    const nextLifetimes: Record<number, number> = { ...barrierLifetimesRef.current }
+    const cellCounts: Record<number, number> = {}
+    currentTokens.forEach((tk) => {
+      if (tk.step > 0 && tk.step <= 51) {
+        const tkIdx = (START_OFFSETS[tk.color] + tk.step - 1) % 52
+        cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1
+      }
+    })
+
+    currentTokens.forEach((t) => {
+      const globalId = t.playerId * 4 + t.id
+      if (t.step > 0 && t.step <= 51) {
+        const tkIdx = (START_OFFSETS[t.color] + t.step - 1) % 52
+        if (cellCounts[tkIdx] >= 2) {
+          nextLifetimes[globalId] = (nextLifetimes[globalId] || 0) + 1
+        } else {
+          nextLifetimes[globalId] = 0
+        }
+      } else {
+        nextLifetimes[globalId] = 0
+      }
+    })
+    barrierLifetimesRef.current = nextLifetimes
+  }
+
+  const getNextActiveSlot = (currentSlot: number, totalPlayers: number): number => {
+    let next = (currentSlot + 1) % totalPlayers
+    let attempts = 0
+    while (finishedPlayerIndicesRef.current.includes(next) && attempts < totalPlayers) {
+      next = (next + 1) % totalPlayers
+      attempts++
+    }
+    return next
+  }
 
   const showToast = (msg: string) => {
     setNotification(msg)
@@ -180,6 +219,26 @@ export function OnlineGameEngine({
     const playerTokens = currentTokens.filter((t) => t.playerId === playerIdx)
     const playableIds: number[] = []
 
+    const forcedTokens = playerTokens
+      .filter((t) => {
+        const globalId = t.playerId * 4 + t.id
+        if ((barrierLifetimesRef.current[globalId] || 0) >= 4) {
+          if (t.step > 0 && t.step <= 51) {
+            const tkIdx = (START_OFFSETS[t.color] + t.step - 1) % 52
+            let totalCount = 0
+            currentTokens.forEach((tk) => {
+              if (tk.step > 0 && tk.step <= 51) {
+                const tkIdx2 = (START_OFFSETS[tk.color] + tk.step - 1) % 52
+                if (tkIdx2 === tkIdx) totalCount++
+              }
+            })
+            return totalCount >= 2
+          }
+        }
+        return false
+      })
+      .map((t) => t.playerId * 4 + t.id)
+
     playerTokens.forEach((token) => {
       const globalId = token.playerId * 4 + token.id
       if (token.step === 0) {
@@ -212,6 +271,15 @@ export function OnlineGameEngine({
       }
     })
 
+    if (forcedTokens.length > 0) {
+      const playableForced = playableIds.filter((id) => forcedTokens.includes(id))
+      if (playableForced.length > 0) {
+        globalLogger.log('GAME-FLOW', `¡Ficha(s) forzada(s) por barrera de 4 turnos!: ${playableForced.join(', ')}`)
+        return playableForced
+      }
+      return []
+    }
+
     return playableIds
   }
 
@@ -243,12 +311,14 @@ export function OnlineGameEngine({
 
     if (nextMoves.length === 0 || playables.length === 0) {
       const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-      let nextSlot = (activeIdx + 1) % gameData.players.length
+      let nextSlot = getNextActiveSlot(activeIdx, gameData.players.length)
 
-      if (pendingExtraTurnsRef.current > 0) {
+      if (pendingExtraTurnsRef.current > 0 && !finishedPlayerIndicesRef.current.includes(activeIdx)) {
         pendingExtraTurnsRef.current -= 1
         nextSlot = activeIdx
         globalLogger.log('GAME-FLOW', `¡Turno extra! Manteniendo el turno en slot: ${nextSlot}`)
+      } else {
+        updateBarrierLifetimes(currentTokens)
       }
 
       const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
@@ -280,12 +350,14 @@ export function OnlineGameEngine({
             } else if (hasRolled) {
               globalLogger.log('GAME-FLOW', 'Tiempo agotado (Mover). Cediendo turno.')
               const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-              let nextSlot = (activePlayerIndexRef.current + 1) % gameData.players.length
+              let nextSlot = getNextActiveSlot(activePlayerIndexRef.current, gameData.players.length)
               
-              if (pendingExtraTurnsRef.current > 0) {
+              if (pendingExtraTurnsRef.current > 0 && !finishedPlayerIndicesRef.current.includes(activePlayerIndexRef.current)) {
                 pendingExtraTurnsRef.current -= 1
                 nextSlot = activePlayerIndexRef.current
                 globalLogger.log('GAME-FLOW', `¡Jugador ${nextSlot} tiene turno extra! Reteniendo el turno por tiempo agotado.`)
+              } else {
+                updateBarrierLifetimes()
               }
               
               const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
@@ -451,6 +523,31 @@ export function OnlineGameEngine({
           setTokens(finalTokens)
           setRemainingMoves(updatedMoves)
           setIsAnimatingMove(false)
+
+          // Check for Player Win / Completion
+          if (targetStep === 57) {
+            const playerGoalTokens = finalTokens.filter((t) => t.playerId === serverPlayerIdx && t.step === 57)
+            if (playerGoalTokens.length === 4 && !finishedPlayerIndicesRef.current.includes(serverPlayerIdx)) {
+              finishedPlayerIndicesRef.current.push(serverPlayerIdx)
+              const finishedPlayer = formattedPlayers[serverPlayerIdx]
+              setRankings((prev) => [...prev, finishedPlayer])
+              showToast(`🏆 ¡${finishedPlayer.name} completó todas sus fichas!`)
+
+              const totalPlayers = gameData.players.length
+              const finishedCount = finishedPlayerIndicesRef.current.length
+
+              const isGameOver =
+                (totalPlayers <= 3 && finishedCount >= 1) ||
+                (totalPlayers >= 4 && finishedCount >= 3) ||
+                (finishedCount >= totalPlayers - 1)
+
+              if (isGameOver) {
+                setWinnerPlayer(finishedPlayer)
+                globalLogger.log('GAME-FLOW', `¡Partida finalizada! Ganadores: ${finishedPlayer.name}`)
+                return
+              }
+            }
+          }
 
           // Check if turn should advance
           if (isMyTurnRef.current) {
