@@ -378,7 +378,9 @@ export function OnlineGameEngine({
     currentMoves: number[] = remainingMovesRef.current,
     currentTokens: Token[] = tokensRef.current
   ) => {
-    if (isAnimatingMove) return
+    if (isAnimatingMoveRef.current) return
+    if (!isProcessingTimeoutRef.current) return // Abort if user took back control
+    
     const activeIdx = activePlayerIndexRef.current
     const playables = getPlayableTokenIds(activeIdx, currentMoves, currentTokens)
 
@@ -827,7 +829,7 @@ export function OnlineGameEngine({
 
   // Handle Token Click from Board (with Dice Choice Modal detection)
   const handleTokenClick = (tokenId: number) => {
-    if (!isMyTurn || isAnimatingMove || isRolling || !hasRolled) return
+    if (!isMyTurnRef.current || isAnimatingMoveRef.current || isRollingRef.current || !hasRolled) return
     isProcessingTimeoutRef.current = false
 
     if (playableTokenIds.includes(tokenId)) {
