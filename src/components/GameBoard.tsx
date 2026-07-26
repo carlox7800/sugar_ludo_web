@@ -232,7 +232,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   };
 
   // Helper to render star path (large/centered or small)
-  const renderStarPath = (cx: number, cy: number, r: number, color: string) => {
+  const renderStarPath = (cx: number, cy: number, r: number, color: string, strokeColor?: string) => {
     const points = [];
     for (let i = 0; i < 5; i++) {
       const angleOuter = (i * 2 * Math.PI) / 5 - Math.PI / 2;
@@ -240,7 +240,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       points.push(`${cx + r * Math.cos(angleOuter)},${cy + r * Math.sin(angleOuter)}`);
       points.push(`${cx + (r / 2) * Math.cos(angleInner)},${cy + (r / 2) * Math.sin(angleInner)}`);
     }
-    return <polygon points={points.join(' ')} fill={color} stroke="none" />;
+    return <polygon points={points.join(' ')} fill={color} stroke={strokeColor || "none"} strokeWidth={strokeColor ? "2" : "0"} />;
   };
 
   return (
@@ -304,9 +304,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 strokeWidth="1.5"
               />
               {/* If it's a starting cell, render a big white star */}
-              {startColor && renderStarPath(x + 25, y + 25, 14, '#ef4444')}
+              {startColor && renderStarPath(x + 25, y + 25, 22, '#ffffff', '#dc2626')}
               {/* If it's a regular safe cell (not starting), render a golden star */}
-              {!startColor && isSafe && renderStarPath(x + 25, y + 25, 12, '#ef4444')}
+              {!startColor && isSafe && renderStarPath(x + 25, y + 25, 22, '#f59e0b', '#b45309')}
 
               {/* Number for the cell (rendered on top) */}
               <text x={x + 25} y={y + 26} fill={startColor ? "#ffffff" : isSafe ? "#ca8a04" : "#94a3b8"} fontSize="14" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" opacity={startColor ? 1 : isSafe ? 0.9 : 0.6}>

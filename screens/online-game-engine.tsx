@@ -896,10 +896,10 @@ export function OnlineGameEngine({
         </div>
       </div>
 
-      {/* Toast Banner */}
+      {/* Toast Banner (Floating Overlay - Zero Layout Shift) */}
       {notification && (
-        <div className="animate-in fade-in slide-in-from-top-2 mx-auto flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/15 px-5 py-3 text-[var(--candy-cyan)] font-display text-sm font-bold shadow-lg">
-          <Sparkles className="size-4" />
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/90 backdrop-blur-md px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-extrabold shadow-[0_8px_32px_rgba(0,0,0,0.6)] pointer-events-none">
+          <Sparkles className="size-4 text-[var(--candy-cyan)]" />
           <span>{notification}</span>
         </div>
       )}
