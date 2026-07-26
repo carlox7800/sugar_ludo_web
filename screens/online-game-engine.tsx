@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle } from 'lucide-react'
 import { getSocket } from '@/lib/socket'
 import { useAuth } from '@/lib/auth-context'
@@ -51,16 +51,18 @@ export function OnlineGameEngine({
   const myPlayerId = gameData.myPlayerId || user?.uid || socket.id
 
   // Map server players to GameBoard Player interface
-  const formattedPlayers: Player[] = (gameData.players || []).map((p, idx) => {
-    const isMe = p.playerId === myPlayerId || p.socketId === socket.id
-    return {
-      id: idx,
-      name: isMe ? `${p.playerName || p.name || 'Tú'} (Tú)` : (p.playerName || p.name || `Jugador ${idx + 1}`),
-      color: COLORS_ORDER[idx] || 'yellow',
-      type: isMe ? 'human' : (p.isBot ? 'bot' : 'human'),
-      isActive: true,
-    }
-  })
+  const formattedPlayers: Player[] = useMemo(() => {
+    return (gameData.players || []).map((p, idx) => {
+      const isMe = p.playerId === myPlayerId || p.socketId === socket.id
+      return {
+        id: idx,
+        name: isMe ? `${p.playerName || p.name || 'Tú'} (Tú)` : (p.playerName || p.name || `Jugador ${idx + 1}`),
+        color: COLORS_ORDER[idx] || 'yellow',
+        type: isMe ? 'human' : (p.isBot ? 'bot' : 'human'),
+        isActive: p.isConnected !== false,
+      }
+    })
+  }, [gameData.players, myPlayerId, socket.id])
 
   const defaultPlayer: Player = {
     id: 0,
@@ -304,7 +306,6 @@ export function OnlineGameEngine({
     if (forcedTokens.length > 0) {
       const playableForced = playableIds.filter((id) => forcedTokens.includes(id))
       if (playableForced.length > 0) {
-        globalLogger.log('GAME-FLOW', `¡Ficha(s) forzada(s) por barrera de 4 turnos!: ${playableForced.join(', ')}`)
         return playableForced
       }
       return []
@@ -353,6 +354,7 @@ export function OnlineGameEngine({
 
       const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
 
+      isProcessingTimeoutRef.current = false
       globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> nextSlot: ${nextSlot}`)
       socket.emit('intent_end_turn', {
         roomId: gameData.roomId,
@@ -367,6 +369,7 @@ export function OnlineGameEngine({
     currentMoves: number[] = remainingMovesRef.current,
     currentTokens: Token[] = tokensRef.current
   ) => {
+    if (isAnimatingMove) return
     const activeIdx = activePlayerIndexRef.current
     const playables = getPlayableTokenIds(activeIdx, currentMoves, currentTokens)
 
@@ -451,6 +454,7 @@ export function OnlineGameEngine({
       setIsAnimatingMove(false)
       setMoveSelectorTokenId(null)
       isProcessingTimeoutRef.current = false
+      pendingExtraTurnsRef.current = 0
     }
 
     // 2. Dice Result
@@ -462,9 +466,11 @@ export function OnlineGameEngine({
 
       globalLogger.log('SOCKET', 'Recibido event_dice_result', { playerId: data.playerId, vals })
       
-      // Track extra turn for doubles
+      // Track extra turn strictly for doubles
       if (vals[0] === vals[1]) {
-        pendingExtraTurnsRef.current += 1
+        pendingExtraTurnsRef.current = 1
+      } else {
+        pendingExtraTurnsRef.current = 0
       }
 
       setIsRolling(true)
