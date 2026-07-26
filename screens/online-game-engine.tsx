@@ -8,6 +8,7 @@ import { GameBoard } from '@/src/components/GameBoard'
 import { GameControls } from '@/src/components/GameControls'
 import { Token, Player, PlayerColor } from '@/src/types'
 import { globalLogger } from '@/lib/logger'
+import { audio } from '@/src/audio'
 
 const COLORS_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'orange']
 
@@ -131,6 +132,8 @@ export function OnlineGameEngine({
 
   const isProcessingTimeoutRef = useRef(false)
   const pendingExtraTurnsRef = useRef<number>(0)
+  const consecutiveDoublesCountRef = useRef<number>(0)
+  const lastMovedTokenGlobalIdRef = useRef<number | null>(null)
   const barrierLifetimesRef = useRef<Record<number, number>>({})
   const finishedPlayerIndicesRef = useRef<number[]>([])
   const [rankings, setRankings] = useState<Player[]>([])
@@ -445,6 +448,11 @@ export function OnlineGameEngine({
       const activeId = data.playerId || data.activePlayerId || ''
       globalLogger.log('SOCKET', 'Recibido event_turn_started', { activeId })
       
+      if (activeId !== currentTurnPlayerId) {
+        consecutiveDoublesCountRef.current = 0
+        lastMovedTokenGlobalIdRef.current = null
+      }
+
       setCurrentTurnPlayerId(activeId)
       setTurnTimer(10)
       setHasRolled(false)
@@ -466,21 +474,52 @@ export function OnlineGameEngine({
 
       globalLogger.log('SOCKET', 'Recibido event_dice_result', { playerId: data.playerId, vals })
       
-      // Track extra turn strictly for doubles
+      // Track extra turn strictly for doubles & 3rd double penalty
+      let isPenalty = false
       if (vals[0] === vals[1]) {
-        pendingExtraTurnsRef.current = 1
+        consecutiveDoublesCountRef.current += 1
+        if (consecutiveDoublesCountRef.current >= 3) {
+          isPenalty = true
+          pendingExtraTurnsRef.current = 0
+          consecutiveDoublesCountRef.current = 0
+          showToast('🚫 Penalización por tres dobles consecutivos')
+          globalLogger.log('GAME-FLOW', '¡Penalización por 3 dobles consecutivos!')
+        } else {
+          pendingExtraTurnsRef.current = 1
+        }
       } else {
         pendingExtraTurnsRef.current = 0
+        consecutiveDoublesCountRef.current = 0
       }
 
       setIsRolling(true)
       setTimeout(() => {
         setIsRolling(false)
         setDiceValues(vals)
-        setRemainingMoves([...vals])
+        setRemainingMoves(isPenalty ? [] : [...vals])
         setHasRolled(true)
         setTurnTimer(10)
         globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
+
+        if (isPenalty) {
+          if (isMyTurnRef.current) {
+            const lastTokenId = lastMovedTokenGlobalIdRef.current
+            if (lastTokenId !== null) {
+              const tkIndex = lastTokenId % 4
+              globalLogger.log('GAME-FLOW', `Enviando última ficha (id: ${tkIndex}) a la base por penalización 3er doble.`)
+              socket.emit('intent_move_token', {
+                roomId: gameData.roomId,
+                playerId: myPlayerId,
+                tokenId: tkIndex,
+                newPathIndex: -1,
+                isBotMove: false,
+              })
+            } else {
+              emitEndTurnIfNeeded([])
+            }
+          }
+          return
+        }
 
         // If timeout auto-roll was triggered, chain auto-move
         if (isMyTurnRef.current && isProcessingTimeoutRef.current) {
@@ -503,6 +542,22 @@ export function OnlineGameEngine({
       )
       const startStep = currentToken ? currentToken.step : -1
       const targetStep = data.newPathIndex
+
+      // Intercept Penalty return to base (-1)
+      if (targetStep === -1) {
+        audio.playCapture()
+        setTokens((prev) =>
+          prev.map((t) =>
+            t.playerId === serverPlayerIdx && t.id === tokenIndex
+              ? { ...t, step: -1 }
+              : t
+          )
+        )
+        if (isMyTurnRef.current) {
+          emitEndTurnIfNeeded([])
+        }
+        return
+      }
 
       const pCount = gameData.players.length
       const trackSteps = getTrackSteps(pCount)
@@ -745,6 +800,8 @@ export function OnlineGameEngine({
 
     globalLogger.log('TOKENS', `Ejecutando movimiento: Ficha ${tokenIndex} hacia step ${targetStep} con valor ${moveVal}`)
     globalLogger.log('SOCKET', 'Emitiendo intent_move_token', { tokenId: tokenIndex, newPathIndex: targetStep })
+
+    lastMovedTokenGlobalIdRef.current = playerIndex * 4 + tokenIndex
 
     socket.emit('intent_move_token', {
       roomId: gameData.roomId,
