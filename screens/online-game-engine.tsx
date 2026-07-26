@@ -479,6 +479,7 @@ export function OnlineGameEngine({
         setDiceValues(vals)
         setRemainingMoves([...vals])
         setHasRolled(true)
+        setTurnTimer(10)
         globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
 
         // If timeout auto-roll was triggered, chain auto-move
@@ -650,11 +651,14 @@ export function OnlineGameEngine({
             const playables = getPlayableTokenIds(activePlayerIndexRef.current, updatedMoves, finalTokens)
             if (updatedMoves.length === 0 || playables.length === 0) {
               emitEndTurnIfNeeded(updatedMoves, finalTokens)
-            } else if (isProcessingTimeoutRef.current) {
-              // Auto-play next move recursively with 500ms visual delay
-              setTimeout(() => {
-                executeRandomValidMove(updatedMoves, finalTokens)
-              }, 500)
+            } else {
+              setTurnTimer(10)
+              if (isProcessingTimeoutRef.current) {
+                // Auto-play next move recursively with 500ms visual delay
+                setTimeout(() => {
+                  executeRandomValidMove(updatedMoves, finalTokens)
+                }, 500)
+              }
             }
           }
         }
