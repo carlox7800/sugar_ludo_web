@@ -130,6 +130,12 @@ export function OnlineGameEngine({
   const activePlayerIndexRef = useRef(activePlayerIndex)
   activePlayerIndexRef.current = activePlayerIndex
 
+  const isAnimatingMoveRef = useRef(isAnimatingMove)
+  isAnimatingMoveRef.current = isAnimatingMove
+
+  const isRollingRef = useRef(isRolling)
+  isRollingRef.current = isRolling
+
   const isProcessingTimeoutRef = useRef(false)
   const pendingExtraTurnsRef = useRef<number>(0)
   const consecutiveDoublesCountRef = useRef<number>(0)
@@ -418,10 +424,13 @@ export function OnlineGameEngine({
 
     const interval = setInterval(() => {
       setTurnTimer((prev) => {
+        // Freeze timer during animations or while rolling dice
+        if (isAnimatingMoveRef.current || isRollingRef.current) return prev
+
         if (prev <= 1) {
           if (isMyTurnRef.current && !isProcessingTimeoutRef.current) {
             isProcessingTimeoutRef.current = true
-            if (!hasRolled && !isRolling) {
+            if (!hasRolled && !isRollingRef.current) {
               globalLogger.log('GAME-FLOW', 'Tiempo agotado (Lanzar). Emitiendo intent_roll_dice.')
               handleRollDice()
             } else if (hasRolled) {
@@ -500,6 +509,10 @@ export function OnlineGameEngine({
         setHasRolled(true)
         setTurnTimer(10)
         globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
+
+        if (!isPenalty && vals[0] === vals[1]) {
+          showToast('🎲 ¡Turno Extra por Doble!')
+        }
 
         if (isPenalty) {
           if (isMyTurnRef.current) {
