@@ -1,15 +1,92 @@
 class LudoAudio {
   private ctx: AudioContext | null = null;
+  
+  // Master Gains
+  private musicMasterGain: GainNode | null = null;
+  private sfxMasterGain: GainNode | null = null;
+  
+  // Background Music HTML5 Audio & Media Source (Anti-IDM Interception)
+  private bgmAudioElement: HTMLAudioElement | null = null;
+  private bgmMediaSource: MediaElementAudioSourceNode | null = null;
+  private isBgmPlaying: boolean = false;
+  
+  // State
+  private musicVolume: number = 0.15;
+  private sfxVolume: number = 1.0;
+  private isMuted: boolean = false;
 
   private init() {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
+        
+        // Initialize Master Gains
+        this.musicMasterGain = this.ctx.createGain();
+        this.sfxMasterGain = this.ctx.createGain();
+        
+        this.musicMasterGain.connect(this.ctx.destination);
+        this.sfxMasterGain.connect(this.ctx.destination);
+        
+        this.updateGains();
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
+    }
+  }
+
+  public setVolumes(musicVol: number, sfxVol: number, muted: boolean) {
+    this.musicVolume = musicVol;
+    this.sfxVolume = sfxVol;
+    this.isMuted = muted;
+    this.updateGains();
+  }
+
+  private updateGains() {
+    if (!this.ctx || !this.musicMasterGain || !this.sfxMasterGain) return;
+    
+    const t = this.ctx.currentTime;
+    // Smooth transition
+    this.musicMasterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.musicVolume, t, 0.1);
+    this.sfxMasterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.sfxVolume, t, 0.1);
+  }
+
+  private initBgmElement() {
+    if (!this.bgmAudioElement) {
+      this.bgmAudioElement = new Audio('/tam-lin.mp3');
+      this.bgmAudioElement.loop = true;
+      this.bgmAudioElement.preload = 'auto';
+    }
+    if (this.ctx && this.musicMasterGain && !this.bgmMediaSource && this.bgmAudioElement) {
+      try {
+        this.bgmMediaSource = this.ctx.createMediaElementSource(this.bgmAudioElement);
+        this.bgmMediaSource.connect(this.musicMasterGain);
+      } catch (e) {
+        console.warn("LudoAudio: Failed to create MediaElementSource", e);
+      }
+    }
+  }
+
+  /**
+   * Sound 0: Background Music (Tam Lin)
+   * Plays tam-lin.mp3 via HTML5 Audio element connected to WebAudio MasterGain
+   */
+  public async playBackgroundMusic(isPlaying: boolean) {
+    this.init();
+    this.initBgmElement();
+
+    if (isPlaying && !this.isBgmPlaying && this.bgmAudioElement) {
+      this.isBgmPlaying = true;
+      try {
+        await this.bgmAudioElement.play();
+      } catch (e) {
+        console.warn("LudoAudio: User interaction required or file missing for /tam-lin.mp3", e);
+        this.isBgmPlaying = false;
+      }
+    } else if (!isPlaying && this.isBgmPlaying && this.bgmAudioElement) {
+      this.isBgmPlaying = false;
+      this.bgmAudioElement.pause();
     }
   }
 
@@ -69,7 +146,7 @@ class LudoAudio {
       const masterGain = this.ctx.createGain();
       oscGain.connect(masterGain);
       noiseGain.connect(masterGain);
-      masterGain.connect(this.ctx.destination);
+      if (this.sfxMasterGain) masterGain.connect(this.sfxMasterGain);
 
       // Volume Envelopes
       const duration = 0.08 * volumeFactor; // faster for smaller bounces
@@ -142,7 +219,7 @@ class LudoAudio {
     const masterGain = this.ctx.createGain();
     clickGain.connect(masterGain);
     bodyGain.connect(masterGain);
-    masterGain.connect(this.ctx.destination);
+    if (this.sfxMasterGain) masterGain.connect(this.sfxMasterGain);
 
     // Click envelope: extremely fast decay
     clickGain.gain.setValueAtTime(0, t);
@@ -213,7 +290,7 @@ class LudoAudio {
     gSub.connect(masterGain);
     gHarm.connect(masterGain);
     
-    masterGain.connect(this.ctx.destination);
+    if (this.sfxMasterGain) masterGain.connect(this.sfxMasterGain);
 
     // Setup envelopes: 1ms attack, 400ms exponential decay
     const attack = 0.001;
@@ -241,36 +318,60 @@ class LudoAudio {
   }
 
   /**
-   * Sound 4: Capture Sound (Ficha comida)
-   * Play a slide-down frequency crash to denote a knockout.
+   * Sound 4: Fireworks (Ficha capturada o expulsada)
+   * Mystic harmonic chime mixed with high-freq spark crackles.
    */
-  public playCapture() {
+  public playFireworks() {
     this.init();
     if (!this.ctx) return;
 
     const t = this.ctx.currentTime;
 
-    const osc = this.ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(500, t);
-    osc.frequency.exponentialRampToValueAtTime(100, t + 0.3);
+    // Harmonic Minor Chord for mystic feel
+    const freqs = [329.63, 392.00, 493.88, 659.25]; // E4, G4, B4, E5 (E Minor)
+    freqs.forEach((freq, idx) => {
+      if (!this.ctx) return;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.2, t + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.8 + idx * 0.1);
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, t);
-    filter.frequency.exponentialRampToValueAtTime(200, t + 0.3);
+      osc.connect(gain);
+      if (this.sfxMasterGain) gain.connect(this.sfxMasterGain);
+      
+      osc.start(t);
+      osc.stop(t + 1.5);
+    });
 
-    const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.3, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    // High frequency sparks (mini crackles)
+    for (let i = 0; i < 6; i++) {
+      const sparkDelay = i * 0.08 + Math.random() * 0.05;
+      const sparkT = t + sparkDelay;
 
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.ctx.destination);
+      const spark = this.ctx.createOscillator();
+      spark.type = 'square';
+      spark.frequency.setValueAtTime(2000 + Math.random() * 3000, sparkT); // 2kHz - 5kHz
+      
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(3000, sparkT);
 
-    osc.start(t);
-    osc.stop(t + 0.4);
+      const sparkGain = this.ctx.createGain();
+      sparkGain.gain.setValueAtTime(0, sparkT);
+      sparkGain.gain.linearRampToValueAtTime(0.05, sparkT + 0.01);
+      sparkGain.gain.exponentialRampToValueAtTime(0.001, sparkT + 0.1);
+
+      spark.connect(filter);
+      filter.connect(sparkGain);
+      if (this.sfxMasterGain) sparkGain.connect(this.sfxMasterGain);
+
+      spark.start(sparkT);
+      spark.stop(sparkT + 0.15);
+    }
   }
 
   /**
@@ -305,7 +406,7 @@ class LudoAudio {
       harm.connect(harmGain);
       oscGain.connect(noteGain);
       harmGain.connect(noteGain);
-      noteGain.connect(this.ctx.destination);
+      if (this.sfxMasterGain) noteGain.connect(this.sfxMasterGain);
 
       oscGain.gain.setValueAtTime(0.3, noteTime);
       harmGain.gain.setValueAtTime(0.1, noteTime);
@@ -344,7 +445,7 @@ class LudoAudio {
 
       const gain = this.ctx.createGain();
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      if (this.sfxMasterGain) gain.connect(this.sfxMasterGain);
 
       gain.gain.setValueAtTime(0, noteTime);
       gain.gain.linearRampToValueAtTime(0.15, noteTime + 0.01);

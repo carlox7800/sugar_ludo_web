@@ -71,14 +71,17 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   const [barrierLifetimes, setBarrierLifetimes] = useState<Record<number, number>>({});
   const [notification, setNotification] = useState<string | null>(null);
 
-  // Audio mute helper
-  const [isMuted, setIsMuted] = useState<boolean>(false);
+  // Audio settings
+  const [audioSettings, setAudioSettings] = useState({ musicVolume: 0.25, sfxVolume: 1.0, isMuted: false });
+  const [isAudioMenuOpen, setIsAudioMenuOpen] = useState<boolean>(false);
+  const isMuted = audioSettings.isMuted;
 
   // Logs state
   const [logs, setLogs] = useState<GameLog[]>([]);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState<boolean>(false);
   const [isLogsOpen, setIsLogsOpen] = useState<boolean>(true);
-  const [explosionCell, setExplosionCell] = useState<number | null>(null);
+  const [explosionData, setExplosionData] = useState<{ cellIndex: number, color: PlayerColor } | null>(null);
+  const [isHumanAutoplay, setIsHumanAutoplay] = useState<boolean>(false);
 
   const showToast = (msg: string) => {
     setNotification(msg);
@@ -233,7 +236,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
     const forcedTokens = playerTokens.filter(t => {
       const globalId = t.playerId * 4 + t.id;
-      if ((barrierLifetimes[globalId] || 0) >= 4) {
+      if ((barrierLifetimes[globalId] || 0) >= 2) {
          if (t.step > 0 && t.step <= 51) {
            const tkIdx = (START_OFFSETS[t.color] + t.step - 1) % 52;
            let totalCount = 0;
@@ -303,8 +306,8 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
        if (playableForced.length > 0) {
           return playableForced;
        }
-       // If forced tokens are blocked, they can't move. They lose their turn.
-       return [];
+       // If forced tokens are blocked, they can't move. Fallback to normal moves
+       return playableIds;
     }
 
     return playableIds;
@@ -314,7 +317,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     ? getPlayableTokenIds(currentTurn, remainingMoves)
     : [];
 
-  // Vibration sync for human turn
+  // Vibration & Glow sync for human turn
   useEffect(() => {
     // Clear any existing interval
     if (vibrationIntervalRef.current) {
@@ -344,7 +347,23 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         vibrationIntervalRef.current = null;
       }
     };
-  }, [currentTurn, hasRolled, isRolling, isPlaying, winner, isMuted]);
+  }, [currentTurn, hasRolled, isRolling, isPlaying, winner, isMuted, activePlayer, isAnimatingMove]);
+
+  // Ambient Drone Music Sync
+  useEffect(() => {
+    // Send volume updates to audio engine
+    audio.setVolumes(audioSettings.musicVolume, audioSettings.sfxVolume, audioSettings.isMuted);
+
+    if (isPlaying) {
+      audio.playBackgroundMusic(!audioSettings.isMuted);
+    } else {
+      audio.playBackgroundMusic(false);
+    }
+    
+    return () => {
+      audio.playBackgroundMusic(false);
+    }
+  }, [audioSettings, isPlaying]);
 
   // Handle dice rolling
   const handleRollDice = () => {
@@ -433,8 +452,10 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
           seenVals.add(m);
         }
       });
-      if (moves.length === 2) {
-        possibleMoves.push({ val: moves[0] + moves[1], indices: [0, 1] });
+
+      // Allow combined sum of 5 exclusively to exit from base (solves bot freezing on 1,4 or 2,3)
+      if (token.step === 0 && moves.length === 2 && (moves[0] + moves[1] === 5)) {
+        possibleMoves.push({ val: 5, indices: [0, 1] });
       }
 
       possibleMoves.forEach((pm) => {
@@ -468,16 +489,16 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
               const pathStep = token.step + stepOffset;
               if (pathStep <= 51) {
                 const pIndex = (START_OFFSETS[token.color] + pathStep - 1) % 52;
-                const counts: Record<string, number> = {};
+                let totalCount = 0;
                 tokens.forEach(tk => {
                   if (tk.step > 0 && tk.step <= 51) {
                     const tkIdx = (START_OFFSETS[tk.color] + tk.step - 1) % 52;
                     if (tkIdx === pIndex) {
-                      counts[tk.color] = (counts[tk.color] || 0) + 1;
+                      totalCount++;
                     }
                   }
                 });
-                if (Object.values(counts).some(count => count >= 2)) {
+                if (totalCount >= 2) {
                   blocked = true;
                   break;
                 }
@@ -673,9 +694,11 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       if (myTokens.length === 1 && enemyTokens.length === 1) {
         capturedOpponents.push({ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id });
         showToast('💥 ¡Ficha enemiga expulsada de la salida!');
-        addLog(`💥 ¡${activePlayer.name} expulsó a la ficha enemiga de la salida!`, 'capture', activePlayer.color);
-        setExplosionCell(pIndex + 1);
-        setTimeout(() => setExplosionCell(null), 600);
+        if (!isMuted) {
+          audio.playFireworks();
+        }
+        setExplosionData({ cellIndex: pIndex + 1, color: enemyTokens[0].color });
+        setTimeout(() => setExplosionData(null), 3500);
       }
     }
 
@@ -697,13 +720,13 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
       if (shouldCapture && opponents.length > 0) {
         if (!isMuted) {
-          audio.playCapture();
+          audio.playFireworks();
         }
 
         capturedOpponents = opponents.map(o => ({ playerId: o.playerId, id: o.id }));
         showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`);
-        setExplosionCell(finalStep);
-        setTimeout(() => setExplosionCell(null), 600);
+        setExplosionData({ cellIndex: pIndex + 1, color: opponents[0].color });
+        setTimeout(() => setExplosionData(null), 3500);
 
         opponents.forEach((opp) => {
           const oppPlayer = players[opp.playerId];
@@ -800,7 +823,10 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
           if (t.step > 0 && t.step <= 51) {
             const tkIdx = (START_OFFSETS[t.color] + t.step - 1) % 52;
             if (cellCounts[tkIdx] >= 2) {
-               nextLifetimes[globalId] = (nextLifetimes[globalId] || 0) + 1;
+               nextLifetimes[globalId] = prev[globalId] || 0;
+               if (t.playerId === currentTurn) {
+                 nextLifetimes[globalId] += 1;
+               }
             } else {
                nextLifetimes[globalId] = 0;
             }
@@ -836,22 +862,18 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       clearTimeout(botTimeoutRef.current);
       botTimeoutRef.current = null;
     }
+    setIsHumanAutoplay(false);
   };
 
   // 10 Second Timer Loop
   useEffect(() => {
     let interval: number | null = null;
 
-    const shouldRunTimer = isPlaying && !winner && !isRolling && !isAnimatingMove && (!hasRolled || (hasRolled && playableTokenIds.length > 0));
+    const shouldRunTimer = isPlaying && !winner && !isRolling && !isAnimatingMove && !isHumanAutoplay && (!hasRolled || (hasRolled && playableTokenIds.length > 0));
     if (shouldRunTimer) {
       interval = window.setInterval(() => {
         setTimer((prev) => {
-          if (prev <= 1) {
-            // TIMER EXPIRED! Autoplay!
-            handleAutoplay();
-            return 10;
-          }
-          return prev - 1;
+          return prev <= 1 ? 0 : prev - 1;
         });
       }, 1000);
     }
@@ -859,7 +881,14 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isPlaying, winner, isRolling, isAnimatingMove, currentTurn, hasRolled, diceValues]);
+  }, [isPlaying, winner, isRolling, isAnimatingMove, currentTurn, hasRolled, diceValues, playableTokenIds.length, isHumanAutoplay]);
+
+  useEffect(() => {
+    if (timer === 0 && isPlaying && !winner) {
+      setIsHumanAutoplay(true);
+      setTimer(10);
+    }
+  }, [timer, isPlaying, winner]);
 
   // Autoplay handler when timer expires or for Bots
   const handleAutoplay = () => {
@@ -887,14 +916,15 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     }
   };
 
-  // Trigger Bot decisions automatically on their turn
+  // Trigger Bot/Autoplay decisions automatically on their turn
   useEffect(() => {
     if (botTimeoutRef.current) {
       clearTimeout(botTimeoutRef.current);
       botTimeoutRef.current = null;
     }
 
-    if (isPlaying && activePlayer && activePlayer.type === 'bot' && !winner && !isAnimatingMove) {
+    const isActiveBot = activePlayer && (activePlayer.type === 'bot' || (activePlayer.type === 'human' && isHumanAutoplay));
+    if (isPlaying && isActiveBot && !winner && !isAnimatingMove) {
       if (!hasRolled && !isRolling) {
         // Wait 1.0s before Bot rolls the dice
         botTimeoutRef.current = window.setTimeout(() => {
@@ -912,22 +942,14 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
               moveToken(bestMove.tokenId, bestMove.moveVal, bestMove.moveIndices);
             }
           }, 900);
-        } else {
-          noMovesTimeoutRef.current = window.setTimeout(() => {
-            if (pendingExtraTurnsRef.current > 0) {
-              pendingExtraTurnsRef.current -= 1;
-              advanceTurn(true, tokens);
-            } else {
-              advanceTurn(false, tokens);
-            }
-          }, 800);
         }
       }
     }
-  }, [isPlaying, currentTurn, hasRolled, isRolling, isAnimatingMove, winner, remainingMoves]);
+  }, [isPlaying, currentTurn, hasRolled, isRolling, isAnimatingMove, winner, remainingMoves, isHumanAutoplay]);
 
   // Handle Token Click from Board (for human player moves)
   const handleTokenClick = (tokenId: number) => {
+    setIsHumanAutoplay(false); // Wake up human player
     if (activePlayer.type !== 'human' || isAnimatingMove || isRolling || !hasRolled) return;
 
     if (playableTokenIds.includes(tokenId)) {
@@ -976,14 +998,59 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
           <span className="font-extrabold text-lg text-t-primary tracking-widest font-mono uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">Entrenamiento con IA</span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative">
           <button
-            onClick={() => setIsMuted(!isMuted)}
-            className="p-2 rounded-xl text-t-muted hover:text-t-primary hover:bg-panel transition-colors cursor-pointer flex items-center justify-center border border-border"
-            title={isMuted ? 'Activar sonido' : 'Silenciar juego'}
+            onClick={() => setIsAudioMenuOpen(!isAudioMenuOpen)}
+            className={`p-2 rounded-xl text-t-muted hover:text-t-primary hover:bg-panel transition-colors cursor-pointer flex items-center justify-center border ${isAudioMenuOpen ? 'border-p-cyan bg-panel' : 'border-border'}`}
+            title="Ajustes de Sonido"
           >
             {isMuted ? <VolumeX size={18} className="text-p-red" /> : <Volume2 size={18} className="text-p-green" />}
           </button>
+          
+          {/* Audio Popover */}
+          {isAudioMenuOpen && (
+            <div className="absolute top-12 right-0 w-64 bg-surface border border-border rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] p-4 z-50 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-t-primary">Mezcla de Audio</span>
+                <button
+                  onClick={() => setAudioSettings(s => ({ ...s, isMuted: !s.isMuted }))}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors ${isMuted ? 'bg-p-red/20 text-p-red border-p-red/50' : 'bg-surface text-t-muted border-border hover:bg-panel'}`}
+                >
+                  {isMuted ? 'MUTEADO' : 'MUTEAR'}
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-xs text-t-muted">
+                    <span>Música (Tam Lin)</span>
+                    <span>{Math.round(audioSettings.musicVolume * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" min="0" max="1" step="0.05" 
+                    value={audioSettings.musicVolume}
+                    onChange={(e) => setAudioSettings(s => ({ ...s, musicVolume: parseFloat(e.target.value) }))}
+                    disabled={isMuted}
+                    className="w-full accent-p-cyan cursor-pointer disabled:opacity-50"
+                  />
+                </div>
+                
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-xs text-t-muted">
+                    <span>Efectos SFX</span>
+                    <span>{Math.round(audioSettings.sfxVolume * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" min="0" max="1" step="0.05" 
+                    value={audioSettings.sfxVolume}
+                    onChange={(e) => setAudioSettings(s => ({ ...s, sfxVolume: parseFloat(e.target.value) }))}
+                    disabled={isMuted}
+                    className="w-full accent-p-green cursor-pointer disabled:opacity-50"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
@@ -1021,7 +1088,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                   playableTokenIds={playableTokenIds}
                   onTokenClick={handleTokenClick}
                   humanPlayerId={players.findIndex((p) => p.type === 'human')}
-                  explosionCellIndex={explosionCell}
+                  explosionData={explosionData}
                 />
               </div>
 
@@ -1032,7 +1099,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                   setAppTheme={setAppTheme}
                   isPlaying={isPlaying}
                   onStartGame={handleStartGame}
-                  onRollDice={handleRollDice}
+                  onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
                   diceValues={diceValues}
                   remainingMoves={remainingMoves}
                   isRolling={isRolling}
@@ -1176,10 +1243,11 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         }
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-900/90 border border-slate-700/50 p-4 rounded-[20px] shadow-[0_0_40px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[oklch(0.16_0.03_285)] border border-[#06b6d4]/40 p-4 rounded-3xl shadow-2xl flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
               <div className="flex flex-col items-center gap-1">
-                <h3 className="text-white font-bold text-xs text-center uppercase tracking-widest opacity-90">Selecciona Pasos</h3>
+                <h3 className="text-white font-extrabold text-sm text-center font-display uppercase tracking-wider">Mover Ficha</h3>
+                <p className="text-xs text-slate-400 font-medium">Elige el dado:</p>
               </div>
               <div className="flex flex-row flex-wrap justify-center gap-2 mt-1">
                 {options.map((opt, i) => (
@@ -1189,15 +1257,15 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                       setMoveSelectorTokenId(null);
                       moveToken(moveSelectorTokenId, opt.val, opt.indices);
                     }}
-                    className="w-14 h-14 bg-slate-800/80 hover:bg-cyan-500/20 hover:border-cyan-400 border border-slate-600 rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow-inner"
+                    className="w-12 h-12 bg-[#06b6d4]/15 border border-[#06b6d4] hover:bg-[#06b6d4] hover:text-black text-[#06b6d4] rounded-2xl flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow-[0_0_12px_#06b6d4] font-display font-extrabold text-xl"
                   >
-                    <span className="font-extrabold text-xl text-cyan-400 drop-shadow-md">{opt.label}</span>
+                    {opt.label}
                   </button>
                 ))}
               </div>
               <button
                 onClick={() => setMoveSelectorTokenId(null)}
-                className="mt-2 text-slate-400 hover:text-white text-[10px] font-bold tracking-widest uppercase transition-colors px-4 py-2 hover:bg-slate-800 rounded-lg"
+                className="mt-1 text-slate-400 hover:text-white text-xs font-bold tracking-widest uppercase transition-colors text-center"
               >
                 Cancelar
               </button>

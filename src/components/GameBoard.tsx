@@ -6,12 +6,22 @@ import { AppTheme } from '../types';
 const breathingAnimation = `
   @keyframes breathe {
     0% { transform: scale(1); }
-    50% { transform: scale(1.15); }
+    50% { transform: scale(1.35); }
     100% { transform: scale(1); }
   }
   .breathing-token {
     animation: breathe 1.5s ease-in-out infinite;
     transform-origin: 0px 0px;
+  }
+  
+  @keyframes fireworkRing {
+    0% { transform: scale(0); opacity: 1; stroke-width: 12px; }
+    100% { transform: scale(8); opacity: 0; stroke-width: 0px; }
+  }
+  @keyframes fireworkParticle {
+    0% { transform: translate(0, 0) scale(1); opacity: 1; }
+    50% { opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
   }
 `;
 
@@ -23,8 +33,15 @@ interface GameBoardProps {
   onTokenClick: (tokenId: number) => void;
   humanPlayerId: number;
   isZeroIndexed?: boolean;
-  explosionCellIndex?: number | null;
+  explosionData?: { cellIndex: number, color: PlayerColor } | null;
 }
+
+const COLOR_MAP: Record<PlayerColor, string> = {
+  red: '#ff0055',
+  green: '#00ff88',
+  yellow: '#ffcc00',
+  blue: '#00ddff'
+};
 
 // 52 Perimeter cells in clockwise order starting from Amarillo's start at (6,14) as per specification
 export const PERIMETER_CELLS: CellCoord[] = [
@@ -190,7 +207,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   humanPlayerId,
   appTheme,
   isZeroIndexed = false,
-  explosionCellIndex = null,
+  explosionData = null,
 }) => {
   const cellSize = 50;
 
@@ -327,10 +344,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               <text x={x + 25} y={y + 26} fill={startColor ? "#ffffff" : isSafe ? "#ca8a04" : "#94a3b8"} fontSize="14" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" opacity={startColor ? 1 : isSafe ? 0.9 : 0.6}>
                 {idx + 1}
               </text>
-              
-              {explosionCellIndex === idx + 1 && (
-                <circle cx={x + 25} cy={y + 25} r={20} fill="none" stroke="#ef4444" strokeWidth="4" className="animate-ping" style={{ animationDuration: '0.6s' }} />
-              )}
             </g>
           );
         })}
@@ -515,6 +528,44 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             </g>
           );
         })}
+        {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales Gigantes) --- */}
+        {explosionData && explosionData.cellIndex >= 1 && explosionData.cellIndex <= 52 && (() => {
+          const cell = PERIMETER_CELLS[explosionData.cellIndex - 1];
+          const x = cell.col * cellSize;
+          const y = cell.row * cellSize;
+          
+          return (
+            <g className="fireworks-overlay" style={{ transformOrigin: `${x + 25}px ${y + 25}px` }}>
+              {/* Inner Burst Gigante */}
+              <circle cx={x + 25} cy={y + 25} r={15} fill="none" stroke={COLOR_MAP[explosionData.color]} style={{ animation: 'fireworkRing 0.8s ease-out forwards', transformOrigin: `${x + 25}px ${y + 25}px` }} />
+              
+              {/* Partículas Masivas con Gravedad */}
+              {Array.from({ length: 16 }).map((_, i) => {
+                const angle = (i * 360) / 16;
+                const rad = angle * Math.PI / 180;
+                const distance = 100 + (i % 2 === 0 ? 60 : 0); // 100 a 160 px de radio
+                const dx = Math.cos(rad) * distance;
+                const dy = Math.sin(rad) * distance + 60; // Mayor efecto de gravedad
+                
+                return (
+                  <circle 
+                    key={i} 
+                    cx={x + 25} cy={y + 25} r={5 + (i % 4)} 
+                    fill={COLOR_MAP[explosionData.color]} 
+                    style={{
+                      animation: `fireworkParticle 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
+                      animationDelay: `${Math.random() * 0.15}s`,
+                      '--dx': `${dx}px`,
+                      '--dy': `${dy}px`,
+                      transformOrigin: `${x + 25}px ${y + 25}px`
+                    } as any} 
+                  />
+                );
+              })}
+            </g>
+          );
+        })()}
+
       </svg>
     </div>
   );
