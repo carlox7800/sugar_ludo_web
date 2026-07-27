@@ -78,6 +78,12 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   const [logs, setLogs] = useState<GameLog[]>([]);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState<boolean>(false);
   const [isLogsOpen, setIsLogsOpen] = useState<boolean>(true);
+  const [explosionCell, setExplosionCell] = useState<number | null>(null);
+
+  const showToast = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 4000);
+  };
 
   // Vibration and Glow States
   const [isGlowActive, setIsGlowActive] = useState<boolean>(false);
@@ -248,7 +254,18 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       if (t.step === 0) {
         if (hasFive || hasSumFive) {
           const startIdx = START_OFFSETS[t.color];
-          if (!hasBarrierAt(startIdx)) {
+          let myCount = 0;
+          let enemyCount = 0;
+          currentTokens.forEach(tk => {
+             if (tk.step > 0 && tk.step <= 51 && ((START_OFFSETS[tk.color] + tk.step - 1) % 52) === startIdx) {
+                if (tk.color === t.color) myCount++;
+                else enemyCount++;
+             }
+          });
+          const isExpellable = (myCount === 1 && enemyCount === 1);
+          const isBlocked = (myCount + enemyCount >= 2) && !isExpellable;
+
+          if (!isBlocked) {
             playableIds.push(globalId);
           }
         }
@@ -293,8 +310,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     return playableIds;
   };
 
-  // Playable token IDs for the active player on their turn
-  const playableTokenIds = hasRolled && !isRolling && !isAnimatingMove && activePlayer
+  const playableTokenIds = hasRolled && !isRolling && !isAnimatingMove && activePlayer?.type === 'human'
     ? getPlayableTokenIds(currentTurn, remainingMoves)
     : [];
 
@@ -370,6 +386,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         if (isDouble) {
           pendingExtraTurnsRef.current += 1;
           addLog(`🎲 ¡${activePlayer.name} sacó un doble (${r1},${r2}) y gana un tiro extra!`, 'info', activePlayer.color);
+          showToast('🎲 ¡Turno Extra por Doble!');
         } else {
           addLog(`${activePlayer.name} lanzó los dados y sacó ${r1} y ${r2} (Total: ${sum}).`, 'roll', activePlayer.color);
         }
@@ -380,7 +397,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         // Check if there are playable moves
         const moves = getPlayableTokenIds(currentTurn, [r1, r2]);
         if (moves.length === 0) {
-          addLog(`${activePlayer.name} no tiene movimientos válidos.`, 'warning', activePlayer.color);
+          addLog(`${activePlayer.name} no tiene movimientos válidos.`, 'info', activePlayer.color);
           // Switch turn automatically after a brief delay
           noMovesTimeoutRef.current = window.setTimeout(() => {
             if (pendingExtraTurnsRef.current > 0) {
@@ -428,13 +445,17 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         if (token.step === 0) {
           if (moveVal === 5) {
             const startIdx = START_OFFSETS[token.color];
-            isValid = !tokens.some(tk => {
-              if (tk.step > 0 && tk.step <= 51) {
-                const tkIdx = (START_OFFSETS[tk.color] + tk.step - 1) % 52;
-                return tkIdx === startIdx && tk.color === token.color;
-              }
-              return false;
+            let myCount = 0;
+            let enemyCount = 0;
+            tokens.forEach(tk => {
+               if (tk.step > 0 && tk.step <= 51 && ((START_OFFSETS[tk.color] + tk.step - 1) % 52) === startIdx) {
+                  if (tk.color === token.color) myCount++;
+                  else enemyCount++;
+               }
             });
+            const isExpellable = (myCount === 1 && enemyCount === 1);
+            const isBlocked = (myCount + enemyCount >= 2) && !isExpellable;
+            isValid = !isBlocked;
           }
         } else if (token.step > 0 && token.step < 57) {
           const distanceToGoal = 57 - token.step;
@@ -595,38 +616,67 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         if (!isMuted) {
           audio.playVictory();
         }
-        setWinner(pId);
-        addLog(`🎉🏆 ¡Felicidades! ${activePlayer.name} ha ganado la partida! 🏆🎉`, 'system', activePlayer.color);
         
-        // Award XP and Coins if the winner is human
-        if (activePlayer.type === 'human') {
-          setUserProfile(prev => {
-            const gainedXp = 50;
-            const gainedCoins = 100;
-            let newXp = prev.xp + gainedXp;
-            let newLevel = prev.level;
-            let newXpNeeded = prev.xpNeeded;
-            
-            while (newXp >= newXpNeeded) {
-              newXp -= newXpNeeded;
-              newLevel += 1;
-              newXpNeeded = Math.floor(newXpNeeded * 1.5);
-            }
-            
-            return {
-              ...prev,
-              level: newLevel,
-              xp: newXp,
-              xpNeeded: newXpNeeded,
-              coins: prev.coins + gainedCoins
-            };
+        const finishedPlayers = players.filter(p => p.hasFinished).length;
+        const newRank = finishedPlayers + 1;
+        
+        setPlayers(prev => prev.map(p => p.id === pId ? { ...p, hasFinished: true, rank: newRank } : p));
+        addLog(`🎉 ¡${activePlayer.name} ha finalizado en la posición #${newRank}!`, 'system', activePlayer.color);
+
+        const activePlayersCount = players.filter(p => p.isActive).length;
+        if (newRank >= activePlayersCount - 1) {
+          setPlayers(prev => {
+             let lastPlayer = prev.find(p => p.isActive && !p.hasFinished && p.id !== pId);
+             return prev.map(p => {
+               if (lastPlayer && p.id === lastPlayer.id) return { ...p, hasFinished: true, rank: activePlayersCount };
+               if (p.id === pId) return { ...p, hasFinished: true, rank: newRank };
+               return p;
+             });
           });
+          
+          setWinner(players.find(p => p.rank === 1)?.id ?? pId);
+          addLog(`🏁 ¡La partida ha terminado!`, 'system');
+          
+          if (activePlayer.type === 'human' && newRank === 1) {
+            setUserProfile(prev => {
+              const gainedXp = 50;
+              const gainedCoins = 100;
+              let newXp = prev.xp + gainedXp;
+              let newLevel = prev.level;
+              let newXpNeeded = prev.xpNeeded;
+              while (newXp >= newXpNeeded) {
+                newXp -= newXpNeeded;
+                newLevel += 1;
+                newXpNeeded = Math.floor(newXpNeeded * 1.5);
+              }
+              return { ...prev, level: newLevel, xp: newXp, xpNeeded: newXpNeeded, coins: prev.coins + gainedCoins };
+            });
+          }
         }
         
+        // Remove remaining moves because this player is done
+        setRemainingMoves([]);
         setIsAnimatingMove(false);
+        advanceTurn(false, tokens);
         return;
       }
       bonusSteps += 10;
+    }
+
+    // 1.5. Expulsion Check (Moving out of base)
+    if (finalStep === 1) {
+      const pIndex = START_OFFSETS[movingToken.color];
+      const cellTokens = tokens.filter(t => t.step > 0 && t.step <= 51 && ((START_OFFSETS[t.color] + t.step - 1) % 52) === pIndex);
+      const myTokens = cellTokens.filter(t => t.color === movingToken.color);
+      const enemyTokens = cellTokens.filter(t => t.color !== movingToken.color);
+      
+      if (myTokens.length === 1 && enemyTokens.length === 1) {
+        capturedOpponents.push({ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id });
+        showToast('💥 ¡Ficha enemiga expulsada de la salida!');
+        addLog(`💥 ¡${activePlayer.name} expulsó a la ficha enemiga de la salida!`, 'capture', activePlayer.color);
+        setExplosionCell(pIndex + 1);
+        setTimeout(() => setExplosionCell(null), 600);
+      }
     }
 
     // 2. Capture Check (only on normal perimeter cells)
@@ -652,6 +702,8 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
         capturedOpponents = opponents.map(o => ({ playerId: o.playerId, id: o.id }));
         showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`);
+        setExplosionCell(finalStep);
+        setTimeout(() => setExplosionCell(null), 600);
 
         opponents.forEach((opp) => {
           const oppPlayer = players[opp.playerId];
@@ -770,9 +822,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   // Find next active player
   const moveToNextPlayer = () => {
-    let nextTurn = (currentTurn - 1 + 4) % 4;
-    while (!players[nextTurn]?.isActive) {
-      nextTurn = (nextTurn - 1 + 4) % 4;
+    let nextTurn = (currentTurn - 1 + players.length) % players.length;
+    while (!players[nextTurn]?.isActive || players[nextTurn]?.hasFinished) {
+      nextTurn = (nextTurn - 1 + players.length) % players.length;
     }
     setCurrentTurn(nextTurn);
     addLog(`Es el turno de ${players[nextTurn].name} (${PLAYER_NAMES[players[nextTurn].color]}).`, 'system', players[nextTurn].color);
@@ -969,6 +1021,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                   playableTokenIds={playableTokenIds}
                   onTokenClick={handleTokenClick}
                   humanPlayerId={players.findIndex((p) => p.type === 'human')}
+                  explosionCellIndex={explosionCell}
                 />
               </div>
 
@@ -1123,10 +1176,10 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         }
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-panel border border-border p-3 rounded-2xl shadow-xl flex flex-col gap-2 max-w-[160px] w-full animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-900/90 border border-slate-700/50 p-4 rounded-[20px] shadow-[0_0_40px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
               <div className="flex flex-col items-center gap-1">
-                <h3 className="text-t-primary font-bold text-xs text-center font-mono uppercase tracking-wider">Mover</h3>
+                <h3 className="text-white font-bold text-xs text-center uppercase tracking-widest opacity-90">Selecciona Pasos</h3>
               </div>
               <div className="flex flex-row flex-wrap justify-center gap-2 mt-1">
                 {options.map((opt, i) => (
@@ -1136,15 +1189,15 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                       setMoveSelectorTokenId(null);
                       moveToken(moveSelectorTokenId, opt.val, opt.indices);
                     }}
-                    className="w-12 h-12 bg-border hover:bg-p-blue/10 hover:border-p-blue border border-border rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95"
+                    className="w-14 h-14 bg-slate-800/80 hover:bg-cyan-500/20 hover:border-cyan-400 border border-slate-600 rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow-inner"
                   >
-                    <span className="font-bold text-lg text-p-blue font-mono">{opt.label}</span>
+                    <span className="font-extrabold text-xl text-cyan-400 drop-shadow-md">{opt.label}</span>
                   </button>
                 ))}
               </div>
               <button
                 onClick={() => setMoveSelectorTokenId(null)}
-                className="mt-1 text-t-muted hover:text-t-primary text-[10px] font-bold tracking-widest uppercase transition-colors"
+                className="mt-2 text-slate-400 hover:text-white text-[10px] font-bold tracking-widest uppercase transition-colors px-4 py-2 hover:bg-slate-800 rounded-lg"
               >
                 Cancelar
               </button>

@@ -2,6 +2,19 @@ import React from 'react';
 import { PlayerColor, Token, CellCoord } from '../types';
 
 import { AppTheme } from '../types';
+
+const breathingAnimation = `
+  @keyframes breathe {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+  .breathing-token {
+    animation: breathe 1.5s ease-in-out infinite;
+    transform-origin: 0px 0px;
+  }
+`;
+
 interface GameBoardProps {
   appTheme?: AppTheme;
   tokens: Token[];
@@ -10,6 +23,7 @@ interface GameBoardProps {
   onTokenClick: (tokenId: number) => void;
   humanPlayerId: number;
   isZeroIndexed?: boolean;
+  explosionCellIndex?: number | null;
 }
 
 // 52 Perimeter cells in clockwise order starting from Amarillo's start at (6,14) as per specification
@@ -176,6 +190,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   humanPlayerId,
   appTheme,
   isZeroIndexed = false,
+  explosionCellIndex = null,
 }) => {
   const cellSize = 50;
 
@@ -245,7 +260,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
   return (
     <div id="ludo_board_container" className="relative w-full max-w-[550px] mx-auto bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border-4 border-[#cbd5e1] p-2 overflow-hidden select-none">
-      {/* 15x15 SVG Board */}
+      <style>{breathingAnimation}</style>
       <svg
         viewBox="0 0 750 750"
         className="w-full h-auto rounded-lg bg-white"
@@ -312,6 +327,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               <text x={x + 25} y={y + 26} fill={startColor ? "#ffffff" : isSafe ? "#ca8a04" : "#94a3b8"} fontSize="14" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" opacity={startColor ? 1 : isSafe ? 0.9 : 0.6}>
                 {idx + 1}
               </text>
+              
+              {explosionCellIndex === idx + 1 && (
+                <circle cx={x + 25} cy={y + 25} r={20} fill="none" stroke="#ef4444" strokeWidth="4" className="animate-ping" style={{ animationDuration: '0.6s' }} />
+              )}
             </g>
           );
         })}
@@ -461,49 +480,38 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               }}
               onClick={() => isSelectable && onTokenClick(token.playerId * 4 + token.id)}
             >
-              {/* Selected pulsing circle effect underneath */}
-              {isSelectable && (
-                <circle
-                  cx={0}
-                  cy={0}
-                  r={26}
-                  fill={pulseColor}
-                  opacity="0.4"
-                  className="animate-ping"
-                  style={{ animationDuration: '1.2s' }}
-                />
-              )}
+              <g className={isSelectable ? 'breathing-token' : ''}>
+                {appTheme === 'sugar' ? (
+                  <>
+                    <path d="M -15 0 L -24 -10 L -24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
+                    <path d="M 15 0 L 24 -10 L 24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
+                    <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
+                    <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
+                    <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
+                  </>
+                ) : (
+                  <>
+                    <circle cx={0} cy={0} r={16} fill={`url(#token-${token.color}-grad)`} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
+                    <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                    <circle cx={0} cy={0} r={5} fill={`url(#token-${token.color}-grad)`} />
+                    <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                  </>
+                )}
 
-              {appTheme === 'sugar' ? (
-                <>
-                  <path d="M -15 0 L -24 -10 L -24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
-                  <path d="M 15 0 L 24 -10 L 24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
-                  <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
-                  <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
-                  <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
-                </>
-              ) : (
-                <>
-                  <circle cx={0} cy={0} r={16} fill={`url(#token-${token.color}-grad)`} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
-                  <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                  <circle cx={0} cy={0} r={5} fill={`url(#token-${token.color}-grad)`} />
-                  <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
-                </>
-              )}
-
-              {/* Number centered to differentiate same-color tokens */}
-              <text
-                x={0}
-                y={0.5}
-                fill="#FFFFFF"
-                fontSize="11"
-                fontWeight="bold"
-                textAnchor="middle"
-                dominantBaseline="middle"
-                opacity="0.9"
-              >
-                {token.id + 1}
-              </text>
+                {/* Number centered to differentiate same-color tokens */}
+                <text
+                  x={0}
+                  y={0.5}
+                  fill="#FFFFFF"
+                  fontSize="11"
+                  fontWeight="bold"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  opacity="0.9"
+                >
+                  {token.id + 1}
+                </text>
+              </g>
             </g>
           );
         })}

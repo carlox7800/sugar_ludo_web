@@ -432,7 +432,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       } else if (pendingExtraTurnsRef.current > 0) {
         pendingExtraTurnsRef.current -= 1;
       } else {
-        nextIdx = (prev.currentTurnIndex - 1 + prev.players.length) % prev.players.length;
+        nextIdx = (prev.currentTurnIndex + 1) % prev.players.length;
       }
 
       setTimeout(() => setExtraTurnsCount(nextExtraTurns), 0);

@@ -306,6 +306,9 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
               (info) => info.starCell === cellIdx
             );
 
+            const polygonFill = starColorObj ? "#ffffff" : "#f59e0b";
+            const polygonStroke = starColorObj ? "#ffffff" : "#b45309";
+
             return (
               <g key={`track-cell-${cellIdx}`}>
                 <rect
@@ -314,16 +317,16 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
                   width="42"
                   height="42"
                   rx="2"
-                  fill={isStar && starColorObj ? starColorObj.hexCode : "#ffffff"}
-                  stroke={isStar && starColorObj ? "#ffffff" : "#cbd5e1"}
+                  fill={starColorObj ? starColorObj.hexCode : "#ffffff"}
+                  stroke={starColorObj ? "#ffffff" : "#cbd5e1"}
                   strokeWidth="1.5"
                   transform={`rotate(${loc.s * 60} ${pos.x} ${pos.y})`}
                 />
-                {isStar && starColorObj && (
+                {isStar && (
                   <polygon
                     points={`${pos.x},${pos.y - 15} ${pos.x + 5},${pos.y - 5} ${pos.x + 15},${pos.y - 4} ${pos.x + 7},${pos.y + 5} ${pos.x + 10},${pos.y + 15} ${pos.x},${pos.y + 9} ${pos.x - 10},${pos.y + 15} ${pos.x - 7},${pos.y + 5} ${pos.x - 15},${pos.y - 4} ${pos.x - 5},${pos.y - 5}`}
-                    fill="#ffffff"
-                    stroke="#ffffff"
+                    fill={polygonFill}
+                    stroke={polygonStroke}
                     strokeWidth="1"
                     transform={`rotate(${loc.s * 60} ${pos.x} ${pos.y})`}
                   />
@@ -331,11 +334,11 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
                 <text
                   x={pos.x}
                   y={pos.y + 4}
-                  fill={isStar && starColorObj ? "#ffffff" : "#94a3b8"}
+                  fill={starColorObj ? "#ffffff" : isStar ? "#ca8a04" : "#94a3b8"}
                   fontSize="12"
                   fontWeight="bold"
                   textAnchor="middle"
-                  opacity={isStar && starColorObj ? 1 : 0.6}
+                  opacity={starColorObj ? 1 : isStar ? 0.9 : 0.6}
                 >
                   {cellIdx}
                 </text>

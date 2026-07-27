@@ -7,6 +7,8 @@ export interface Player {
   name: string;
   type: PlayerType;
   isActive: boolean; // active in current game
+  hasFinished?: boolean;
+  rank?: number;
 }
 
 export interface Token {
