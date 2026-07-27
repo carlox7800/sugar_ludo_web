@@ -69,6 +69,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   const [timer, setTimer] = useState<number>(10);
   const [isAnimatingMove, setIsAnimatingMove] = useState<boolean>(false);
   const [barrierLifetimes, setBarrierLifetimes] = useState<Record<number, number>>({});
+  const [notification, setNotification] = useState<string | null>(null);
 
   // Audio mute helper
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -584,6 +585,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         audio.playGoal();
       }
       addLog(`¡Ficha ${tId + 1} de ${activePlayer.name} entró a la meta final!`, 'goal', activePlayer.color);
+      showToast('🎉 ¡Ficha en la meta! +10 pasos de bono');
 
       const allReached = tokens
         .filter((t) => t.playerId === pId)
@@ -649,6 +651,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         }
 
         capturedOpponents = opponents.map(o => ({ playerId: o.playerId, id: o.id }));
+        showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`);
 
         opponents.forEach((opp) => {
           const oppPlayer = players[opp.playerId];
@@ -767,9 +770,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   // Find next active player
   const moveToNextPlayer = () => {
-    let nextTurn = (currentTurn + 1) % 4;
+    let nextTurn = (currentTurn - 1 + 4) % 4;
     while (!players[nextTurn]?.isActive) {
-      nextTurn = (nextTurn + 1) % 4;
+      nextTurn = (nextTurn - 1 + 4) % 4;
     }
     setCurrentTurn(nextTurn);
     addLog(`Es el turno de ${players[nextTurn].name} (${PLAYER_NAMES[players[nextTurn].color]}).`, 'system', players[nextTurn].color);
@@ -931,6 +934,14 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
           </button>
         </div>
       </header>
+
+      {/* Toast Banner (Floating Overlay - Zero Layout Shift) */}
+      {notification && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/90 backdrop-blur-md px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-extrabold shadow-[0_8px_32px_rgba(0,0,0,0.6)] pointer-events-none">
+          <Sparkles className="size-4 text-[var(--candy-cyan)]" />
+          <span>{notification}</span>
+        </div>
+      )}
 
       {/* Main Core View Area */}
       <main className="grow flex flex-col lg:flex-row items-center lg:items-start justify-center gap-6 px-4 py-6 w-full max-w-7xl mx-auto">

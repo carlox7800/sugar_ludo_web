@@ -55,6 +55,12 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   const [barrierLifetimes, setBarrierLifetimes] = useState<Record<string, number>>({});
   const pendingExtraTurnsRef = useRef<number>(0);
   const vibrationIntervalRef = useRef<number | null>(null);
+  const [notification, setNotification] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 4000);
+  };
 
   const activePlayer = gameState.players[gameState.currentTurnIndex];
 
@@ -299,6 +305,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                 newTokens[idx] = { ...otherToken, step: 0 };
                 capturedAny = true;
                 if (!isMuted) audio.playCapture();
+                showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`);
               }
             }
           });
@@ -316,6 +323,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         if (finalStep === 87 && !hasWon) {
           bonusSteps += 15;
           if (!isMuted) audio.playGoal();
+          showToast('🎉 ¡Ficha en la meta! +10 pasos de bono');
         }
 
         if (capturedAny) {
@@ -424,7 +432,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       } else if (pendingExtraTurnsRef.current > 0) {
         pendingExtraTurnsRef.current -= 1;
       } else {
-        nextIdx = (prev.currentTurnIndex + 1) % prev.players.length;
+        nextIdx = (prev.currentTurnIndex - 1 + prev.players.length) % prev.players.length;
       }
 
       setTimeout(() => setExtraTurnsCount(nextExtraTurns), 0);

@@ -97,7 +97,7 @@ export const HEX_COLOR_INFO: Record<HexPlayerColor, HexPlayerConfig> = {
   },
 };
 
-export const STAR_CELLS = [8, 21, 34, 47, 60, 73];
+export const STAR_CELLS = [2, 8, 15, 21, 28, 34, 41, 47, 54, 60, 67, 73];
 export const TOTAL_MAIN_CELLS = 78;
 export const TOKENS_PER_PLAYER = 3;
 
