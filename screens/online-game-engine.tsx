@@ -152,7 +152,7 @@ export function OnlineGameEngine({
     const perimeter = getTotalPerimeter(pCount)
 
     currentTokens.forEach((tk) => {
-      if (tk.step >= 0 && tk.step <= trackSteps) {
+      if (tk.step >= 0 && tk.step < trackSteps) {
         const tkIdx = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
         cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1
       }
@@ -160,7 +160,7 @@ export function OnlineGameEngine({
 
     currentTokens.forEach((t) => {
       const globalId = t.playerId * 4 + t.id
-      if (t.step >= 0 && t.step <= trackSteps) {
+      if (t.step >= 0 && t.step < trackSteps) {
         const tkIdx = (getStartOffset(t.color, pCount) + t.step) % perimeter
         if (cellCounts[tkIdx] >= 2) {
           nextLifetimes[globalId] = (nextLifetimes[globalId] || 0) + 1
@@ -202,7 +202,7 @@ export function OnlineGameEngine({
     if (perimeterIndex < 0 || perimeterIndex >= perimeter) return false
     let totalCount = 0
     currentTokens.forEach((tk) => {
-      if (tk.step >= 0 && tk.step <= trackSteps) {
+      if (tk.step >= 0 && tk.step < trackSteps) {
         const tkIdx = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
         if (tkIdx === perimeterIndex) {
           totalCount++
@@ -233,7 +233,7 @@ export function OnlineGameEngine({
       const stepsToCheck = Math.min(moveVal, distanceToGoal)
       for (let stepOffset = 1; stepOffset <= stepsToCheck; stepOffset++) {
         const pathStep = token.step + stepOffset
-        if (pathStep <= trackSteps) {
+        if (pathStep < trackSteps) {
           const pIndex = (getStartOffset(token.color, pCount) + pathStep) % perimeter
           if (hasBarrierAt(pIndex, currentTokens)) {
             blocked = true
@@ -264,11 +264,11 @@ export function OnlineGameEngine({
       .filter((t) => {
         const globalId = t.playerId * 4 + t.id
         if ((barrierLifetimesRef.current[globalId] || 0) >= 4) {
-          if (t.step >= 0 && t.step <= trackSteps) {
+          if (t.step >= 0 && t.step < trackSteps) {
             const tkIdx = (getStartOffset(t.color, pCount) + t.step) % perimeter
             let totalCount = 0
             currentTokens.forEach((tk) => {
-              if (tk.step >= 0 && tk.step <= trackSteps) {
+              if (tk.step >= 0 && tk.step < trackSteps) {
                 const tkIdx2 = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
                 if (tkIdx2 === tkIdx) totalCount++
               }
@@ -651,7 +651,7 @@ export function OnlineGameEngine({
           }
 
           // Capture Check (Perimeter cells)
-          if (targetStep >= 0 && targetStep <= trackSteps && currentToken) {
+          if (targetStep >= 0 && targetStep < trackSteps && currentToken) {
             const pIndex = (getStartOffset(currentToken.color, pCount) + targetStep) % perimeter
             const isStartCell = [1, 14, 27, 40, 53, 66].includes(pIndex)
             const isGoldStar = [8, 21, 34, 47, 60, 73].includes(pIndex)
@@ -659,7 +659,7 @@ export function OnlineGameEngine({
             if (!isStartCell && !isGoldStar) {
               const opponents = tokensRef.current.filter((t) => {
                 if (t.playerId === serverPlayerIdx || t.step === -1 || t.step === goalStep) return false
-                if (t.step < 0 || t.step > trackSteps) return false
+                if (t.step < 0 || t.step >= trackSteps) return false
                 const oppPIndex = (getStartOffset(t.color, pCount) + t.step) % perimeter
                 return oppPIndex === pIndex
               })
