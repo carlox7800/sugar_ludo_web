@@ -57,6 +57,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   const [extraTurnsCount, setExtraTurnsCount] = useState<number>(0);
   const [barrierLifetimes, setBarrierLifetimes] = useState<Record<string, number>>({});
   const pendingExtraTurnsRef = useRef<number>(0);
+  const consecutiveDoublesCountRef = useRef<number>(0);
+  const lastMovedTokenRef = useRef<{ playerId: number; tokenId: number } | null>(null);
   const vibrationIntervalRef = useRef<number | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [explosionData, setExplosionData] = useState<{ cellIndex: number | string; color: HexPlayerColor } | null>(null);
@@ -91,7 +93,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
     const forcedTokens = playerTokens.filter(t => {
       const globalId = `${t.playerId}-${t.id}`;
-      if ((barrierLifetimes[globalId] || 0) >= 4) { 
+      if ((barrierLifetimes[globalId] || 0) >= 2) { 
          const tkIdx = getCellIndexForToken(t.color, t.step);
          if (typeof tkIdx === 'number') {
            let totalCount = 0;
@@ -327,7 +329,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                   showToast(
                     oldStep === 0
                       ? `💥 ¡Expulsión de salida! Ficha enemiga enviada a casa`
-                      : `⚔️ ¡Ficha capturada! +20 pasos de bono`
+                      : `⚔️ ¡Ficha capturada! +25 pasos de bono`
                   );
                 }
               }
@@ -340,14 +342,48 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         );
         const hasWon = playerGoalTokens.length === TOKENS_PER_PLAYER;
 
-        if (hasWon && !isMuted) {
-          audio.playVictory();
+        let newPlayers = [...prev.players];
+        let newWinner = prev.winner;
+        
+        if (hasWon && !prev.players[activePlayer.id].hasFinished) {
+          if (!isMuted) audio.playVictory();
+          const finishedPlayers = prev.players.filter(p => p.hasFinished).length;
+          const newRank = finishedPlayers + 1;
+          
+          newPlayers = newPlayers.map(p => 
+            p.id === activePlayer.id ? { ...p, hasFinished: true, rank: newRank } : p
+          );
+          
+          updatedLogs.push({
+            id: Math.random().toString(),
+            message: `🎉 ¡${activePlayer.name} ha finalizado en la posición #${newRank}!`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'system',
+            color: activePlayer.color,
+          });
+
+          const activeCount = prev.players.filter(p => p.isActive).length;
+          if (newRank >= activeCount - 1) {
+            let lastPlayer = newPlayers.find(p => p.isActive && !p.hasFinished);
+            if (lastPlayer) {
+               newPlayers = newPlayers.map(p => 
+                 p.id === lastPlayer!.id ? { ...p, hasFinished: true, rank: activeCount } : p
+               );
+            }
+            newWinner = newPlayers.find(p => p.rank === 1) || activePlayer;
+            updatedLogs.push({
+              id: Math.random().toString(),
+              message: `🏁 ¡La partida ha terminado!`,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              type: 'system',
+            });
+          }
         }
         
         if (finalStep === 84 && !hasWon) {
           bonusSteps += 15;
           if (!isMuted) audio.playGoal();
-          showToast('🎉 ¡Ficha en la meta! +10 pasos de bono');
+          showToast('🎉 ¡Ficha en la meta! +15 pasos de bono');
         }
 
         if (capturedAny) {
@@ -439,7 +475,10 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         const globalId = `${tk.playerId}-${tk.id}`;
         const tkIdx = getCellIndexForToken(tk.color, tk.step);
         if (typeof tkIdx === 'number' && cellCounts[tkIdx] >= 2) {
-          nextLifetimes[globalId] = (nextLifetimes[globalId] || 0) + 1;
+          nextLifetimes[globalId] = prev[globalId] || 0;
+          if (tk.playerId === gameState.players[gameState.currentTurnIndex].id) {
+             nextLifetimes[globalId] += 1;
+          }
         } else {
           nextLifetimes[globalId] = 0;
         }
@@ -456,7 +495,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       } else if (pendingExtraTurnsRef.current > 0) {
         pendingExtraTurnsRef.current -= 1;
       } else {
-        nextIdx = (prev.currentTurnIndex + 1) % prev.players.length;
+        do {
+          nextIdx = (nextIdx + 1) % prev.players.length;
+        } while (prev.players[nextIdx].hasFinished && nextIdx !== prev.currentTurnIndex);
       }
 
       setTimeout(() => setExtraTurnsCount(nextExtraTurns), 0);
@@ -499,10 +540,51 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         let typeStr = 'roll';
         
         if (isDouble) {
+          consecutiveDoublesCountRef.current += 1;
+          
+          if (consecutiveDoublesCountRef.current >= 3) {
+            consecutiveDoublesCountRef.current = 0;
+            pendingExtraTurnsRef.current = 0;
+            
+            let newTokens = [...prev.tokens];
+            if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
+              const lastId = lastMovedTokenRef.current.tokenId;
+              newTokens = newTokens.map(t => {
+                if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 84) {
+                  return { ...t, step: 0 };
+                }
+                return t;
+              });
+            }
+            
+            const warningLog = {
+              id: Math.random().toString(),
+              message: `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              type: 'warning',
+              color: activePlayer.color,
+            };
+            
+            showToast('🚨 ¡Tercer doble! Ficha a la base.');
+            setRemainingMoves([]);
+            setTimeout(() => passTurn(), 1500);
+            
+            return {
+              ...prev,
+              diceValue: sum,
+              tokens: newTokens,
+              isRolling: false,
+              hasRolled: true,
+              logs: [...prev.logs, warningLog],
+            };
+          }
+
           pendingExtraTurnsRef.current += 1;
           rollLogMessage = `🎲 ¡${activePlayer.name} sacó doble (${r1},${r2}) y gana tiro extra!`;
           typeStr = 'info';
           showToast('🎲 ¡Doble! Tiras de nuevo');
+        } else {
+          consecutiveDoublesCountRef.current = 0;
         }
         
         const newLog = {

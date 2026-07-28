@@ -115,4 +115,6 @@ export interface HexPlayer {
   type: 'human' | 'bot';
   isActive: boolean;
   score: number;
+  hasFinished?: boolean;
+  rank?: number;
 }

@@ -12,7 +12,7 @@ export interface HexLog {
   id: string;
   message: string;
   timestamp: string;
-  type: 'system' | 'move' | 'roll' | 'capture' | 'win' | 'info';
+  type: 'system' | 'move' | 'roll' | 'capture' | 'win' | 'info' | 'warning';
   color?: HexPlayerColor;
 }
 

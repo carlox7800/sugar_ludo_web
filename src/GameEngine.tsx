@@ -94,6 +94,8 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   const botTimeoutRef = useRef<number | null>(null);
   const noMovesTimeoutRef = useRef<number | null>(null);
   const pendingExtraTurnsRef = useRef<number>(0);
+  const consecutiveDoublesCountRef = useRef<number>(0);
+  const lastMovedTokenRef = useRef<{ playerId: number; tokenId: number } | null>(null);
 
   // Add a log to console
   const addLog = (message: string, type: GameLog['type'] = 'info', playerColor?: PlayerColor) => {
@@ -403,10 +405,37 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         setHasRolled(true);
 
         if (isDouble) {
+          consecutiveDoublesCountRef.current += 1;
+          
+          if (consecutiveDoublesCountRef.current >= 3) {
+            consecutiveDoublesCountRef.current = 0;
+            pendingExtraTurnsRef.current = 0;
+            
+            let newTokens = [...tokens];
+            if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
+              const lastId = lastMovedTokenRef.current.tokenId;
+              newTokens = newTokens.map(t => {
+                if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 57) {
+                  return { ...t, step: 0 };
+                }
+                return t;
+              });
+            }
+            
+            setTokens(newTokens);
+            addLog(`🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`, 'warning', activePlayer.color);
+            showToast('🚨 ¡Tercer doble! Ficha a la base.');
+            
+            setRemainingMoves([]);
+            setTimeout(() => advanceTurn(false, newTokens), 1500);
+            return;
+          }
+
           pendingExtraTurnsRef.current += 1;
           addLog(`🎲 ¡${activePlayer.name} sacó un doble (${r1},${r2}) y gana un tiro extra!`, 'info', activePlayer.color);
           showToast('🎲 ¡Turno Extra por Doble!');
         } else {
+          consecutiveDoublesCountRef.current = 0;
           addLog(`${activePlayer.name} lanzó los dados y sacó ${r1} y ${r2} (Total: ${sum}).`, 'roll', activePlayer.color);
         }
 
@@ -750,6 +779,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
     // Apply tokens state update
     setTokens(updatedTokens);
+    lastMovedTokenRef.current = { playerId: pId, tokenId: tId };
 
     // Calculate new moves array
     const newMoves = [...remainingMoves];
@@ -808,6 +838,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     if (winner !== null) return;
 
     if (!extraTurn) {
+      consecutiveDoublesCountRef.current = 0;
       setBarrierLifetimes(prev => {
         const nextLifetimes = { ...prev };
         const cellCounts: Record<number, number> = {};
