@@ -17,6 +17,7 @@ import {
 import { HexagonalLudoBoardView } from './HexagonalLudoBoardView';
 import { GameControls } from './GameControls';
 import { ConsoleLogs } from './ConsoleLogs';
+import { globalLogger } from '@/lib/logger';
 import { audio } from '../audio';
 import { Sparkles, Trophy, ArrowLeft, RotateCcw, Volume2, VolumeX, Zap, ShieldCheck, Award } from 'lucide-react';
 
@@ -185,6 +186,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // Add Log Helper
   const addLog = (message: string, type: HexLog['type'], color?: HexPlayerColor) => {
+    const globalTypeMap: Record<string, any> = {
+      'system': 'GAME-FLOW', 'move': 'TOKENS', 'roll': 'GAME-FLOW', 'capture': 'TOKENS', 'win': 'GAME-FLOW', 'info': 'GAME-FLOW', 'warning': 'GAME-FLOW'
+    };
+    globalLogger.log(globalTypeMap[type] || 'GAME-FLOW', message, { playerColor: color });
+
     const newLog: HexLog = {
       id: Math.random().toString(36).substring(2, 9),
       message,
@@ -319,48 +325,111 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
     const finalizeMove = (finalStep: number) => {
       let bonusSteps = 0;
-      setGameState((prev) => {
-        const newTokens = [...prev.tokens];
-        let capturedAny = false;
+      let capturedAny = false;
+      let capturedTokensIds: { playerId: number, id: number }[] = [];
 
-        const targetCellIndex = getCellIndexForToken(token.color, finalStep);
+      const targetCellIndex = getCellIndexForToken(token.color, finalStep);
 
-        // Check captures (including base exit ejection on start cell)
-        if (typeof targetCellIndex === 'number') {
-          const isStartCell = targetCellIndex === HEX_COLOR_INFO[token.color].startCell;
-          const canCaptureOnCell = !STAR_CELLS.includes(targetCellIndex) || (oldStep === 0 && isStartCell);
+      // Check captures
+      if (typeof targetCellIndex === 'number') {
+        const isStartCell = targetCellIndex === HEX_COLOR_INFO[token.color].startCell;
+        const canCaptureOnCell = !STAR_CELLS.includes(targetCellIndex) || (oldStep === 0 && isStartCell);
 
-          if (canCaptureOnCell) {
-            newTokens.forEach((otherToken, idx) => {
-              if (otherToken.playerId !== activePlayer.id && otherToken.step > 0 && otherToken.step <= 78) {
-                const otherCell = getCellIndexForToken(otherToken.color, otherToken.step);
-                if (otherCell === targetCellIndex) {
-                  newTokens[idx] = { ...otherToken, step: 0 };
-                  capturedAny = true;
-                  setExplosionData({ cellIndex: targetCellIndex, color: otherToken.color });
-                  setTimeout(() => setExplosionData(null), 3500);
-                  if (!isMuted) audio.playFireworks();
-                  showToast(
-                    oldStep === 0
-                      ? `💥 ¡Expulsión de salida! Ficha enemiga enviada a casa`
-                      : `⚔️ ¡Ficha capturada! +25 pasos de bono`
-                  );
-                }
+        if (canCaptureOnCell) {
+          gameState.tokens.forEach((otherToken) => {
+            if (otherToken.playerId !== activePlayer.id && otherToken.step > 0 && otherToken.step <= 78) {
+              const otherCell = getCellIndexForToken(otherToken.color, otherToken.step);
+              if (otherCell === targetCellIndex) {
+                capturedTokensIds.push({ playerId: otherToken.playerId, id: otherToken.id });
+                capturedAny = true;
+                setExplosionData({ cellIndex: targetCellIndex, color: otherToken.color });
+                setTimeout(() => setExplosionData(null), 3500);
+                if (!isMuted) audio.playFireworks();
+                showToast(
+                  oldStep === 0
+                    ? `💥 ¡Expulsión de salida! Ficha enemiga enviada a casa`
+                    : `⚔️ ¡Ficha capturada! +25 pasos de bono`
+                );
               }
-            });
-          }
+            }
+          });
         }
+      }
 
-        const playerGoalTokens = newTokens.filter(
-          (t) => t.playerId === activePlayer.id && t.step === 84
-        );
-        const hasWon = playerGoalTokens.length === TOKENS_PER_PLAYER;
+      const playerGoalTokens = gameState.tokens.filter(
+        (t) => t.playerId === activePlayer.id && t.step === 84 && t.id !== tokenId
+      );
+      const hasWon = playerGoalTokens.length + (finalStep === 84 ? 1 : 0) === TOKENS_PER_PLAYER;
+
+      if (finalStep === 84 && !hasWon) {
+        bonusSteps += 15;
+        if (!isMuted) audio.playGoal();
+        showToast('🎉 ¡Ficha en la meta! +15 pasos de bono');
+      }
+
+      if (capturedAny) {
+        bonusSteps += 25;
+      }
+
+      const moveLogMessage = capturedAny
+        ? `¡${activePlayer.name} CAPTURÓ una ficha enemiga en la casilla ${targetCellIndex}!`
+        : `${activePlayer.name} movió su ficha ${tokenId + 1} a ${
+            finalStep === 84 ? '¡LA META!' : `paso ${finalStep}`
+          }.`;
+          
+      globalLogger.log(capturedAny ? 'TOKENS' : 'TOKENS', moveLogMessage, { playerColor: activePlayer.color });
+
+      if (bonusSteps > 0) {
+        globalLogger.log('GAME-FLOW', `🎁 ¡Bono de +${bonusSteps} pasos para ${activePlayer.name}!`, { playerColor: activePlayer.color });
+      }
+
+      if (hasWon && !gameState.players[activePlayer.id].hasFinished) {
+        if (!isMuted) audio.playVictory();
+      }
+
+      // Sincronizar dados
+      const nextMoves = [...remainingMoves];
+      [...moveIndices].sort((a, b) => b - a).forEach(idx => nextMoves.splice(idx, 1));
+      
+      if (bonusSteps > 0) {
+        nextMoves.push(bonusSteps);
+      }
+      setRemainingMoves(nextMoves);
+
+      setGameState((prev) => {
+        const newTokens = prev.tokens.map(t => {
+          if (t.playerId === activePlayer.id && t.id === tokenId) {
+            return { ...t, step: finalStep };
+          }
+          if (capturedTokensIds.some(c => c.playerId === t.playerId && c.id === t.id)) {
+            return { ...t, step: 0 };
+          }
+          return t;
+        });
 
         let newPlayers = [...prev.players];
         let newWinner = prev.winner;
+        let updatedLogs = [...prev.logs];
+
+        updatedLogs.push({
+          id: Math.random().toString(),
+          message: moveLogMessage,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: capturedAny ? 'capture' : 'move',
+          color: activePlayer.color,
+        });
+
+        if (bonusSteps > 0) {
+          updatedLogs.push({
+            id: Math.random().toString(),
+            message: `🎁 ¡Bono de +${bonusSteps} pasos para ${activePlayer.name}!`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'system',
+            color: activePlayer.color,
+          });
+        }
         
         if (hasWon && !prev.players[activePlayer.id].hasFinished) {
-          if (!isMuted) audio.playVictory();
           const finishedPlayers = prev.players.filter(p => p.hasFinished).length;
           const newRank = finishedPlayers + 1;
           
@@ -375,6 +444,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             type: 'system',
             color: activePlayer.color,
           });
+          globalLogger.log('GAME-FLOW', `🎉 ¡${activePlayer.name} ha finalizado en la posición #${newRank}!`, { playerColor: activePlayer.color });
 
           const activeCount = prev.players.filter(p => p.isActive).length;
           if (newRank >= activeCount - 1) {
@@ -391,44 +461,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               type: 'system',
             });
+            globalLogger.log('GAME-FLOW', `🏁 ¡La partida ha terminado!`);
           }
-        }
-        
-        if (finalStep === 84 && !hasWon) {
-          bonusSteps += 15;
-          if (!isMuted) audio.playGoal();
-          showToast('🎉 ¡Ficha en la meta! +15 pasos de bono');
-        }
-
-        if (capturedAny) {
-          bonusSteps += 25;
-        }
-
-        const moveLogMessage = capturedAny
-          ? `¡${activePlayer.name} CAPTURÓ una ficha enemiga en la casilla ${targetCellIndex}!`
-          : `${activePlayer.name} movió su ficha ${tokenId + 1} a ${
-              finalStep === 84 ? '¡LA META!' : `paso ${finalStep}`
-            }.`;
-            
-        const updatedLogs = [
-          ...prev.logs,
-          {
-            id: Math.random().toString(),
-            message: moveLogMessage,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: capturedAny ? 'capture' : 'move',
-            color: activePlayer.color,
-          }
-        ];
-        
-        if (bonusSteps > 0) {
-          updatedLogs.push({
-            id: Math.random().toString(),
-            message: `🎁 ¡Bono de +${bonusSteps} pasos para ${activePlayer.name}!`,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: 'system',
-            color: activePlayer.color,
-          });
         }
 
         return {
@@ -439,16 +473,6 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           logs: updatedLogs,
         };
       });
-
-      // Update remaining moves
-      const nextMoves = [...remainingMoves];
-      [...moveIndices].sort((a, b) => b - a).forEach(idx => nextMoves.splice(idx, 1));
-      
-      if (bonusSteps > 0) {
-        nextMoves.push(bonusSteps);
-      }
-      
-      setRemainingMoves(nextMoves);
     };
 
     // Start animation if it's a board move, otherwise direct jump for base exit
@@ -578,9 +602,10 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               id: Math.random().toString(),
               message: `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`,
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'warning',
+              type: 'warning' as const,
               color: activePlayer.color,
             };
+            globalLogger.log('GAME-FLOW', `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`, { playerColor: activePlayer.color });
             
             showToast('🚨 ¡Tercer doble! Ficha a la base.');
             setRemainingMoves([]);
@@ -611,6 +636,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           type: typeStr,
           color: activePlayer.color,
         };
+
+        globalLogger.log('GAME-FLOW', rollLogMessage, { playerColor: activePlayer.color });
 
         return {
           ...prev,
