@@ -318,9 +318,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     };
 
     const finalizeMove = (finalStep: number) => {
+      let bonusSteps = 0;
       setGameState((prev) => {
         const newTokens = [...prev.tokens];
-        let bonusSteps = 0;
         let capturedAny = false;
 
         const targetCellIndex = getCellIndexForToken(token.color, finalStep);
@@ -429,10 +429,6 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             type: 'system',
             color: activePlayer.color,
           });
-          
-          setTimeout(() => {
-            setRemainingMoves(m => [...m, bonusSteps]);
-          }, 0);
         }
 
         return {
@@ -447,6 +443,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       // Update remaining moves
       const nextMoves = [...remainingMoves];
       [...moveIndices].sort((a, b) => b - a).forEach(idx => nextMoves.splice(idx, 1));
+      
+      if (bonusSteps > 0) {
+        nextMoves.push(bonusSteps);
+      }
+      
       setRemainingMoves(nextMoves);
     };
 
