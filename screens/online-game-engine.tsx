@@ -144,7 +144,7 @@ export function OnlineGameEngine({
   const finishedPlayerIndicesRef = useRef<number[]>([])
   const [rankings, setRankings] = useState<Player[]>([])
 
-  const updateBarrierLifetimes = (currentTokens: Token[] = tokensRef.current) => {
+  const updateBarrierLifetimes = (currentTokens: Token[] = tokensRef.current, endingPlayerIdx?: number) => {
     const nextLifetimes: Record<number, number> = { ...barrierLifetimesRef.current }
     const cellCounts: Record<number, number> = {}
     const pCount = gameData.players.length
@@ -163,7 +163,10 @@ export function OnlineGameEngine({
       if (t.step >= 0 && t.step < trackSteps) {
         const tkIdx = (getStartOffset(t.color, pCount) + t.step) % perimeter
         if (cellCounts[tkIdx] >= 2) {
-          nextLifetimes[globalId] = (nextLifetimes[globalId] || 0) + 1
+          nextLifetimes[globalId] = nextLifetimes[globalId] || 0
+          if (endingPlayerIdx === undefined || t.playerId === endingPlayerIdx) {
+            nextLifetimes[globalId] += 1
+          }
         } else {
           nextLifetimes[globalId] = 0
         }
@@ -263,7 +266,7 @@ export function OnlineGameEngine({
     const forcedTokens = playerTokens
       .filter((t) => {
         const globalId = t.playerId * 4 + t.id
-        if ((barrierLifetimesRef.current[globalId] || 0) >= 4) {
+        if ((barrierLifetimesRef.current[globalId] || 0) >= 2) {
           if (t.step >= 0 && t.step < trackSteps) {
             const tkIdx = (getStartOffset(t.color, pCount) + t.step) % perimeter
             let totalCount = 0
@@ -358,7 +361,7 @@ export function OnlineGameEngine({
         nextSlot = activeIdx
         globalLogger.log('GAME-FLOW', `¡Turno extra! Manteniendo el turno en slot: ${nextSlot}`)
       } else {
-        updateBarrierLifetimes(currentTokens)
+        updateBarrierLifetimes(currentTokens, activeIdx)
       }
 
       const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
