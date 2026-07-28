@@ -281,17 +281,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     let newStep = oldStep + moveVal;
 
     if (oldStep === 0) {
-      if (moveIndices.length === 2) {
-        const d1 = remainingMoves[0];
-        const d2 = remainingMoves[1];
-        if (d1 === 5 || d1 === 6) {
-          newStep = 1 + d2;
-        } else {
-          newStep = 1 + d1;
-        }
-      } else {
-        newStep = 1;
-      }
+      newStep = 1;
     }
 
     // Step-by-step animation logic
@@ -731,13 +721,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
             let targetStep = token.step + mv.moveVal;
             if (token.step === 0) {
-              if (mv.indices.length === 2) {
-                const d1 = remainingMoves[0];
-                const d2 = remainingMoves[1];
-                targetStep = 1 + (d1 === 5 || d1 === 6 ? d2 : d1);
-              } else {
-                targetStep = 1;
-              }
+              targetStep = 1;
             }
 
             if (targetStep === 84) score += 100;
