@@ -57,6 +57,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   const [extraTurnsCount, setExtraTurnsCount] = useState<number>(0);
   const [barrierLifetimes, setBarrierLifetimes] = useState<Record<string, number>>({});
   const pendingExtraTurnsRef = useRef<number>(0);
+  const botTimeoutRef = useRef<number | null>(null);
+  const [isHumanAutoplay, setIsHumanAutoplay] = useState<boolean>(false);
   const consecutiveDoublesCountRef = useRef<number>(0);
   const lastMovedTokenRef = useRef<{ playerId: number; tokenId: number } | null>(null);
   const vibrationIntervalRef = useRef<number | null>(null);
@@ -205,24 +207,36 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     }
   }, [isMuted]);
 
+  const triggerTurnStart = () => {
+    if (botTimeoutRef.current) {
+      clearTimeout(botTimeoutRef.current);
+      botTimeoutRef.current = null;
+    }
+    setIsHumanAutoplay(false);
+  };
+
   // Turn Timer Effect
   useEffect(() => {
-    if (gameState.winner || gameState.isRolling || gameState.isAnimating) return;
-
-    timerRef.current = setInterval(() => {
-      setTimer((prev) => {
-        if (prev <= 1) {
-          passTurn();
-          return 10;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    let interval: number | null = null;
+    const shouldRunTimer = !gameState.winner && !gameState.isRolling && !gameState.isAnimating && !isHumanAutoplay && (!gameState.hasRolled || (gameState.hasRolled && playableTokenIds.length > 0));
+    
+    if (shouldRunTimer) {
+      interval = window.setInterval(() => {
+        setTimer((prev) => prev <= 1 ? 0 : prev - 1);
+      }, 1000);
+    }
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (interval) clearInterval(interval);
     };
-  }, [gameState.currentTurnIndex, gameState.hasRolled, gameState.winner, gameState.isRolling, gameState.isAnimating, extraTurnsCount]);
+  }, [gameState.currentTurnIndex, gameState.hasRolled, gameState.winner, gameState.isRolling, gameState.isAnimating, extraTurnsCount, playableTokenIds.length, isHumanAutoplay]);
+
+  useEffect(() => {
+    if (timer === 0 && !gameState.winner) {
+      setIsHumanAutoplay(true);
+      setTimer(10);
+    }
+  }, [timer, gameState.winner]);
 
   // Turn Transition Handler
   useEffect(() => {
@@ -462,6 +476,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   };
 
   const passTurn = () => {
+    triggerTurnStart();
     setBarrierLifetimes(prev => {
       const nextLifetimes = { ...prev };
       const cellCounts = {};
@@ -518,8 +533,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // Roll Dice (2 dice mechanism)
   const handleRollDice = () => {
-    if (gameState.hasRolled || gameState.isRolling || gameState.isAnimating || gameState.winner) return;
+    if (gameState.isRolling || gameState.hasRolled || gameState.isAnimating || gameState.winner) return;
 
+    setGameState((prev) => ({ ...prev, isRolling: true }));
     if (!isMuted) audio.playDiceRoll();
     setGameState((prev) => ({ ...prev, isRolling: true }));
     setIsGlowActive(false);
@@ -609,6 +625,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // Human Token Click
   const handleTokenClick = (tokenId: number) => {
+    setIsHumanAutoplay(false); // Wake up human player
     if (activePlayer.type !== 'human' || gameState.isAnimating || gameState.isRolling || !gameState.hasRolled) return;
 
     if (playableTokenIds.includes(tokenId)) {
@@ -616,14 +633,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       if (!token) return;
 
       if (token.step === 0) {
-        const idxSix = remainingMoves.findIndex(m => m === 6);
         const idxFive = remainingMoves.findIndex(m => m === 5);
-        if (idxSix !== -1) {
-          moveToken(tokenId, 6, [idxSix]);
-        } else if (idxFive !== -1) {
+        if (idxFive !== -1) {
           moveToken(tokenId, 5, [idxFive]);
-        } else if (remainingMoves.length === 2 && (remainingMoves[0] + remainingMoves[1] === 5 || remainingMoves[0] + remainingMoves[1] === 6)) {
-          moveToken(tokenId, remainingMoves[0] + remainingMoves[1], [0, 1]);
+        } else if (remainingMoves.length === 2 && remainingMoves[0] + remainingMoves[1] === 5) {
+          moveToken(tokenId, 5, [0, 1]);
         }
       } else {
         if (remainingMoves.length === 1) {
@@ -637,84 +651,85 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // AI Bot Turn Execution Effect
   useEffect(() => {
-    if (gameState.winner || activePlayer?.type !== 'human' || gameState.isRolling || gameState.isAnimating) {
-      if (activePlayer?.type === 'bot' && !gameState.winner && !gameState.isRolling && !gameState.isAnimating) {
-        const botTimeout = setTimeout(() => {
-          if (!gameState.hasRolled) {
-            handleRollDice();
-          } else if (remainingMoves.length > 0) {
-            const playables = getPlayableTokenIdsHex(activePlayer.id, remainingMoves);
-            if (playables.length > 0) {
-              const validMoves: { tokenId: number; moveVal: number; indices: number[] }[] = [];
-              playables.forEach((tokenId) => {
-                const token = gameState.tokens.find(t => t.playerId === activePlayer.id && t.id === tokenId);
-                if (!token) return;
+    if (botTimeoutRef.current) {
+      clearTimeout(botTimeoutRef.current);
+      botTimeoutRef.current = null;
+    }
 
-                if (token.step === 0) {
-                  const idxSix = remainingMoves.findIndex(m => m === 6);
-                  const idxFive = remainingMoves.findIndex(m => m === 5);
-                  if (idxSix !== -1) {
-                    validMoves.push({ tokenId, moveVal: 6, indices: [idxSix] });
-                  } else if (idxFive !== -1) {
-                    validMoves.push({ tokenId, moveVal: 5, indices: [idxFive] });
-                  } else if (remainingMoves.length === 2 && (remainingMoves[0] + remainingMoves[1] === 5 || remainingMoves[0] + remainingMoves[1] === 6)) {
-                    validMoves.push({ tokenId, moveVal: remainingMoves[0] + remainingMoves[1], indices: [0, 1] });
-                  }
-                } else {
-                  remainingMoves.forEach((m, idx) => {
-                    if (token.step + m <= 84) {
-                      validMoves.push({ tokenId, moveVal: m, indices: [idx] });
-                    }
-                  });
-                  if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 84) {
-                    validMoves.push({ tokenId, moveVal: remainingMoves[0] + remainingMoves[1], indices: [0, 1] });
-                  }
-                }
-              });
+    const isActiveBot = activePlayer?.type === 'bot' || (activePlayer?.type === 'human' && isHumanAutoplay);
+    if (gameState.winner || !isActiveBot || gameState.isRolling || gameState.isAnimating) return;
 
-              if (validMoves.length > 0) {
-                let chosen = validMoves[0];
-                let maxScore = -1;
+    if (!gameState.hasRolled) {
+      botTimeoutRef.current = window.setTimeout(() => {
+        handleRollDice();
+      }, 1100);
+    } else if (remainingMoves.length > 0) {
+      const playables = getPlayableTokenIdsHex(activePlayer.id, remainingMoves);
+      if (playables.length > 0) {
+        const validMoves: { tokenId: number; moveVal: number; indices: number[] }[] = [];
+        playables.forEach((tokenId) => {
+          const token = gameState.tokens.find(t => t.playerId === activePlayer.id && t.id === tokenId);
+          if (!token) return;
 
-                validMoves.forEach((mv) => {
-                  let score = 10;
-                  const token = gameState.tokens.find(t => t.playerId === activePlayer.id && t.id === mv.tokenId);
-                  if (!token) return;
-
-                  if (token.step === 0) score += 50;
-
-                  let targetStep = token.step + mv.moveVal;
-                  if (token.step === 0) {
-                    if (mv.indices.length === 2) {
-                      const d1 = remainingMoves[0];
-                      const d2 = remainingMoves[1];
-                      targetStep = 1 + (d1 === 5 || d1 === 6 ? d2 : d1);
-                    } else {
-                      targetStep = 1;
-                    }
-                  }
-
-                  if (targetStep === 84) score += 100;
-
-                  const targetCellIndex = getCellIndexForToken(token.color, targetStep);
-                  if (typeof targetCellIndex === 'number' && !STAR_CELLS.includes(targetCellIndex)) {
-                    const hasEnemy = gameState.tokens.some(t => t.playerId !== activePlayer.id && t.step > 0 && t.step <= 78 && getCellIndexForToken(t.color, t.step) === targetCellIndex);
-                    if (hasEnemy) score += 80;
-                  }
-
-                  if (score > maxScore) {
-                    maxScore = score;
-                    chosen = mv;
-                  }
-                });
-
-                moveToken(chosen.tokenId, chosen.moveVal, chosen.indices);
+          if (token.step === 0) {
+            const idxFive = remainingMoves.findIndex(m => m === 5);
+            if (idxFive !== -1) {
+              validMoves.push({ tokenId, moveVal: 5, indices: [idxFive] });
+            } else if (remainingMoves.length === 2 && remainingMoves[0] + remainingMoves[1] === 5) {
+              validMoves.push({ tokenId, moveVal: 5, indices: [0, 1] });
+            }
+          } else {
+            remainingMoves.forEach((m, idx) => {
+              if (token.step + m <= 84) {
+                validMoves.push({ tokenId, moveVal: m, indices: [idx] });
               }
+            });
+            if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 84) {
+              validMoves.push({ tokenId, moveVal: remainingMoves[0] + remainingMoves[1], indices: [0, 1] });
             }
           }
-        }, 1000);
+        });
 
-        return () => clearTimeout(botTimeout);
+        if (validMoves.length > 0) {
+          let chosen = validMoves[0];
+          let maxScore = -1;
+
+          validMoves.forEach((mv) => {
+            let score = 10;
+            const token = gameState.tokens.find(t => t.playerId === activePlayer.id && t.id === mv.tokenId);
+            if (!token) return;
+
+            if (token.step === 0) score += 50;
+
+            let targetStep = token.step + mv.moveVal;
+            if (token.step === 0) {
+              if (mv.indices.length === 2) {
+                const d1 = remainingMoves[0];
+                const d2 = remainingMoves[1];
+                targetStep = 1 + (d1 === 5 || d1 === 6 ? d2 : d1);
+              } else {
+                targetStep = 1;
+              }
+            }
+
+            if (targetStep === 84) score += 100;
+
+            const targetCellIndex = getCellIndexForToken(token.color, targetStep);
+            if (typeof targetCellIndex === 'number' && !STAR_CELLS.includes(targetCellIndex)) {
+              const hasEnemy = gameState.tokens.some(t => t.playerId !== activePlayer.id && t.step > 0 && t.step <= 78 && getCellIndexForToken(t.color, t.step) === targetCellIndex);
+              if (hasEnemy) score += 80;
+            }
+
+            if (score > maxScore) {
+              maxScore = score;
+              chosen = mv;
+            }
+          });
+
+          botTimeoutRef.current = window.setTimeout(() => {
+            moveToken(chosen.tokenId, chosen.moveVal, chosen.indices);
+          }, 900);
+        }
       }
     }
   }, [
@@ -724,6 +739,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     gameState.isAnimating,
     gameState.winner,
     remainingMoves,
+    isHumanAutoplay,
   ]);
 
   // Turn alert vibration & sound sync for Human Turn
