@@ -48,6 +48,10 @@ export const ConsoleLogs: React.FC<ConsoleLogsProps> = ({
         return 'text-p-blue font-medium';
       case 'yellow':
         return 'text-p-yellow font-medium';
+      case 'purple':
+        return 'text-[var(--color-purple)] font-medium';
+      case 'orange':
+        return 'text-[var(--color-orange)] font-medium';
       default:
         return 'text-t-primary';
     }

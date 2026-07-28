@@ -977,7 +977,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
 
   return (
-    <div className={`min-h-screen bg-root text-t-primary flex flex-col relative pb-8 font-sans ${appTheme === 'sugar' ? 'theme-sugar' : ''}`}>
+    <div className={`min-h-screen w-full flex flex-col font-sans cyber-bg ${appTheme === 'sugar' ? 'theme-sugar' : ''}`}>
       {/* Upper Navigation & Sound controls */}
       <header className="w-full bg-root/80 backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-4 py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-[0_4px_30px_oklch(0.82_0.15_200/0.05)]">
         <div className="flex items-center gap-2">

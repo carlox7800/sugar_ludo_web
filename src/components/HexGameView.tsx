@@ -190,7 +190,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     };
     setGameState((prev) => ({
       ...prev,
-      logs: [newLog, ...prev.logs].slice(0, 50),
+      logs: [...prev.logs, newLog].slice(-50),
     }));
   };
 
@@ -231,7 +231,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     } else {
       const playables = getPlayableTokenIdsHex(activePlayer.id, remainingMoves);
       if (playables.length === 0) {
-        addLog(`Sin movimientos posibles para ${activePlayer.name}.`, 'system');
+        addLog(`${activePlayer.name} no tiene movimientos válidos.`, 'info', activePlayer.color);
         const passTimeout = setTimeout(() => {
           passTurn();
         }, 1200);
@@ -361,18 +361,18 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             }.`;
             
         const updatedLogs = [
+          ...prev.logs,
           {
             id: Math.random().toString(),
             message: moveLogMessage,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             type: capturedAny ? 'capture' : 'move',
             color: activePlayer.color,
-          },
-          ...prev.logs,
+          }
         ];
         
         if (bonusSteps > 0) {
-          updatedLogs.unshift({
+          updatedLogs.push({
             id: Math.random().toString(),
             message: `🎁 ¡Bono de +${bonusSteps} pasos para ${activePlayer.name}!`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -518,7 +518,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           diceValue: sum,
           isRolling: false,
           hasRolled: true,
-          logs: [newLog, ...prev.logs],
+          logs: [...prev.logs, newLog],
         };
       });
       
@@ -781,7 +781,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
       {/* Right Column: Unified Game Control Panel & Console Logs */}
       <div className="w-full lg:w-2/5 flex flex-col gap-3 shrink-0">
-
+        {console.log("🔍 [RASTREO-SELECTOR-6J]", { file: 'HexGameView.tsx', component: 'GameControls', activePlayer, isHumanTurnToRoll })}
         <GameControls
           appTheme={appTheme}
           setAppTheme={() => {}}
@@ -807,7 +807,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             message: l.message,
             timestamp: l.timestamp,
             type: l.type as any,
-            color: l.color as any,
+            playerColor: l.color as any,
           }))}
           onClear={() => setGameState((prev) => ({ ...prev, logs: [] }))}
           isOpen={isLogsOpen}
@@ -821,11 +821,38 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         const token = gameState.tokens.find((t) => t.playerId === activePlayer.id && t.id === moveSelectorTokenId);
         if (!token) return null;
 
+        const hasBarrierAt = (perimeterIndex: number) => {
+          if (perimeterIndex < 0 || perimeterIndex > 77) return false;
+          let totalCount = 0;
+          gameState.tokens.forEach(tk => {
+            const tkIdx = getCellIndexForToken(tk.color, tk.step);
+            if (typeof tkIdx === 'number' && tkIdx === perimeterIndex) {
+              totalCount++;
+            }
+          });
+          return totalCount >= 2;
+        };
+
         const checkMoveValid = (moveVal: number) => {
           if (token.step === 0) {
-            return moveVal === 5 || moveVal === 6;
+            if (moveVal === 5 || moveVal === 6) {
+              const startIdx = getCellIndexForToken(token.color, 1);
+              if (typeof startIdx === 'number' && hasBarrierAt(startIdx)) return false;
+              return true;
+            }
+            return false;
           } else if (token.step > 0 && token.step < 84) {
-            return token.step + moveVal <= 84;
+            if (token.step + moveVal > 84) return false;
+            let blocked = false;
+            for(let stepOffset = 1; stepOffset <= moveVal; stepOffset++) {
+               const pathStep = token.step + stepOffset;
+               const pIndex = getCellIndexForToken(token.color, pathStep);
+               if (typeof pIndex === 'number' && hasBarrierAt(pIndex)) { 
+                 blocked = true; 
+                 break; 
+               }
+            }
+            return !blocked;
           }
           return false;
         };
@@ -850,10 +877,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         }
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[210] flex items-center justify-center p-4 cyber-game-panel">
-            <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] p-4 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex flex-col gap-3 max-w-[180px] w-full animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[210] flex items-center justify-center p-4">
+            <div className="bg-[oklch(0.16_0.03_285)] border border-[#06b6d4]/40 p-4 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_20px_#06b6d440] flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
               <div className="flex flex-col items-center gap-1">
-                <h3 className="text-t-primary font-black text-xs text-center font-mono uppercase tracking-wider drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Mover</h3>
+                <h3 className="text-white font-extrabold text-sm text-center font-display uppercase tracking-wider drop-shadow-[0_0_8px_rgba(0,242,255,0.4)]">Mover Ficha</h3>
+                <p className="text-xs text-slate-400 font-medium">Elige el dado:</p>
               </div>
               <div className="flex flex-row flex-wrap justify-center gap-2 mt-1">
                 {options.map((opt, i) => (
@@ -863,15 +891,15 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                       setMoveSelectorTokenId(null);
                       moveToken(moveSelectorTokenId, opt.val, opt.indices);
                     }}
-                    className="w-12 h-12 bg-border hover:bg-p-blue/10 hover:border-p-blue border border-border rounded-xl flex items-center justify-center cursor-pointer transition-all active:scale-95"
+                    className="w-12 h-12 bg-[#06b6d4]/15 border border-[#06b6d4] hover:bg-[#06b6d4] hover:text-black text-[#06b6d4] rounded-2xl flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow-[0_0_12px_#06b6d4] font-display font-extrabold text-xl"
                   >
-                    <span className="font-bold text-lg text-p-blue font-mono">{opt.label}</span>
+                    {opt.label}
                   </button>
                 ))}
               </div>
               <button
                 onClick={() => setMoveSelectorTokenId(null)}
-                className="mt-1 py-1 text-t-muted hover:text-foreground hover:bg-[oklch(1_0_0/0.05)] rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all text-center cursor-pointer"
+                className="mt-1 py-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all text-center cursor-pointer"
               >
                 Cancelar
               </button>
