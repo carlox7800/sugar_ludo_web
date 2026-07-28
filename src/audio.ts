@@ -47,9 +47,15 @@ class LudoAudio {
     if (!this.ctx || !this.musicMasterGain || !this.sfxMasterGain) return;
     
     const t = this.ctx.currentTime;
+    
+    // Apply an exponential curve for natural human hearing perception.
+    // This allows fine control at low slider values (e.g. 5% slider = 0.25% actual power).
+    const perceivedMusicVolume = Math.pow(this.musicVolume, 2);
+    const perceivedSfxVolume = Math.pow(this.sfxVolume, 2);
+
     // Smooth transition
-    this.musicMasterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.musicVolume, t, 0.1);
-    this.sfxMasterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.sfxVolume, t, 0.1);
+    this.musicMasterGain.gain.setTargetAtTime(this.isMuted ? 0 : perceivedMusicVolume, t, 0.1);
+    this.sfxMasterGain.gain.setTargetAtTime(this.isMuted ? 0 : perceivedSfxVolume, t, 0.1);
   }
 
   private initBgmElement() {

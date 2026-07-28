@@ -19,6 +19,7 @@ interface HexagonalLudoBoardViewProps {
   onTokenClick: (tokenId: number) => void;
   humanPlayerId: number;
   appTheme: 'classic' | 'sugar';
+  explosionData?: { cellIndex: number | string; color: HexPlayerColor } | null;
 }
 
 const CX = 500;
@@ -175,6 +176,7 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
   playableTokenIds,
   onTokenClick,
   appTheme,
+  explosionData,
 }) => {
   const activePlayer = players[currentTurnIndex];
 
@@ -186,6 +188,25 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
         style={{ touchAction: 'none', maxHeight: 'calc(100vh - 130px)' }}
       >
           <defs>
+            <style>{`
+              @keyframes breatheHex {
+                0% { transform: scale(1); }
+                50% { transform: scale(1.28); }
+                100% { transform: scale(1); }
+              }
+              .breathing-token-hex {
+                animation: breatheHex 1.4s ease-in-out infinite;
+              }
+              @keyframes fireworkRingHex {
+                0% { transform: scale(0); opacity: 1; stroke-width: 12px; }
+                100% { transform: scale(8); opacity: 0; stroke-width: 0px; }
+              }
+              @keyframes fireworkParticleHex {
+                0% { transform: translate(0, 0) scale(1); opacity: 1; }
+                50% { opacity: 1; }
+                100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+              }
+            `}</style>
             <filter id="tokenShadow" x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="2" dy="4" stdDeviation="4" floodOpacity="0.5" />
             </filter>
@@ -443,56 +464,85 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
                   transition: 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                 }}
               >
-                {/* Glow ring if playable */}
-                {isPlayable && (
-                  <circle
-                    cx={0}
-                    cy={0}
-                    r={isBase ? 20 : 20}
-                    fill={tokenInfo.hexCode}
-                    opacity="0.4"
-                    className="animate-ping"
-                    style={{ animationDuration: '1.2s' }}
-                  />
-                )}
+                <g className={`${isPlayable && activePlayer?.type === 'human' ? 'breathing-token-hex' : ''}`}>
+                  {appTheme === 'sugar' ? (
+                    <>
+                      <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
+                        <path d="M -15 0 L -24 -10 L -24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
+                        <path d="M 15 0 L 24 -10 L 24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
+                        <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
+                        <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
+                        <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
+                      </g>
+                    </>
+                  ) : (
+                    <>
+                      <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
+                        <circle cx={0} cy={0} r={16} fill={`url(#token-${token.color}-grad)`} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
+                        <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                        <circle cx={0} cy={0} r={5} fill={`url(#token-${token.color}-grad)`} />
+                        <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                      </g>
+                    </>
+                  )}
 
-                {appTheme === 'sugar' ? (
-                  <>
-                    <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-                      <path d="M -15 0 L -24 -10 L -24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
-                      <path d="M 15 0 L 24 -10 L 24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
-                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
-                      <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
-                      <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
-                    </g>
-                  </>
-                ) : (
-                  <>
-                    <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-                      <circle cx={0} cy={0} r={16} fill={`url(#token-${token.color}-grad)`} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
-                      <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                      <circle cx={0} cy={0} r={5} fill={`url(#token-${token.color}-grad)`} />
-                      <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
-                    </g>
-                  </>
-                )}
-
-                {/* Token Number */}
-                <text
-                  x={0}
-                  y={0.5}
-                  fill="#FFFFFF"
-                  fontSize={isBase ? "9" : "10"}
-                  fontWeight="bold"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  opacity="0.9"
-                >
-                  {token.id + 1}
-                </text>
+                  {/* Token Number */}
+                  <text
+                    x={0}
+                    y={0.5}
+                    fill="#FFFFFF"
+                    fontSize={isBase ? "9" : "10"}
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    opacity="0.9"
+                  >
+                    {token.id + 1}
+                  </text>
+                </g>
               </g>
             );
           })}
+
+          {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales Hexagonal) --- */}
+          {explosionData && typeof explosionData.cellIndex === 'number' && (() => {
+            const loc = getCellLocation(explosionData.cellIndex);
+            const pos = getArmCellPos(loc.s, loc.r, loc.c);
+            const x = pos.x;
+            const y = pos.y;
+            const colorHex = HEX_COLOR_INFO[explosionData.color]?.hexCode || '#ff0055';
+            
+            return (
+              <g className="fireworks-overlay" style={{ transformOrigin: `${x}px ${y}px` }}>
+                {/* Ring Expansivo */}
+                <circle cx={x} cy={y} r={15} fill="none" stroke={colorHex} style={{ animation: 'fireworkRingHex 0.8s ease-out forwards', transformOrigin: `${x}px ${y}px` }} />
+                
+                {/* Partículas Masivas */}
+                {Array.from({ length: 16 }).map((_, i) => {
+                  const angle = (i * 360) / 16;
+                  const rad = angle * Math.PI / 180;
+                  const distance = 100 + (i % 2 === 0 ? 60 : 0);
+                  const dx = Math.cos(rad) * distance;
+                  const dy = Math.sin(rad) * distance + 60;
+                  
+                  return (
+                    <circle 
+                      key={i} 
+                      cx={x} cy={y} r={5 + (i % 4)} 
+                      fill={colorHex} 
+                      style={{
+                        animation: `fireworkParticleHex 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
+                        animationDelay: `${Math.random() * 0.15}s`,
+                        '--dx': `${dx}px`,
+                        '--dy': `${dy}px`,
+                        transformOrigin: `${x}px ${y}px`
+                      } as any} 
+                    />
+                  );
+                })}
+              </g>
+            );
+          })()}
         </svg>
     </div>
   );

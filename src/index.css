@@ -15,6 +15,8 @@
   --color-p-green: var(--color-green);
   --color-p-blue: var(--color-blue);
   --color-p-yellow: var(--color-yellow);
+  --color-purple-500: var(--color-purple);
+  --color-orange-500: var(--color-orange);
 }
 
 
@@ -34,6 +36,10 @@
     --color-green-light: rgba(5, 150, 105, 0.12);
     --color-blue-light: rgba(2, 132, 199, 0.12);
     --color-yellow-light: rgba(202, 138, 4, 0.12);
+    --color-purple: #a855f7;
+    --color-orange: #f97316;
+    --color-purple-light: rgba(168, 85, 247, 0.12);
+    --color-orange-light: rgba(249, 115, 22, 0.12);
     --shadow-color: rgba(0, 0, 0, 0.5);
   }
 
@@ -53,6 +59,10 @@
     --color-green-light: rgba(52, 211, 153, 0.2);
     --color-blue-light: rgba(56, 189, 248, 0.2);
     --color-yellow-light: rgba(250, 204, 21, 0.2);
+    --color-purple: #c084fc;
+    --color-orange: #fb923c;
+    --color-purple-light: rgba(192, 132, 252, 0.2);
+    --color-orange-light: rgba(251, 146, 60, 0.2);
     --shadow-color: rgba(255, 182, 193, 0.5);
   }
 

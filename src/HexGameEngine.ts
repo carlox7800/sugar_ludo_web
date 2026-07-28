@@ -100,20 +100,14 @@ export function getCellIndexForToken(color: HexPlayerColor, step: number): numbe
   if (step === 0) return 'BASE';
   const startCell = HEX_COLOR_INFO[color].startCell;
 
-  // Main board loop: steps 1 to 78 cover one full circuit minus the final overlap
-  // Step 78 lands on the cell just before startCell (e.g. cell 3 for Purple)
+  // Main board loop: steps 1 to 78 cover one full 78-cell perimeter
   if (step >= 1 && step <= 78) {
     return (startCell + (step - 1)) % 78;
   }
   
-  // Steps 79 to 81: walk up to the tip of the arm (cells 4, 5, 6 for Purple)
-  if (step >= 79 && step <= 81) {
-    return (startCell + (step - 1)) % 78;
-  }
-
-  // Steps 82 to 86: Home corridor H1 to H5
-  if (step >= 82 && step <= 86) {
-    return `H${step - 81}`;
+  // Steps 79 to 83: Home corridor H1 to H5
+  if (step >= 79 && step <= 83) {
+    return `H${step - 78}`;
   }
 
   return 'GOAL';

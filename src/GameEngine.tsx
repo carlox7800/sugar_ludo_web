@@ -1075,7 +1075,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                 onExit();
               }}
               isMuted={isMuted}
-              setIsMuted={setIsMuted}
+              appTheme={appTheme}
             />
           ) : (
             <>

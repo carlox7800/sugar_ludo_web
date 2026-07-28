@@ -15,6 +15,7 @@ import {
   HexLog,
 } from '../HexGameEngine';
 import { HexagonalLudoBoardView } from './HexagonalLudoBoardView';
+import { GameControls } from './GameControls';
 import { ConsoleLogs } from './ConsoleLogs';
 import { audio } from '../audio';
 import { Sparkles, Trophy, ArrowLeft, RotateCcw, Volume2, VolumeX, Zap, ShieldCheck, Award } from 'lucide-react';
@@ -25,7 +26,6 @@ interface HexGameViewProps {
   botDifficulty: 'easy' | 'medium' | 'hard';
   onExit: () => void;
   isMuted: boolean;
-  setIsMuted: (muted: boolean) => void;
   appTheme: 'classic' | 'sugar';
 }
 
@@ -35,12 +35,15 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   botDifficulty,
   onExit,
   isMuted,
-  setIsMuted,
   appTheme,
 }) => {
   const [gameState, setGameState] = useState<HexGameState>(() =>
     createInitialHexState(playerCount, humanColor, botDifficulty)
   );
+
+  useEffect(() => {
+    console.log("HexGameView mounted - using modern GameControls!");
+  }, []);
 
   const [timer, setTimer] = useState<number>(10);
   const [isLogsOpen, setIsLogsOpen] = useState<boolean>(true);
@@ -56,6 +59,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   const pendingExtraTurnsRef = useRef<number>(0);
   const vibrationIntervalRef = useRef<number | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+  const [explosionData, setExplosionData] = useState<{ cellIndex: number | string; color: HexPlayerColor } | null>(null);
 
   const showToast = (msg: string) => {
     setNotification(msg);
@@ -109,11 +113,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             playableIds.push(t.id);
           }
         }
-      } else if (t.step > 0 && t.step < 87) {
+      } else if (t.step > 0 && t.step < 84) {
         let canMove = false;
         
         for (const m of moves) {
-          if (t.step + m <= 87) {
+          if (t.step + m <= 84) {
             let blocked = false;
             for(let stepOffset = 1; stepOffset <= m; stepOffset++) {
                const pathStep = t.step + stepOffset;
@@ -132,7 +136,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
         if (!canMove && moves.length === 2) {
           const sum = moves[0] + moves[1];
-          if (t.step + sum <= 87) {
+          if (t.step + sum <= 84) {
              let blocked = false;
              for(let stepOffset = 1; stepOffset <= sum; stepOffset++) {
                const pathStep = t.step + stepOffset;
@@ -189,6 +193,15 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       logs: [newLog, ...prev.logs].slice(0, 50),
     }));
   };
+
+  // Ambient BGM Sync Effect
+  useEffect(() => {
+    if (!isMuted) {
+      audio.playBackgroundMusic(true);
+    } else {
+      audio.playBackgroundMusic(false);
+    }
+  }, [isMuted]);
 
   // Turn Timer Effect
   useEffect(() => {
@@ -296,23 +309,34 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
         const targetCellIndex = getCellIndexForToken(token.color, finalStep);
 
-        // Check captures
-        if (typeof targetCellIndex === 'number' && !STAR_CELLS.includes(targetCellIndex)) {
-          newTokens.forEach((otherToken, idx) => {
-            if (otherToken.playerId !== activePlayer.id && otherToken.step > 0 && otherToken.step <= 81) {
-              const otherCell = getCellIndexForToken(otherToken.color, otherToken.step);
-              if (otherCell === targetCellIndex) {
-                newTokens[idx] = { ...otherToken, step: 0 };
-                capturedAny = true;
-                if (!isMuted) audio.playCapture();
-                showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`);
+        // Check captures (including base exit ejection on start cell)
+        if (typeof targetCellIndex === 'number') {
+          const isStartCell = targetCellIndex === HEX_COLOR_INFO[token.color].startCell;
+          const canCaptureOnCell = !STAR_CELLS.includes(targetCellIndex) || (oldStep === 0 && isStartCell);
+
+          if (canCaptureOnCell) {
+            newTokens.forEach((otherToken, idx) => {
+              if (otherToken.playerId !== activePlayer.id && otherToken.step > 0 && otherToken.step <= 78) {
+                const otherCell = getCellIndexForToken(otherToken.color, otherToken.step);
+                if (otherCell === targetCellIndex) {
+                  newTokens[idx] = { ...otherToken, step: 0 };
+                  capturedAny = true;
+                  setExplosionData({ cellIndex: targetCellIndex, color: otherToken.color });
+                  setTimeout(() => setExplosionData(null), 3500);
+                  if (!isMuted) audio.playFireworks();
+                  showToast(
+                    oldStep === 0
+                      ? `💥 ¡Expulsión de salida! Ficha enemiga enviada a casa`
+                      : `⚔️ ¡Ficha capturada! +20 pasos de bono`
+                  );
+                }
               }
-            }
-          });
+            });
+          }
         }
 
         const playerGoalTokens = newTokens.filter(
-          (t) => t.playerId === activePlayer.id && t.step === 87
+          (t) => t.playerId === activePlayer.id && t.step === 84
         );
         const hasWon = playerGoalTokens.length === TOKENS_PER_PLAYER;
 
@@ -320,7 +344,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           audio.playVictory();
         }
         
-        if (finalStep === 87 && !hasWon) {
+        if (finalStep === 84 && !hasWon) {
           bonusSteps += 15;
           if (!isMuted) audio.playGoal();
           showToast('🎉 ¡Ficha en la meta! +10 pasos de bono');
@@ -333,7 +357,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         const moveLogMessage = capturedAny
           ? `¡${activePlayer.name} CAPTURÓ una ficha enemiga en la casilla ${targetCellIndex}!`
           : `${activePlayer.name} movió su ficha ${tokenId + 1} a ${
-              finalStep === 87 ? '¡LA META!' : `paso ${finalStep}`
+              finalStep === 84 ? '¡LA META!' : `paso ${finalStep}`
             }.`;
             
         const updatedLogs = [
@@ -478,6 +502,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           pendingExtraTurnsRef.current += 1;
           rollLogMessage = `🎲 ¡${activePlayer.name} sacó doble (${r1},${r2}) y gana tiro extra!`;
           typeStr = 'info';
+          showToast('🎲 ¡Doble! Tiras de nuevo');
         }
         
         const newLog = {
@@ -555,11 +580,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                   }
                 } else {
                   remainingMoves.forEach((m, idx) => {
-                    if (token.step + m <= 87) {
+                    if (token.step + m <= 84) {
                       validMoves.push({ tokenId, moveVal: m, indices: [idx] });
                     }
                   });
-                  if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 87) {
+                  if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 84) {
                     validMoves.push({ tokenId, moveVal: remainingMoves[0] + remainingMoves[1], indices: [0, 1] });
                   }
                 }
@@ -587,7 +612,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                     }
                   }
 
-                  if (targetStep === 87) score += 100;
+                  if (targetStep === 84) score += 100;
 
                   const targetCellIndex = getCellIndexForToken(token.color, targetStep);
                   if (typeof targetCellIndex === 'number' && !STAR_CELLS.includes(targetCellIndex)) {
@@ -731,7 +756,15 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   };
 
   return (
-    <div className="w-full flex flex-col lg:flex-row items-center lg:items-start justify-center gap-4">
+    <div className="w-full flex flex-col lg:flex-row items-center lg:items-start justify-center gap-4 relative">
+      {/* Toast Banner (Floating Overlay - Zero Layout Shift) */}
+      {notification && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/90 backdrop-blur-md px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-extrabold shadow-[0_8px_32px_rgba(0,0,0,0.6)] pointer-events-none">
+          <Sparkles className="size-4 text-[var(--candy-cyan)]" />
+          <span>{notification}</span>
+        </div>
+      )}
+
       {/* Left Column: Interactive Hexagonal Board View */}
       <div className="w-full lg:w-3/5 flex flex-col gap-3">
         <HexagonalLudoBoardView
@@ -742,150 +775,30 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           playableTokenIds={playableTokenIds}
           onTokenClick={handleTokenClick}
           humanPlayerId={gameState.players.findIndex((p) => p.type === 'human')}
+          explosionData={explosionData}
         />
       </div>
 
       {/* Right Column: Unified Game Control Panel & Console Logs */}
       <div className="w-full lg:w-2/5 flex flex-col gap-3 shrink-0">
-        {/* Unified Control Panel */}
-        <div className="w-full rounded-2xl p-4 shadow-[0_0_30px_rgba(0,242,255,0.04)] border flex flex-col gap-3.5 select-none cyber-game-panel bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] backdrop-blur-xl border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
-          {/* Game Mode Title Badge */}
-          <div className="flex items-center justify-between border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] pb-1.5">
-            <div className="flex items-center gap-1.5">
-              <Sparkles className="text-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse drop-shadow-[0_0_8px_var(--candy-magenta,oklch(0.7_0.27_350))]" size={15} />
-              <span className="text-[11px] font-black text-t-primary uppercase tracking-wider font-mono drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">
-                Modo Hexagonal ({playerCount} Jugadores)
-              </span>
-            </div>
-            <span className="text-[9px] font-bold text-[var(--candy-cyan,oklch(0.82_0.15_200))] font-mono uppercase tracking-wider bg-[var(--candy-cyan,oklch(0.82_0.15_200))]/10 px-1.5 py-0.5 rounded border border-[var(--candy-cyan,oklch(0.82_0.15_200))]/20 shadow-[0_0_8px_var(--candy-cyan,oklch(0.82_0.15_200))/0.3]">
-              {playerCount} Jugadores
-            </span>
-          </div>
 
-          {/* Live Game Information Header */}
-          {!gameState.winner && (
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-0.5 animate-fade-in">
-                <span className="text-[9px] text-t-muted font-mono uppercase tracking-wider">Turno Actual</span>
-                <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${bgColors[activePlayer.color]} animate-pulse shadow-[0_0_8px_currentColor]`} />
-                  <span className={`text-sm font-bold ${textColors[activePlayer.color]} drop-shadow-[0_0_6px_currentColor]`}>
-                    {activePlayer.name} ({turnTitles[activePlayer.color]})
-                  </span>
-                  <span className="text-[9px] px-1.5 py-0.5 bg-panel text-t-muted rounded border border-border font-semibold uppercase font-mono">
-                    {activePlayer.type === 'human' ? 'Tú' : 'Bot'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Turn Timer Clock */}
-              <div className="flex flex-col items-end gap-1">
-                <span className="text-[9px] text-t-muted font-mono uppercase tracking-wider">Tiempo de Turno</span>
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-xs font-bold font-mono ${timer <= 3 ? 'text-p-red animate-pulse' : 'text-t-primary'}`}>
-                    {timer}s
-                  </span>
-                  <div className="w-14 h-1.5 bg-panel rounded-full overflow-hidden border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
-                    <div
-                      className={`h-full transition-all duration-1000 shadow-[0_0_8px_currentColor] ${timer <= 3 ? 'bg-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse' : 'bg-[var(--candy-cyan,oklch(0.82_0.15_200))]'}`}
-                      style={{ width: `${(timer / 10) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Dice Container & Roll Buttons */}
-          {!gameState.winner && (
-            <div className="flex items-center justify-center py-2.5 bg-[oklch(0.08_0.02_285)] rounded-xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.12))] gap-5 relative overflow-hidden">
-              {isGlowActive && (
-                <div className="absolute inset-0 bg-[var(--candy-cyan,oklch(0.82_0.15_200))]/5 animate-pulse pointer-events-none" />
-              )}
-
-              <div className="flex flex-col items-center gap-1">
-                <span className="text-[10px] font-bold text-t-muted tracking-wider uppercase font-mono">Dados</span>
-                <div className="flex gap-2">
-                  {[0, 1].map((dieIdx) => {
-                    let isUsed = false;
-                    if (diceValues) {
-                      const rolledCount = diceValues.filter((v, i) => v === diceValues[dieIdx] && i <= dieIdx).length;
-                      const remainingCount = remainingMoves.filter(v => v === diceValues[dieIdx]).length;
-                      isUsed = rolledCount > remainingCount;
-                    }
-
-                    return (
-                      <div
-                        key={dieIdx}
-                        onClick={() => isHumanTurnToRoll && handleRollDice()}
-                        className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 relative ${isUsed ? 'opacity-30 grayscale scale-90' : ''} ${
-                          isHumanTurnToRoll
-                            ? 'cursor-pointer hover:scale-105 active:scale-95 shadow-[0_0_12px_rgba(0,242,255,0.12)] border border-border'
-                            : 'shadow-md border border-border'
-                        } ${gameState.isRolling ? 'animate-spin' : ''} ${bgColors[activePlayer.color]} ${
-                          isGlowActive ? 'ring-2 ring-[var(--color-p-blue)] ring-offset-1 ring-offset-[var(--bg-root)]' : ''
-                        }`}
-                      >
-                        {diceValues !== null ? (
-                          renderDiceDots(diceValues[dieIdx], activePlayer.color)
-                        ) : (
-                          <span className="text-t-primary/60 font-bold text-xl font-mono">?</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5 max-w-[200px]">
-                {activePlayer.type === 'human' ? (
-                  <>
-                    {!gameState.hasRolled && !gameState.isRolling ? (
-                      <button
-                        onClick={handleRollDice}
-                        className="flex items-center justify-center gap-2 py-2.5 px-5 bg-[linear-gradient(145deg,oklch(0.78_0.2_150),color-mix(in_oklch,oklch(0.78_0.2_150),black_12%))] text-[oklch(0.18_0.03_285)] font-extrabold text-sm rounded-2xl shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_5px_0_oklch(0.5_0.14_155),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.14_155),transparent_55%)] hover:brightness-110 active:scale-95 transition-all cursor-pointer font-mono uppercase tracking-wider"
-                      >
-                        <Zap size={14} className="animate-bounce fill-current" />
-                        Lanzar Dado
-                      </button>
-                    ) : (
-                      <span className="text-xs text-p-blue font-semibold italic">
-                        {gameState.hasRolled ? 'Selecciona ficha de tablero' : 'Girando...'}
-                      </span>
-                    )}
-                    {!gameState.hasRolled && !gameState.isRolling && (
-                      <p className="text-[10px] text-t-muted leading-tight">
-                        *Toca los dados o el botón para tirar.
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex flex-col gap-1 text-left animate-pulse">
-                    <span className="text-xs font-bold text-t-primary font-mono">Pensando...</span>
-                    <p className="text-[11px] text-t-muted leading-tight">
-                      {activePlayer.name} está decidiendo su jugada.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Bottom Utilities */}
-          <div className="flex items-center justify-between text-xs text-t-muted font-medium border-t border-border/35 pt-3">
-            <div className="flex items-center gap-1 text-t-muted">
-              <ShieldCheck size={14} className="text-p-green" />
-              <span>Dificultad: <strong className="capitalize text-p-green">{botDifficulty === 'hard' ? 'Inteligente' : botDifficulty === 'medium' ? 'Media' : 'Fácil'}</strong></span>
-            </div>
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-1 text-t-muted hover:text-[var(--candy-magenta,oklch(0.7_0.27_350))] transition-colors cursor-pointer"
-            >
-              <RotateCcw size={13} />
-              <span>Reiniciar Partida</span>
-            </button>
-          </div>
-        </div>
+        <GameControls
+          appTheme={appTheme}
+          setAppTheme={() => {}}
+          isPlaying={true}
+          onStartGame={() => {}}
+          onRollDice={handleRollDice}
+          diceValues={diceValues}
+          remainingMoves={remainingMoves}
+          isRolling={gameState.isRolling}
+          currentTurnPlayer={activePlayer as any}
+          hasRolled={gameState.hasRolled}
+          timer={timer}
+          winnerPlayer={gameState.winner ? (activePlayer as any) : null}
+          onResetGame={handleReset}
+          isHumanTurnToRoll={isHumanTurnToRoll as boolean}
+          isGlowActive={isGlowActive}
+        />
 
         {/* Live Game Logs */}
         <ConsoleLogs
@@ -911,8 +824,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         const checkMoveValid = (moveVal: number) => {
           if (token.step === 0) {
             return moveVal === 5 || moveVal === 6;
-          } else if (token.step > 0 && token.step < 87) {
-            return token.step + moveVal <= 87;
+          } else if (token.step > 0 && token.step < 84) {
+            return token.step + moveVal <= 84;
           }
           return false;
         };
