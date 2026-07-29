@@ -11,6 +11,7 @@ import {
 import {
   createInitialHexState,
   getCellIndexForToken,
+  hasBarrierAtHex,
   HexGameState,
   HexLog,
 } from '../HexGameEngine';
@@ -82,18 +83,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     const playerTokens = currentTokens.filter((t) => t.playerId === pId);
     const playableIds: number[] = [];
 
-    const hasBarrierAt = (perimeterIndex: number) => {
-      if (perimeterIndex < 0 || perimeterIndex > 77) return false;
-      let totalCount = 0;
-      currentTokens.forEach(tk => {
-        const tkIdx = getCellIndexForToken(tk.color, tk.step);
-        if (typeof tkIdx === 'number' && tkIdx === perimeterIndex) {
-          totalCount++;
-        }
-      });
-      return totalCount >= 2;
-    };
-
+    
     const forcedTokens = playerTokens.filter(t => {
       const globalId = `${t.playerId}-${t.id}`;
       if ((barrierLifetimes[globalId] || 0) >= 2) { 
@@ -114,7 +104,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       if (t.step === 0) {
         if (hasFive || hasSumFive) {
           const startIdx = getCellIndexForToken(t.color, 1);
-          if (typeof startIdx === 'number' && !hasBarrierAt(startIdx)) {
+          if (typeof startIdx === 'number' && !hasBarrierAtHex(startIdx, currentTokens)) {
             playableIds.push(t.id);
           }
         }
@@ -127,7 +117,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             for(let stepOffset = 1; stepOffset <= m; stepOffset++) {
                const pathStep = t.step + stepOffset;
                const pIndex = getCellIndexForToken(t.color, pathStep);
-               if (typeof pIndex === 'number' && hasBarrierAt(pIndex)) { 
+               if (typeof pIndex === 'number' && hasBarrierAtHex(pIndex, currentTokens)) { 
                  blocked = true; 
                  break; 
                }
@@ -146,7 +136,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
              for(let stepOffset = 1; stepOffset <= sum; stepOffset++) {
                const pathStep = t.step + stepOffset;
                const pIndex = getCellIndexForToken(t.color, pathStep);
-               if (typeof pIndex === 'number' && hasBarrierAt(pIndex)) { 
+               if (typeof pIndex === 'number' && hasBarrierAtHex(pIndex, currentTokens)) { 
                  blocked = true; 
                  break; 
                }
@@ -441,9 +431,14 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           globalLogger.log('GAME-FLOW', `🎉 ¡${activePlayer.name} ha finalizado en la posición #${newRank}!`, { playerColor: activePlayer.color });
 
           const activeCount = prev.players.filter(p => p.isActive).length;
-          if (newRank >= activeCount - 1) {
+          let requiredFinishers = 1;
+          if (activeCount === 6 || activeCount === 4) requiredFinishers = 3;
+          if (activeCount === 3) requiredFinishers = 2;
+          if (activeCount === 2) requiredFinishers = 1;
+
+          if (newRank >= requiredFinishers || newRank >= activeCount - 1) {
             let lastPlayer = newPlayers.find(p => p.isActive && !p.hasFinished);
-            if (lastPlayer) {
+            if (lastPlayer && newRank >= activeCount - 1) {
                newPlayers = newPlayers.map(p => 
                  p.id === lastPlayer!.id ? { ...p, hasFinished: true, rank: activeCount } : p
                );
@@ -463,7 +458,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           ...prev,
           tokens: newTokens,
           isAnimating: false,
-          winner: hasWon ? activePlayer : prev.winner,
+          winner: newWinner !== null ? newWinner : prev.winner,
           logs: updatedLogs,
         };
       });
@@ -733,11 +728,34 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           } else {
             remainingMoves.forEach((m, idx) => {
               if (token.step + m <= 83) {
-                validMoves.push({ tokenId, moveVal: m, indices: [idx] });
+                let blocked = false;
+                for (let stepOffset = 1; stepOffset <= m; stepOffset++) {
+                  const pathStep = token.step + stepOffset;
+                  const pIndex = getCellIndexForToken(token.color, pathStep);
+                  if (typeof pIndex === 'number' && hasBarrierAtHex(pIndex, gameState.tokens)) {
+                    blocked = true;
+                    break;
+                  }
+                }
+                if (!blocked) {
+                  validMoves.push({ tokenId, moveVal: m, indices: [idx] });
+                }
               }
             });
             if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 83) {
-              validMoves.push({ tokenId, moveVal: remainingMoves[0] + remainingMoves[1], indices: [0, 1] });
+              let blocked = false;
+              const sum = remainingMoves[0] + remainingMoves[1];
+              for (let stepOffset = 1; stepOffset <= sum; stepOffset++) {
+                const pathStep = token.step + stepOffset;
+                const pIndex = getCellIndexForToken(token.color, pathStep);
+                if (typeof pIndex === 'number' && hasBarrierAtHex(pIndex, gameState.tokens)) {
+                  blocked = true;
+                  break;
+                }
+              }
+              if (!blocked) {
+                validMoves.push({ tokenId, moveVal: sum, indices: [0, 1] });
+              }
             }
           }
         });
@@ -965,33 +983,21 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         const token = gameState.tokens.find((t) => t.playerId === activePlayer.id && t.id === moveSelectorTokenId);
         if (!token) return null;
 
-        const hasBarrierAt = (perimeterIndex: number) => {
-          if (perimeterIndex < 0 || perimeterIndex > 77) return false;
-          let totalCount = 0;
-          gameState.tokens.forEach(tk => {
-            const tkIdx = getCellIndexForToken(tk.color, tk.step);
-            if (typeof tkIdx === 'number' && tkIdx === perimeterIndex) {
-              totalCount++;
-            }
-          });
-          return totalCount >= 2;
-        };
-
         const checkMoveValid = (moveVal: number) => {
           if (token.step === 0) {
             if (moveVal === 5 || moveVal === 6) {
               const startIdx = getCellIndexForToken(token.color, 1);
-              if (typeof startIdx === 'number' && hasBarrierAt(startIdx)) return false;
+              if (typeof startIdx === 'number' && hasBarrierAtHex(startIdx, gameState.tokens)) return false;
               return true;
             }
             return false;
-          } else if (token.step > 0 && token.step < 82) {
+          } else if (token.step > 0 && token.step < 83) {
             if (token.step + moveVal > 83) return false;
             let blocked = false;
             for(let stepOffset = 1; stepOffset <= moveVal; stepOffset++) {
                const pathStep = token.step + stepOffset;
                const pIndex = getCellIndexForToken(token.color, pathStep);
-               if (typeof pIndex === 'number' && hasBarrierAt(pIndex)) { 
+               if (typeof pIndex === 'number' && hasBarrierAtHex(pIndex, gameState.tokens)) { 
                  blocked = true; 
                  break; 
                }
