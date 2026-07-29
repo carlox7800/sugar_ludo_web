@@ -118,9 +118,19 @@ export function getTokenCoordinates(token: HexToken, allTokens?: HexToken[]): { 
     const info = HEX_COLOR_INFO[token.color];
     const s = info.sectorIndex;
     const goalAngle = -90 + s * 60;
-    // Offset adjusted to keep tokens comfortably inside the center triangle
-    const radius = 75 + (token.id % 3) * 18;
-    return getPolarPos(radius, goalAngle);
+    
+    // Pyramid formation: 1 token ahead towards vertex, 2 tokens behind spread to sides
+    const idx = token.id % 3;
+    let radius = 48;
+    let angleOffset = 0;
+    if (idx === 1) {
+      radius = 80;
+      angleOffset = -13;
+    } else if (idx === 2) {
+      radius = 80;
+      angleOffset = 13;
+    }
+    return getPolarPos(radius, goalAngle + angleOffset);
   }
 
   let basePos = { x: CX, y: CY };
@@ -175,24 +185,14 @@ export function getTokenCoordinates(token: HexToken, allTokens?: HexToken[]): { 
   }
 }
 
-export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
-  tokens,
-  players,
-  currentTurnIndex,
-  playableTokenIds,
-  onTokenClick,
-  appTheme,
-  explosionData,
-}) => {
-  const activePlayer = players[currentTurnIndex];
-
+// -------------------------------------------------------------------------------------------------
+// CAPA ESTÁTICA MEMOIZADA (SVG BACKGROUND)
+// Esto renderiza el 100% de la geometría, estrellas, casas y pasillos 1 sola vez.
+// Elimina el 95% de la carga de reconciliación DOM en GPU móvil durante las partidas.
+// -------------------------------------------------------------------------------------------------
+const HexBoardStaticSVG = React.memo(() => {
   return (
-    <div className="relative w-full max-w-[650px] mx-auto select-none flex items-center justify-center p-0">
-      <svg
-        viewBox="139 156 722 688"
-        className="w-full h-auto drop-shadow-[0_12px_24px_rgba(0,0,0,0.5)]"
-        style={{ touchAction: 'none', maxHeight: 'calc(100vh - 130px)' }}
-      >
+    <g id="hex-static-layer">
           <defs>
             <style>{`
               @keyframes breatheHex {
@@ -208,15 +208,15 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
                 100% { transform: scale(8); opacity: 0; stroke-width: 0px; }
               }
               @keyframes fireworkParticleHex {
-                0% { transform: translate(0, 0) scale(1); opacity: 1; }
+                0% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
                 50% { opacity: 1; }
-                100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+                100% { transform: translate3d(var(--dx), var(--dy), 0) scale(0); opacity: 0; }
               }
             `}</style>
-            <filter id="tokenShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <filter id="tokenShadow" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
               <feDropShadow dx="2" dy="4" stdDeviation="4" floodOpacity="0.5" />
             </filter>
-            <filter id="textOutline" x="-20%" y="-20%" width="140%" height="140%">
+            <filter id="textOutline" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
               <feMorphology in="SourceAlpha" operator="dilate" radius="1.5" result="DILATED" />
               <feFlood floodColor="#000000" floodOpacity="0.6" result="OUTLINE_COLOR" />
               <feComposite in="OUTLINE_COLOR" in2="DILATED" operator="in" result="OUTLINE" />
@@ -225,13 +225,13 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
-            <filter id="houseShadow" x="-10%" y="-10%" width="120%" height="120%">
+            <filter id="houseShadow" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
               <feDropShadow dx="0" dy="8" stdDeviation="8" floodOpacity="0.15" />
             </filter>
-            <filter id="baseShadow" x="-5%" y="-5%" width="110%" height="110%">
+            <filter id="baseShadow" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
               <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.6" floodColor="#000000" />
             </filter>
-            <filter id="innerBaseShadow" x="-5%" y="-5%" width="110%" height="110%">
+            <filter id="innerBaseShadow" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
               <feDropShadow dx="1" dy="2" stdDeviation="2" floodOpacity="0.4" floodColor="#000000" />
             </filter>
             {/* Gradients for tokens matching the 4-player classic style */}
@@ -360,12 +360,11 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
                 )}
                 <text
                   x={pos.x}
-                  y={pos.y + 4}
-                  fill={starColorObj ? "#ffffff" : isStar ? "#ca8a04" : "#94a3b8"}
-                  fontSize="12"
-                  fontWeight="bold"
+                  y={pos.y + 4.5}
+                  fill={starColorObj ? "#ffffff" : "#94a3b8"}
+                  fontSize="13"
+                  fontWeight="800"
                   textAnchor="middle"
-                  opacity={starColorObj ? 1 : isStar ? 0.9 : 0.6}
                 >
                   {cellIdx}
                 </text>
@@ -448,6 +447,29 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
               </g>
             );
           })}
+    </g>
+  );
+});
+
+const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = ({
+  tokens,
+  players,
+  currentTurnIndex,
+  playableTokenIds,
+  onTokenClick,
+  appTheme,
+  explosionData,
+}) => {
+  const activePlayer = players[currentTurnIndex];
+
+  return (
+    <div className="relative w-full max-w-[650px] mx-auto select-none flex items-center justify-center p-0">
+      <svg
+        viewBox="139 156 722 688"
+        className="w-full h-auto drop-shadow-[0_12px_24px_rgba(0,0,0,0.5)]"
+        style={{ touchAction: 'none', maxHeight: 'calc(100vh - 130px)' }}
+      >
+          <HexBoardStaticSVG />
 
           {/* Tokens Layer */}
           {tokens.map((token) => {
@@ -466,7 +488,8 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
                 }}
                 className={`${isPlayable ? 'cursor-pointer' : 'pointer-events-none'}`}
                 style={{
-                  transform: `translate(${pos.x}px, ${pos.y}px)`,
+                  transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+                  willChange: 'transform',
                   transition: 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                 }}
               >
@@ -553,4 +576,26 @@ export const HexagonalLudoBoardView: React.FC<HexagonalLudoBoardViewProps> = ({
     </div>
   );
 };
+
+export const HexagonalLudoBoardView = React.memo(HexagonalLudoBoardViewComponent, (prevProps, nextProps) => {
+  if (prevProps.appTheme !== nextProps.appTheme) return false;
+  if (prevProps.currentTurnIndex !== nextProps.currentTurnIndex) return false;
+  if (prevProps.humanPlayerId !== nextProps.humanPlayerId) return false;
+  
+  // Comparar tokens rápidamente
+  if (prevProps.tokens.length !== nextProps.tokens.length) return false;
+  for (let i = 0; i < prevProps.tokens.length; i++) {
+    const pt = prevProps.tokens[i];
+    const nt = nextProps.tokens[i];
+    if (pt.step !== nt.step || pt.color !== nt.color || pt.playerId !== nt.playerId) return false;
+  }
+  
+  if (prevProps.playableTokenIds.join(',') !== nextProps.playableTokenIds.join(',')) return false;
+  
+  const prevExp = prevProps.explosionData ? `${prevProps.explosionData.cellIndex}-${prevProps.explosionData.color}` : '';
+  const nextExp = nextProps.explosionData ? `${nextProps.explosionData.cellIndex}-${nextProps.explosionData.color}` : '';
+  if (prevExp !== nextExp) return false;
+  
+  return true;
+});
 

@@ -303,6 +303,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     const finalizeMove = (finalStep: number) => {
       let bonusSteps = 0;
       let capturedAny = false;
+      let isExpulsion = false;
       let capturedTokensIds: { playerId: number, id: number }[] = [];
 
       const targetCellIndex = getCellIndexForToken(token.color, finalStep);
@@ -316,11 +317,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           
           if (myTokens.length === 1 && enemyTokens.length === 1) {
             capturedTokensIds.push({ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id });
-            capturedAny = true;
+            isExpulsion = true;
             setExplosionData({ cellIndex: targetCellIndex, color: enemyTokens[0].color });
             setTimeout(() => setExplosionData(null), 3500);
             if (!isMuted) audio.playFireworks();
-            showToast(`💥 ¡Expulsión de salida! Ficha enemiga enviada a casa`);
+            showToast(`💥 ¡Expulsión de salida! Ficha enemiga enviada a casa (+0 bonus)`);
           }
         } else if (!STAR_CELLS.includes(targetCellIndex)) {
           const enemyTokens = gameState.tokens.filter(t => t.playerId !== activePlayer.id && t.step > 0 && t.step <= 76 && getCellIndexForToken(t.color, t.step) === targetCellIndex);
@@ -352,11 +353,13 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
       const moveLogMessage = capturedAny
         ? `¡${activePlayer.name} CAPTURÓ una ficha enemiga en la casilla ${targetCellIndex}!`
+        : isExpulsion
+        ? `¡${activePlayer.name} EXPULSÓ una ficha enemiga de la salida!`
         : `${activePlayer.name} movió su ficha ${tokenId + 1} a ${
             finalStep === 83 ? '¡LA META!' : `paso ${finalStep}`
           }.`;
           
-      globalLogger.log(capturedAny ? 'TOKENS' : 'TOKENS', moveLogMessage, { playerColor: activePlayer.color });
+      globalLogger.log('TOKENS', moveLogMessage, { playerColor: activePlayer.color });
 
       if (bonusSteps > 0) {
         globalLogger.log('GAME-FLOW', `🎁 ¡Bono de +${bonusSteps} pasos para ${activePlayer.name}!`, { playerColor: activePlayer.color });
