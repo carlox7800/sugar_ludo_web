@@ -143,8 +143,14 @@ export function getTokenCoordinates(token: HexToken, allTokens?: HexToken[]): { 
 
   // Handle overlapping tokens
   const activeTokensOnCell = allTokens.filter((t) => {
-    if (t.step === 0 || t.step === 87) return false;
-    return getCellIndexForToken(t.color, t.step) === cellIdx;
+    if (t.step === 0 || t.step >= 83) return false;
+    const tCellIdx = getCellIndexForToken(t.color, t.step);
+    if (tCellIdx !== cellIdx) return false;
+    
+    // Si la celda es un string (pasillo H1-H5 o GOAL), físicamente pertenecen a casas distintas
+    if (typeof cellIdx === 'string' && t.color !== token.color) return false;
+    
+    return true;
   });
 
   if (activeTokensOnCell.length <= 1) {

@@ -118,11 +118,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             playableIds.push(t.id);
           }
         }
-      } else if (t.step > 0 && t.step < 82) {
+      } else if (t.step > 0 && t.step < 83) {
         let canMove = false;
         
         for (const m of moves) {
-          if (t.step + m <= 82) {
+          if (t.step + m <= 83) {
             let blocked = false;
             for(let stepOffset = 1; stepOffset <= m; stepOffset++) {
                const pathStep = t.step + stepOffset;
@@ -141,7 +141,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
         if (!canMove && moves.length === 2) {
           const sum = moves[0] + moves[1];
-          if (t.step + sum <= 82) {
+          if (t.step + sum <= 83) {
              let blocked = false;
              for(let stepOffset = 1; stepOffset <= sum; stepOffset++) {
                const pathStep = t.step + stepOffset;
@@ -332,11 +332,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       }
 
       const playerGoalTokens = gameState.tokens.filter(
-        (t) => t.playerId === activePlayer.id && t.step === 82 && t.id !== tokenId
+        (t) => t.playerId === activePlayer.id && t.step === 83 && t.id !== tokenId
       );
-      const hasWon = playerGoalTokens.length + (finalStep === 82 ? 1 : 0) === TOKENS_PER_PLAYER;
+      const hasWon = playerGoalTokens.length + (finalStep === 83 ? 1 : 0) === TOKENS_PER_PLAYER;
 
-      if (finalStep === 82 && !hasWon) {
+      if (finalStep === 83 && !hasWon) {
         bonusSteps += 15;
         if (!isMuted) audio.playGoal();
         showToast('🎉 ¡Ficha en la meta! +15 pasos de bono');
@@ -349,7 +349,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       const moveLogMessage = capturedAny
         ? `¡${activePlayer.name} CAPTURÓ una ficha enemiga en la casilla ${targetCellIndex}!`
         : `${activePlayer.name} movió su ficha ${tokenId + 1} a ${
-            finalStep === 82 ? '¡LA META!' : `paso ${finalStep}`
+            finalStep === 83 ? '¡LA META!' : `paso ${finalStep}`
           }.`;
           
       globalLogger.log(capturedAny ? 'TOKENS' : 'TOKENS', moveLogMessage, { playerColor: activePlayer.color });
@@ -574,7 +574,6 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       const rolls = [r1, r2];
       const isDouble = r1 === r2;
 
-      if (!isMuted) audio.playTurnAlert();
       setDiceValues(rolls);
       setRemainingMoves([...rolls]);
 
@@ -613,7 +612,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
             const lastId = lastMovedTokenRef.current.tokenId;
             newTokens = newTokens.map(t => {
-              if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 82) {
+              if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 83) {
                 return { ...t, step: 0 };
               }
               return t;
@@ -733,11 +732,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             }
           } else {
             remainingMoves.forEach((m, idx) => {
-              if (token.step + m <= 82) {
+              if (token.step + m <= 83) {
                 validMoves.push({ tokenId, moveVal: m, indices: [idx] });
               }
             });
-            if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 82) {
+            if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 83) {
               validMoves.push({ tokenId, moveVal: remainingMoves[0] + remainingMoves[1], indices: [0, 1] });
             }
           }
@@ -759,7 +758,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               targetStep = 1;
             }
 
-            if (targetStep === 82) score += 100;
+            if (targetStep === 83) score += 100;
 
             const targetCellIndex = getCellIndexForToken(token.color, targetStep);
             if (typeof targetCellIndex === 'number' && !STAR_CELLS.includes(targetCellIndex)) {
@@ -987,7 +986,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             }
             return false;
           } else if (token.step > 0 && token.step < 82) {
-            if (token.step + moveVal > 82) return false;
+            if (token.step + moveVal > 83) return false;
             let blocked = false;
             for(let stepOffset = 1; stepOffset <= moveVal; stepOffset++) {
                const pathStep = token.step + stepOffset;
