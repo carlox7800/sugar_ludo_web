@@ -118,8 +118,8 @@ export function getTokenCoordinates(token: HexToken, allTokens?: HexToken[]): { 
     const info = HEX_COLOR_INFO[token.color];
     const s = info.sectorIndex;
     const goalAngle = -90 + s * 60;
-    // Slight offset based on token ID inside center goal
-    const radius = 55 + (token.id % 3) * 22;
+    // Offset adjusted to keep tokens comfortably inside the center triangle
+    const radius = 75 + (token.id % 3) * 18;
     return getPolarPos(radius, goalAngle);
   }
 

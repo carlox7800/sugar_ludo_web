@@ -116,13 +116,15 @@ export function getCellIndexForToken(color: HexPlayerColor, step: number): numbe
 export function hasBarrierAtHex(perimeterIndex: number, currentTokens: HexToken[]): boolean {
   if (perimeterIndex < 0 || perimeterIndex > 77) return false;
   
-  const colorCounts: Record<string, number> = {};
+  let totalCount = 0;
   currentTokens.forEach(tk => {
-    const tkIdx = getCellIndexForToken(tk.color, tk.step);
-    if (typeof tkIdx === 'number' && tkIdx === perimeterIndex) {
-      colorCounts[tk.color] = (colorCounts[tk.color] || 0) + 1;
+    if (tk.step > 0 && tk.step <= 77) {
+      const tkIdx = getCellIndexForToken(tk.color, tk.step);
+      if (typeof tkIdx === 'number' && tkIdx === perimeterIndex) {
+        totalCount++;
+      }
     }
   });
   
-  return Object.values(colorCounts).some(count => count >= 2);
+  return totalCount >= 2;
 }

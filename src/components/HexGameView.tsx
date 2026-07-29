@@ -104,8 +104,22 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       if (t.step === 0) {
         if (hasFive || hasSumFive) {
           const startIdx = getCellIndexForToken(t.color, 1);
-          if (typeof startIdx === 'number' && !hasBarrierAtHex(startIdx, currentTokens)) {
-            playableIds.push(t.id);
+          if (typeof startIdx === 'number') {
+            let myCount = 0;
+            let enemyCount = 0;
+            currentTokens.forEach(tk => {
+               const tkIdx = getCellIndexForToken(tk.color, tk.step);
+               if (typeof tkIdx === 'number' && tkIdx === startIdx) {
+                  if (tk.color === t.color) myCount++;
+                  else enemyCount++;
+               }
+            });
+            const isExpellable = (myCount === 1 && enemyCount === 1);
+            const isBlocked = (myCount + enemyCount >= 2) && !isExpellable;
+
+            if (!isBlocked) {
+              playableIds.push(t.id);
+            }
           }
         }
       } else if (t.step > 0 && t.step < 83) {
@@ -457,6 +471,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         return {
           ...prev,
           tokens: newTokens,
+          players: newPlayers,
           isAnimating: false,
           winner: newWinner !== null ? newWinner : prev.winner,
           logs: updatedLogs,
@@ -531,7 +546,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     setGameState((prev) => {
       let nextIdx = prev.currentTurnIndex;
 
-      if (!extraTurn) {
+      if (!extraTurn || prev.players[nextIdx].hasFinished) {
         do {
           nextIdx = (nextIdx + 1) % prev.players.length;
         } while (prev.players[nextIdx].hasFinished && nextIdx !== prev.currentTurnIndex);
@@ -987,8 +1002,20 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           if (token.step === 0) {
             if (moveVal === 5 || moveVal === 6) {
               const startIdx = getCellIndexForToken(token.color, 1);
-              if (typeof startIdx === 'number' && hasBarrierAtHex(startIdx, gameState.tokens)) return false;
-              return true;
+              if (typeof startIdx === 'number') {
+                let myCount = 0;
+                let enemyCount = 0;
+                gameState.tokens.forEach(tk => {
+                   const tkIdx = getCellIndexForToken(tk.color, tk.step);
+                   if (typeof tkIdx === 'number' && tkIdx === startIdx) {
+                      if (tk.color === token.color) myCount++;
+                      else enemyCount++;
+                   }
+                });
+                const isExpellable = (myCount === 1 && enemyCount === 1);
+                const isBlocked = (myCount + enemyCount >= 2) && !isExpellable;
+                return !isBlocked;
+              }
             }
             return false;
           } else if (token.step > 0 && token.step < 83) {
@@ -1064,11 +1091,32 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] max-w-md w-full rounded-3xl p-8 border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_60px_oklch(0.7_0.27_350/0.15)] flex flex-col items-center text-center gap-6 animate-in zoom-in duration-300">
             <Trophy className="text-[var(--candy-green,oklch(0.78_0.2_150))] animate-bounce drop-shadow-[0_0_15px_var(--candy-green,oklch(0.78_0.2_150))]" size={64} />
             <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[var(--candy-magenta,oklch(0.7_0.27_350))] to-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_oklch(0.7_0.27_350/0.5)]">
-              ¡{gameState.winner.name} ha GANADO!
+              ¡PARTIDA FINALIZADA!
             </h2>
-            <p className="text-t-primary/80 font-medium">
-              Ha completado las 3 fichas en la meta del tablero hexagonal.
-            </p>
+            
+            <div className="w-full flex flex-col gap-3 mt-2 mb-2">
+              {gameState.players
+                .filter(p => p.hasFinished)
+                .sort((a, b) => (a.rank || 99) - (b.rank || 99))
+                .map((p, idx) => (
+                  <div key={p.id} className="flex items-center justify-between bg-[var(--panel-border,oklch(0.7_0.27_350/0.1))] p-3 rounded-xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.2))]">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl drop-shadow-md">
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
+                      </span>
+                      <span className="font-bold text-t-primary/90 text-sm uppercase tracking-wide">
+                        {idx + 1}.º LUGAR
+                      </span>
+                    </div>
+                    <span 
+                      className="font-black text-lg drop-shadow-md" 
+                      style={{ color: HEX_COLOR_INFO[p.color].hex }}
+                    >
+                      {p.name}
+                    </span>
+                  </div>
+                ))}
+            </div>
             <div className="flex flex-col gap-3 w-full mt-2">
               <button
                 onClick={handleReset}
