@@ -100,14 +100,14 @@ export function getCellIndexForToken(color: HexPlayerColor, step: number): numbe
   if (step === 0) return 'BASE';
   const startCell = HEX_COLOR_INFO[color].startCell;
 
-  // Main board loop: steps 1 to 78 cover one full 78-cell perimeter
-  if (step >= 1 && step <= 78) {
+  // Main board loop: steps 1 to 76 cover the perimeter until home entry
+  if (step >= 1 && step <= 76) {
     return (startCell + (step - 1)) % 78;
   }
   
-  // Steps 79 to 83: Home corridor H1 to H5
-  if (step >= 79 && step <= 83) {
-    return `H${step - 78}`;
+  // Steps 77 to 81: Home corridor H1 to H5
+  if (step >= 77 && step <= 81) {
+    return `H${step - 76}`;
   }
 
   return 'GOAL';

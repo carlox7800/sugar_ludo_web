@@ -31,7 +31,7 @@ export const HEX_COLOR_INFO: Record<HexPlayerColor, HexPlayerConfig> = {
     darkHex: '#7e22ce',
     deepHex: '#6b21a8',
     startCell: 8,
-    homeEntryCell: 7,
+    homeEntryCell: 6,
     starCell: 8,
     sectorIndex: 0, // Top
   },
@@ -43,7 +43,7 @@ export const HEX_COLOR_INFO: Record<HexPlayerColor, HexPlayerConfig> = {
     darkHex: '#047857',
     deepHex: '#065f46',
     startCell: 73,
-    homeEntryCell: 72,
+    homeEntryCell: 71,
     starCell: 73,
     sectorIndex: 1, // Top-Right
   },
@@ -55,7 +55,7 @@ export const HEX_COLOR_INFO: Record<HexPlayerColor, HexPlayerConfig> = {
     darkHex: '#0369a1',
     deepHex: '#075985',
     startCell: 60,
-    homeEntryCell: 59,
+    homeEntryCell: 58,
     starCell: 60,
     sectorIndex: 2, // Bottom-Right
   },
@@ -67,7 +67,7 @@ export const HEX_COLOR_INFO: Record<HexPlayerColor, HexPlayerConfig> = {
     darkHex: '#c2410c',
     deepHex: '#9a3412',
     startCell: 47,
-    homeEntryCell: 46,
+    homeEntryCell: 45,
     starCell: 47,
     sectorIndex: 3, // Bottom
   },
@@ -79,7 +79,7 @@ export const HEX_COLOR_INFO: Record<HexPlayerColor, HexPlayerConfig> = {
     darkHex: '#a16207',
     deepHex: '#854d0e',
     startCell: 34,
-    homeEntryCell: 33,
+    homeEntryCell: 32,
     starCell: 34,
     sectorIndex: 4, // Bottom-Left
   },
@@ -91,7 +91,7 @@ export const HEX_COLOR_INFO: Record<HexPlayerColor, HexPlayerConfig> = {
     darkHex: '#e11d48',
     deepHex: '#be123c',
     startCell: 21,
-    homeEntryCell: 20,
+    homeEntryCell: 19,
     starCell: 21,
     sectorIndex: 5, // Top-Left
   },

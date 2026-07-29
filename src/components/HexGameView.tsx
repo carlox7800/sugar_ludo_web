@@ -118,11 +118,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             playableIds.push(t.id);
           }
         }
-      } else if (t.step > 0 && t.step < 84) {
+      } else if (t.step > 0 && t.step < 82) {
         let canMove = false;
         
         for (const m of moves) {
-          if (t.step + m <= 84) {
+          if (t.step + m <= 82) {
             let blocked = false;
             for(let stepOffset = 1; stepOffset <= m; stepOffset++) {
                const pathStep = t.step + stepOffset;
@@ -141,7 +141,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
         if (!canMove && moves.length === 2) {
           const sum = moves[0] + moves[1];
-          if (t.step + sum <= 84) {
+          if (t.step + sum <= 82) {
              let blocked = false;
              for(let stepOffset = 1; stepOffset <= sum; stepOffset++) {
                const pathStep = t.step + stepOffset;
@@ -244,29 +244,12 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     }
   }, [timer, gameState.winner]);
 
-  // Turn Transition Handler
-  useEffect(() => {
-    if (gameState.winner || gameState.isRolling || gameState.isAnimating || !gameState.hasRolled) return;
-
-    if (remainingMoves.length === 0) {
-      passTurn();
-    } else {
-      const playables = getPlayableTokenIdsHex(activePlayer.id, remainingMoves);
-      if (playables.length === 0) {
-        addLog(`${activePlayer.name} no tiene movimientos válidos.`, 'info', activePlayer.color);
-        const passTimeout = setTimeout(() => {
-          passTurn();
-        }, 1200);
-        return () => clearTimeout(passTimeout);
-      }
-    }
-  }, [remainingMoves, gameState.hasRolled, gameState.isRolling, gameState.isAnimating]);
-
   // Next Turn
   const moveToken = (tokenId: number, moveVal: number, moveIndices: number[]) => {
     if (gameState.isAnimating || gameState.winner) return;
 
     setGameState((prev) => ({ ...prev, isAnimating: true }));
+    setTimer(10); // TRASPLANTE 4J: Reinicio síncrono del timer
     
     const token = gameState.tokens.find(
       (t) => t.playerId === activePlayer.id && t.id === tokenId
@@ -322,36 +305,38 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
       // Check captures
       if (typeof targetCellIndex === 'number') {
-        const isStartCell = targetCellIndex === HEX_COLOR_INFO[token.color].startCell;
-        const canCaptureOnCell = !STAR_CELLS.includes(targetCellIndex) || (oldStep === 0 && isStartCell);
-
-        if (canCaptureOnCell) {
-          gameState.tokens.forEach((otherToken) => {
-            if (otherToken.playerId !== activePlayer.id && otherToken.step > 0 && otherToken.step <= 78) {
-              const otherCell = getCellIndexForToken(otherToken.color, otherToken.step);
-              if (otherCell === targetCellIndex) {
-                capturedTokensIds.push({ playerId: otherToken.playerId, id: otherToken.id });
-                capturedAny = true;
-                setExplosionData({ cellIndex: targetCellIndex, color: otherToken.color });
-                setTimeout(() => setExplosionData(null), 3500);
-                if (!isMuted) audio.playFireworks();
-                showToast(
-                  oldStep === 0
-                    ? `💥 ¡Expulsión de salida! Ficha enemiga enviada a casa`
-                    : `⚔️ ¡Ficha capturada! +25 pasos de bono`
-                );
-              }
-            }
-          });
+        if (finalStep === 1) {
+          const cellTokens = gameState.tokens.filter(t => t.step > 0 && t.step <= 76 && getCellIndexForToken(t.color, t.step) === targetCellIndex);
+          const myTokens = cellTokens.filter(t => t.color === token.color);
+          const enemyTokens = cellTokens.filter(t => t.color !== token.color);
+          
+          if (myTokens.length === 1 && enemyTokens.length === 1) {
+            capturedTokensIds.push({ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id });
+            capturedAny = true;
+            setExplosionData({ cellIndex: targetCellIndex, color: enemyTokens[0].color });
+            setTimeout(() => setExplosionData(null), 3500);
+            if (!isMuted) audio.playFireworks();
+            showToast(`💥 ¡Expulsión de salida! Ficha enemiga enviada a casa`);
+          }
+        } else if (!STAR_CELLS.includes(targetCellIndex)) {
+          const enemyTokens = gameState.tokens.filter(t => t.playerId !== activePlayer.id && t.step > 0 && t.step <= 76 && getCellIndexForToken(t.color, t.step) === targetCellIndex);
+          if (enemyTokens.length === 1) {
+            capturedTokensIds.push({ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id });
+            capturedAny = true;
+            setExplosionData({ cellIndex: targetCellIndex, color: enemyTokens[0].color });
+            setTimeout(() => setExplosionData(null), 3500);
+            if (!isMuted) audio.playFireworks();
+            showToast(`⚔️ ¡Ficha capturada! +25 pasos de bono`);
+          }
         }
       }
 
       const playerGoalTokens = gameState.tokens.filter(
-        (t) => t.playerId === activePlayer.id && t.step === 84 && t.id !== tokenId
+        (t) => t.playerId === activePlayer.id && t.step === 82 && t.id !== tokenId
       );
-      const hasWon = playerGoalTokens.length + (finalStep === 84 ? 1 : 0) === TOKENS_PER_PLAYER;
+      const hasWon = playerGoalTokens.length + (finalStep === 82 ? 1 : 0) === TOKENS_PER_PLAYER;
 
-      if (finalStep === 84 && !hasWon) {
+      if (finalStep === 82 && !hasWon) {
         bonusSteps += 15;
         if (!isMuted) audio.playGoal();
         showToast('🎉 ¡Ficha en la meta! +15 pasos de bono');
@@ -364,7 +349,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       const moveLogMessage = capturedAny
         ? `¡${activePlayer.name} CAPTURÓ una ficha enemiga en la casilla ${targetCellIndex}!`
         : `${activePlayer.name} movió su ficha ${tokenId + 1} a ${
-            finalStep === 84 ? '¡LA META!' : `paso ${finalStep}`
+            finalStep === 82 ? '¡LA META!' : `paso ${finalStep}`
           }.`;
           
       globalLogger.log(capturedAny ? 'TOKENS' : 'TOKENS', moveLogMessage, { playerColor: activePlayer.color });
@@ -386,17 +371,36 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       }
       setRemainingMoves(nextMoves);
 
-      setGameState((prev) => {
-        const newTokens = prev.tokens.map(t => {
-          if (t.playerId === activePlayer.id && t.id === tokenId) {
-            return { ...t, step: finalStep };
-          }
-          if (capturedTokensIds.some(c => c.playerId === t.playerId && c.id === t.id)) {
-            return { ...t, step: 0 };
-          }
-          return t;
-        });
+      const newTokens = gameState.tokens.map(t => {
+        if (t.playerId === activePlayer.id && t.id === tokenId) {
+          return { ...t, step: finalStep };
+        }
+        if (capturedTokensIds.some(c => c.playerId === t.playerId && c.id === t.id)) {
+          return { ...t, step: 0 };
+        }
+        return t;
+      });
 
+      if (nextMoves.length === 0) {
+        if (pendingExtraTurnsRef.current > 0) {
+          pendingExtraTurnsRef.current -= 1;
+          advanceTurn(true, newTokens);
+        } else {
+          advanceTurn(false, newTokens);
+        }
+      } else {
+        const playables = getPlayableTokenIdsHex(activePlayer.id, nextMoves, newTokens);
+        if (playables.length === 0) {
+          if (pendingExtraTurnsRef.current > 0) {
+            pendingExtraTurnsRef.current -= 1;
+            advanceTurn(true, newTokens);
+          } else {
+            advanceTurn(false, newTokens);
+          }
+        }
+      }
+
+      setGameState((prev) => {
         let newPlayers = [...prev.players];
         let newWinner = prev.winner;
         let updatedLogs = [...prev.logs];
@@ -490,47 +494,61 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     }
   };
 
-  const passTurn = () => {
+  const advanceTurn = (extraTurn: boolean, currentTokens = gameState.tokens) => {
     triggerTurnStart();
-    setBarrierLifetimes(prev => {
-      const nextLifetimes = { ...prev };
-      const cellCounts = {};
-      gameState.tokens.forEach(tk => {
-        const tkIdx = getCellIndexForToken(tk.color, tk.step);
-        if (typeof tkIdx === 'number') {
-          cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1;
-        }
-      });
-      gameState.tokens.forEach(tk => {
-        const globalId = `${tk.playerId}-${tk.id}`;
-        const tkIdx = getCellIndexForToken(tk.color, tk.step);
-        if (typeof tkIdx === 'number' && cellCounts[tkIdx] >= 2) {
-          nextLifetimes[globalId] = prev[globalId] || 0;
-          if (tk.playerId === gameState.players[gameState.currentTurnIndex].id) {
-             nextLifetimes[globalId] += 1;
+    const activePlayer = gameState.players[gameState.currentTurnIndex];
+    globalLogger.log('SYSTEM', `[TURNO] Estado: ${extraTurn ? 'Turno Extra' : 'Cambio de Turno'} | Jugador: ${activePlayer.color}`);
+
+    setDiceValues(null);
+    setRemainingMoves([]);
+    setMoveSelectorTokenId(null);
+    setTimer(10);
+    
+    if (gameState.winner !== null) return;
+
+    if (!extraTurn) {
+      consecutiveDoublesCountRef.current = 0;
+      setBarrierLifetimes(prev => {
+        const nextLifetimes = { ...prev };
+        const cellCounts: Record<number, number> = {};
+        currentTokens.forEach(tk => {
+          const tkIdx = getCellIndexForToken(tk.color, tk.step);
+          if (typeof tkIdx === 'number') {
+            cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1;
           }
-        } else {
-          nextLifetimes[globalId] = 0;
-        }
+        });
+        currentTokens.forEach(tk => {
+          const globalId = `${tk.playerId}-${tk.id}`;
+          const tkIdx = getCellIndexForToken(tk.color, tk.step);
+          if (typeof tkIdx === 'number' && cellCounts[tkIdx] >= 2) {
+            nextLifetimes[globalId] = prev[globalId] || 0;
+            if (tk.playerId === gameState.players[gameState.currentTurnIndex].id) {
+               nextLifetimes[globalId] += 1;
+            }
+          } else {
+            nextLifetimes[globalId] = 0;
+          }
+        });
+        return nextLifetimes;
       });
-      return nextLifetimes;
-    });
+    }
 
     setGameState((prev) => {
       let nextIdx = prev.currentTurnIndex;
-      let nextExtraTurns = extraTurnsCount;
 
-      if (nextExtraTurns > 0) {
-        nextExtraTurns -= 1;
-      } else if (pendingExtraTurnsRef.current > 0) {
-        pendingExtraTurnsRef.current -= 1;
-      } else {
+      if (!extraTurn) {
         do {
           nextIdx = (nextIdx + 1) % prev.players.length;
         } while (prev.players[nextIdx].hasFinished && nextIdx !== prev.currentTurnIndex);
       }
 
-      setTimeout(() => setExtraTurnsCount(nextExtraTurns), 0);
+      const nextPlayer = prev.players[nextIdx];
+
+      if (extraTurn) {
+        globalLogger.log('SYSTEM', `¡${activePlayer.name} obtiene tiro adicional!`, { playerColor: activePlayer.color });
+      } else {
+        globalLogger.log('SYSTEM', `Es el turno de ${nextPlayer.name}.`, { playerColor: nextPlayer.color });
+      }
 
       return {
         ...prev,
@@ -539,11 +557,6 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         hasRolled: false,
       };
     });
-
-    setDiceValues(null);
-    setRemainingMoves([]);
-    setMoveSelectorTokenId(null);
-    setTimer(10);
   };
 
   // Roll Dice (2 dice mechanism)
@@ -565,69 +578,76 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       setDiceValues(rolls);
       setRemainingMoves([...rolls]);
 
-      setGameState((prev) => {
-        const sum = r1 + r2;
-        let rollLogMessage = `${activePlayer.name} sacó ${r1} y ${r2} (Total: ${sum})`;
-        let typeStr = 'roll';
+      const sum = r1 + r2;
+      let rollLogMessage = `${activePlayer.name} sacó ${r1} y ${r2} (Total: ${sum})`;
+      let typeStr = 'roll';
+      let thirdDouble = false;
+      
+      if (isDouble) {
+        consecutiveDoublesCountRef.current += 1;
         
-        if (isDouble) {
-          consecutiveDoublesCountRef.current += 1;
+        if (consecutiveDoublesCountRef.current >= 3) {
+          consecutiveDoublesCountRef.current = 0;
+          pendingExtraTurnsRef.current = 0;
+          thirdDouble = true;
           
-          if (consecutiveDoublesCountRef.current >= 3) {
-            consecutiveDoublesCountRef.current = 0;
-            pendingExtraTurnsRef.current = 0;
-            
-            let newTokens = [...prev.tokens];
-            if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
-              const lastId = lastMovedTokenRef.current.tokenId;
-              newTokens = newTokens.map(t => {
-                if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 84) {
-                  return { ...t, step: 0 };
-                }
-                return t;
-              });
-            }
-            
-            const warningLog = {
-              id: Math.random().toString(),
-              message: `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`,
-              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'warning' as const,
-              color: activePlayer.color,
-            };
-            globalLogger.log('GAME-FLOW', `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`, { playerColor: activePlayer.color });
-            
-            showToast('🚨 ¡Tercer doble! Ficha a la base.');
-            setRemainingMoves([]);
-            setTimeout(() => passTurn(), 1500);
-            
-            return {
-              ...prev,
-              diceValue: sum,
-              tokens: newTokens,
-              isRolling: false,
-              hasRolled: true,
-              logs: [...prev.logs, warningLog],
-            };
-          }
-
+          globalLogger.log('GAME-FLOW', `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`, { playerColor: activePlayer.color });
+          showToast('🚨 ¡Tercer doble! Ficha a la base.');
+        } else {
           pendingExtraTurnsRef.current += 1;
           rollLogMessage = `🎲 ¡${activePlayer.name} sacó doble (${r1},${r2}) y gana tiro extra!`;
           typeStr = 'info';
           showToast('🎲 ¡Doble! Tiras de nuevo');
-        } else {
-          consecutiveDoublesCountRef.current = 0;
         }
-        
+      } else {
+        consecutiveDoublesCountRef.current = 0;
+      }
+      
+      if (!thirdDouble) {
+        globalLogger.log('GAME-FLOW', rollLogMessage, { playerColor: activePlayer.color });
+      }
+
+      setGameState((prev) => {
+        if (thirdDouble) {
+          let newTokens = [...prev.tokens];
+          if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
+            const lastId = lastMovedTokenRef.current.tokenId;
+            newTokens = newTokens.map(t => {
+              if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 82) {
+                return { ...t, step: 0 };
+              }
+              return t;
+            });
+          }
+          
+          const warningLog = {
+            id: Math.random().toString(),
+            message: `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'warning' as const,
+            color: activePlayer.color,
+          };
+          
+          setRemainingMoves([]);
+          setTimeout(() => advanceTurn(false), 1500);
+          
+          return {
+            ...prev,
+            diceValue: sum,
+            tokens: newTokens,
+            isRolling: false,
+            hasRolled: true,
+            logs: [...prev.logs, warningLog],
+          };
+        }
+
         const newLog = {
           id: Math.random().toString(),
           message: rollLogMessage,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          type: typeStr,
+          type: typeStr as any,
           color: activePlayer.color,
         };
-
-        globalLogger.log('GAME-FLOW', rollLogMessage, { playerColor: activePlayer.color });
 
         return {
           ...prev,
@@ -637,6 +657,21 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           logs: [...prev.logs, newLog],
         };
       });
+
+      if (!thirdDouble) {
+        const playables = getPlayableTokenIdsHex(activePlayer.id, rolls);
+        if (playables.length === 0) {
+          addLog(`${activePlayer.name} no tiene movimientos válidos.`, 'info', activePlayer.color);
+          setTimeout(() => {
+            if (pendingExtraTurnsRef.current > 0) {
+              pendingExtraTurnsRef.current -= 1;
+              advanceTurn(true);
+            } else {
+              advanceTurn(false);
+            }
+          }, 1200);
+        }
+      }
       
     }, 400);
   };
@@ -698,11 +733,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             }
           } else {
             remainingMoves.forEach((m, idx) => {
-              if (token.step + m <= 84) {
+              if (token.step + m <= 82) {
                 validMoves.push({ tokenId, moveVal: m, indices: [idx] });
               }
             });
-            if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 84) {
+            if (remainingMoves.length === 2 && token.step + remainingMoves[0] + remainingMoves[1] <= 82) {
               validMoves.push({ tokenId, moveVal: remainingMoves[0] + remainingMoves[1], indices: [0, 1] });
             }
           }
@@ -724,11 +759,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               targetStep = 1;
             }
 
-            if (targetStep === 84) score += 100;
+            if (targetStep === 82) score += 100;
 
             const targetCellIndex = getCellIndexForToken(token.color, targetStep);
             if (typeof targetCellIndex === 'number' && !STAR_CELLS.includes(targetCellIndex)) {
-              const hasEnemy = gameState.tokens.some(t => t.playerId !== activePlayer.id && t.step > 0 && t.step <= 78 && getCellIndexForToken(t.color, t.step) === targetCellIndex);
+              const hasEnemy = gameState.tokens.some(t => t.playerId !== activePlayer.id && t.step > 0 && t.step <= 76 && getCellIndexForToken(t.color, t.step) === targetCellIndex);
               if (hasEnemy) score += 80;
             }
 
@@ -951,8 +986,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               return true;
             }
             return false;
-          } else if (token.step > 0 && token.step < 84) {
-            if (token.step + moveVal > 84) return false;
+          } else if (token.step > 0 && token.step < 82) {
+            if (token.step + moveVal > 82) return false;
             let blocked = false;
             for(let stepOffset = 1; stepOffset <= moveVal; stepOffset++) {
                const pathStep = token.step + stepOffset;
