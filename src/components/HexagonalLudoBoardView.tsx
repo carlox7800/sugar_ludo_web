@@ -213,10 +213,10 @@ const HexBoardStaticSVG = React.memo(() => {
                 100% { transform: translate3d(var(--dx), var(--dy), 0) scale(0); opacity: 0; }
               }
             `}</style>
-            <filter id="tokenShadow" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
+            <filter id="tokenShadow" x="-30%" y="-30%" width="160%" height="160%">
               <feDropShadow dx="2" dy="4" stdDeviation="4" floodOpacity="0.5" />
             </filter>
-            <filter id="textOutline" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
+            <filter id="textOutline" x="-30%" y="-30%" width="160%" height="160%">
               <feMorphology in="SourceAlpha" operator="dilate" radius="1.5" result="DILATED" />
               <feFlood floodColor="#000000" floodOpacity="0.6" result="OUTLINE_COLOR" />
               <feComposite in="OUTLINE_COLOR" in2="DILATED" operator="in" result="OUTLINE" />
@@ -225,13 +225,13 @@ const HexBoardStaticSVG = React.memo(() => {
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
-            <filter id="houseShadow" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
+            <filter id="houseShadow" x="-15%" y="-15%" width="130%" height="130%">
               <feDropShadow dx="0" dy="8" stdDeviation="8" floodOpacity="0.15" />
             </filter>
-            <filter id="baseShadow" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
+            <filter id="baseShadow" x="-10%" y="-10%" width="120%" height="120%">
               <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.6" floodColor="#000000" />
             </filter>
-            <filter id="innerBaseShadow" filterUnits="userSpaceOnUse" x="-1000" y="-1000" width="3000" height="3000">
+            <filter id="innerBaseShadow" x="-10%" y="-10%" width="120%" height="120%">
               <feDropShadow dx="1" dy="2" stdDeviation="2" floodOpacity="0.4" floodColor="#000000" />
             </filter>
             {/* Gradients for tokens matching the 4-player classic style */}

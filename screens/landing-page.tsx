@@ -13,7 +13,7 @@ export function LandingPage({ onLoginClick }: LandingPageProps) {
       {/* Navbar Minimalista */}
       <nav className="w-full max-w-6xl flex justify-between items-center p-6 lg:p-8 animate-in fade-in slide-in-from-top-4">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--candy-magenta)] shadow-[0_0_15px_oklch(0.45_0.2_350)]">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--candy-magenta)] shadow-[0_0_15px_rgba(255,34,119,0.4)]">
             <span className="font-display text-2xl font-extrabold text-primary-foreground">S</span>
           </div>
           <span className="font-display text-2xl font-extrabold tracking-tight text-white drop-shadow-md">
@@ -22,7 +22,7 @@ export function LandingPage({ onLoginClick }: LandingPageProps) {
         </div>
         <button 
           onClick={onLoginClick}
-          className="btn-3d rounded-xl bg-[oklch(1_0_0/0.1)] px-5 py-2 font-display text-sm font-bold text-white border border-[oklch(1_0_0/0.2)] hover:bg-[oklch(1_0_0/0.15)] transition-all"
+          className="btn-3d rounded-xl bg-[rgba(255,255,255,0.1)] px-5 py-2 font-display text-sm font-bold text-white border border-[rgba(255,255,255,0.2)] hover:bg-[rgba(255,255,255,0.15)] transition-all"
         >
           INICIAR SESIÓN
         </button>
@@ -44,7 +44,7 @@ export function LandingPage({ onLoginClick }: LandingPageProps) {
 
         <button 
           onClick={onLoginClick}
-          className="animate-in fade-in zoom-in-95 duration-700 delay-300 btn-3d rounded-2xl bg-[linear-gradient(135deg,oklch(0.7_0.27_350),oklch(0.82_0.15_200))] px-12 py-5 font-display text-xl font-extrabold text-primary-foreground shadow-[0_0_40px_oklch(0.7_0.27_350/0.5)] transition-all hover:scale-105 z-10 flex items-center gap-3"
+          className="animate-in fade-in zoom-in-95 duration-700 delay-300 btn-3d rounded-2xl bg-[linear-gradient(135deg,var(--candy-magenta),var(--candy-cyan))] px-12 py-5 font-display text-xl font-extrabold text-primary-foreground shadow-[0_0_40px_rgba(255,34,119,0.5)] transition-all hover:scale-105 z-10 flex items-center gap-3"
         >
           <Gamepad2 className="size-6" /> JUGAR AHORA
         </button>
@@ -55,19 +55,19 @@ export function LandingPage({ onLoginClick }: LandingPageProps) {
             icon={Trophy}
             title="Pozo de Premios"
             description="El ganador de la sala se lleva el 100% del pozo acumulado con las entradas."
-            color="var(--candy-gold)"
+            color="#ffcc22"
           />
           <FeatureCard 
             icon={Users}
             title="Salas por Nivel"
             description="Elige el costo de entrada de la mesa según tu experiencia y saldo de Sugar Coins."
-            color="var(--candy-cyan)"
+            color="#22dddd"
           />
           <FeatureCard 
             icon={ShieldCheck}
             title="Juego Justo"
             description="Motor de dados aleatorio certificado y modo de entrenamiento contra IA."
-            color="var(--candy-magenta)"
+            color="#ff2277"
           />
         </div>
       </main>
@@ -84,7 +84,7 @@ export function LandingPage({ onLoginClick }: LandingPageProps) {
 
 function FeatureCard({ icon: Icon, title, description, color }: { icon: any, title: string, description: string, color: string }) {
   return (
-    <div className="glass flex flex-col items-center p-8 rounded-3xl border border-border/50 text-center hover:bg-[oklch(1_0_0/0.03)] transition-colors">
+    <div className="glass flex flex-col items-center p-8 rounded-3xl border border-border/50 text-center hover:bg-[rgba(255,255,255,0.03)] transition-colors">
       <div 
         className="size-14 rounded-2xl flex items-center justify-center mb-4 shadow-inner"
         style={{ backgroundColor: `${color}22`, color: color, border: `1px solid ${color}44` }}
