@@ -64,14 +64,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 nicknameUpdatedAt: data.nicknameUpdatedAt || null,
                 isDev: false,
               })
+            } else {
+              // Si por alguna razón el documento no existe aún
+              setUser(null)
             }
+            setIsLoaded(true)
           },
           (error) => {
             console.warn('Firestore auth snapshot error (handled):', error.message)
+            setIsLoaded(true)
           }
         )
 
-        setIsLoaded(true)
+
         return () => unsubscribeSnapshot()
       } else {
         // Not logged in via Firebase Auth, check if there's a Dev user in localStorage

@@ -46,7 +46,10 @@ function PageContent() {
   const { user, loginWithGoogle, loginDev, setNickname } = useAuth()
   
   // Decide initial screen based on auth
-  const [screen, setScreen] = useState<Screen>('landing')
+  const [screen, setScreen] = useState<Screen>(() => {
+    if (user && user.nickname) return 'lobby'
+    return 'landing'
+  })
   const [config, setConfig] = useState<GameConfig | null>(null)
   const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
   
