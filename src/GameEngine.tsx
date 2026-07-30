@@ -869,18 +869,28 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       });
     }
 
-    if (extraTurn) {
+    const activePlayerTokens = currentTokens.filter(t => t.playerId === currentTurn);
+    const hasPlayerFinished = activePlayerTokens.length === 4 && activePlayerTokens.every(t => t.step === 57);
+
+    if (extraTurn && !hasPlayerFinished) {
       addLog(`¡${activePlayer.name} obtiene tiro adicional!`, 'system', activePlayer.color);
       triggerTurnStart();
     } else {
-      moveToNextPlayer();
+      moveToNextPlayer(currentTokens);
     }
   };
 
   // Find next active player
-  const moveToNextPlayer = () => {
+  const moveToNextPlayer = (currentTokens: Token[] = tokens) => {
     let nextTurn = (currentTurn - 1 + players.length) % players.length;
-    while (!players[nextTurn]?.isActive || players[nextTurn]?.hasFinished) {
+    
+    const isPlayerFinished = (pId: number) => {
+       if (players[pId]?.hasFinished) return true;
+       const pTokens = currentTokens.filter(t => t.playerId === pId);
+       return pTokens.length === 4 && pTokens.every(t => t.step === 57);
+    };
+
+    while (!players[nextTurn]?.isActive || isPlayerFinished(nextTurn)) {
       nextTurn = (nextTurn - 1 + players.length) % players.length;
     }
     setCurrentTurn(nextTurn);
@@ -1304,6 +1314,59 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
           </div>
         );
       })()}
+
+      {/* Winner Celebration Modal (Universal Offline Podium) */}
+      {winner !== null && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[oklch(0.7_0.27_350/0.3)] backdrop-blur-xl p-4 cyber-game-panel">
+          <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] max-w-md w-full rounded-3xl p-8 border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_60px_oklch(0.7_0.27_350/0.15)] flex flex-col items-center text-center gap-6 animate-in zoom-in duration-300">
+            <Trophy className="text-[var(--candy-green,oklch(0.78_0.2_150))] animate-bounce drop-shadow-[0_0_15px_var(--candy-green,oklch(0.78_0.2_150))]" size={64} />
+            <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[var(--candy-magenta,oklch(0.7_0.27_350))] to-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_oklch(0.7_0.27_350/0.5)] uppercase tracking-wider font-display">
+              ¡Partida Finalizada!
+            </h2>
+            
+            <div className="w-full flex flex-col gap-3 mt-2 mb-2">
+              {players
+                .filter(p => p.hasFinished)
+                .sort((a, b) => (a.rank || 99) - (b.rank || 99))
+                .map((p, idx) => (
+                  <div key={p.id} className="flex items-center justify-between bg-[var(--panel-border,oklch(0.7_0.27_350/0.1))] p-3 rounded-xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.2))]">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl drop-shadow-md">
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
+                      </span>
+                      <span className="font-bold text-white/90 text-sm uppercase tracking-wide">
+                        {idx + 1}.º LUGAR
+                      </span>
+                    </div>
+                    <span 
+                      className="font-black text-lg drop-shadow-md capitalize" 
+                      style={{ color: p.color === 'yellow' ? '#facc15' : p.color === 'red' ? '#f43f5e' : p.color === 'green' ? '#4ade80' : p.color === 'blue' ? '#60a5fa' : '#fff' }}
+                    >
+                      {p.name}
+                    </span>
+                  </div>
+                ))}
+            </div>
+            <div className="flex flex-col gap-3 w-full mt-2">
+              <button
+                onClick={handleResetGame}
+                className="w-full flex items-center justify-center gap-2 py-4 bg-[linear-gradient(145deg,oklch(0.78_0.2_150),color-mix(in_oklch,oklch(0.78_0.2_150),black_12%))] text-[oklch(0.18_0.03_285)] font-black rounded-2xl text-lg hover:brightness-110 active:scale-95 shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.5_0.14_155),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.14_155),transparent_55%)] transition-all cursor-pointer uppercase tracking-wider font-display"
+              >
+                Jugar de Nuevo
+              </button>
+              <button
+                onClick={() => {
+                  handleResetGame();
+                  onExit();
+                }}
+                className="w-full py-3.5 rounded-2xl border border-white/20 bg-[oklch(1_0_0/0.05)] text-white font-bold hover:bg-[oklch(1_0_0/0.1)] shadow-[inset_0_1px_0_oklch(1_0_0/0.15)] transition-all cursor-pointer text-sm tracking-wide uppercase"
+              >
+                Volver al Menú
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

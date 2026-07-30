@@ -117,23 +117,6 @@ export const GameControls: React.FC<GameControlsProps> = ({
   return (
     <div className="w-full max-w-[550px] mx-auto rounded-3xl p-5 shadow-[0_0_40px_rgba(0,242,255,0.05)] border flex flex-col gap-4 select-none cyber-game-panel bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] backdrop-blur-xl border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
       
-      {/* 1. Winner Celebration overlay */}
-      {winnerPlayer && (
-        <div className="bg-[oklch(0.82_0.15_200/0.1)] border border-[var(--candy-cyan,oklch(0.82_0.15_200/0.3))] rounded-2xl p-4 flex flex-col items-center text-center gap-2 animate-pulse shadow-[0_0_20px_oklch(0.82_0.15_200/0.15)]">
-          <Award size={40} className="text-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_var(--candy-cyan,oklch(0.82_0.15_200))]" />
-          <h2 className="text-xl font-bold text-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_oklch(0.82_0.15_200/0.5)]">¡Tenemos un Ganador!</h2>
-          <p className="text-sm text-t-primary">
-            El jugador <strong className={textColors[winnerPlayer.color]}>{winnerPlayer.name}</strong> ({turnTitles[winnerPlayer.color]}) ha ganado la partida!
-          </p>
-          <button
-            onClick={onResetGame}
-            className="mt-2 flex items-center gap-1.5 py-2.5 px-6 rounded-2xl bg-[linear-gradient(145deg,oklch(0.82_0.15_200),color-mix(in_oklch,oklch(0.82_0.15_200),black_12%))] text-[oklch(0.16_0.03_285)] font-extrabold shadow-[inset_0_2px_0_oklch(1_0_0/0.45),0_5px_0_oklch(0.5_0.12_210),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.12_210),transparent_45%)] hover:brightness-110 active:scale-95 transition-all text-sm uppercase tracking-wide font-mono"
-          >
-            <RotateCcw size={15} />
-            Jugar de Nuevo
-          </button>
-        </div>
-      )}
 
       {/* 2. Live Game Information Header */}
       {!winnerPlayer && (
