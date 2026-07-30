@@ -88,8 +88,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Vibration and Glow States
+  // Vibration, Glow and Winner Refs
   const [isGlowActive, setIsGlowActive] = useState<boolean>(false);
+  const winnerRef = useRef<number | null>(null);
   const vibrationIntervalRef = useRef<number | null>(null);
   const botTimeoutRef = useRef<number | null>(null);
   const noMovesTimeoutRef = useRef<number | null>(null);
@@ -172,6 +173,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
     setPlayers(tempPlayers);
     setTokens(tempTokens);
+    winnerRef.current = null;
     setWinner(null);
     setDiceValues(null);
     setHasRolled(false);
@@ -193,6 +195,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     setConfig(null);
     setPlayers([]);
     setTokens([]);
+    winnerRef.current = null;
     setWinner(null);
     setDiceValues(null);
     setHasRolled(false);
@@ -369,7 +372,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   // Handle dice rolling
   const handleRollDice = () => {
-    if (isRolling || hasRolled || winner || isAnimatingMove) return;
+    if (isRolling || hasRolled || winner || winnerRef.current !== null || isAnimatingMove) return;
 
     // Turn off tactile alert immediately on roll touch
     setIsGlowActive(false);
@@ -577,7 +580,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   // Perform a token step-by-step move animation
   const moveToken = (tokenId: number, moveVal: number, moveIndices: number[]) => {
-    if (isAnimatingMove || winner) return;
+    if (isAnimatingMove || winner || winnerRef.current !== null) return;
 
     setIsAnimatingMove(true);
     setTimer(10); // reset timer
@@ -612,6 +615,12 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
     // Run interval for step-by-step audio + animation
     const stepInterval = setInterval(() => {
+      if (winnerRef.current !== null) {
+        clearInterval(stepInterval);
+        setIsAnimatingMove(false);
+        return;
+      }
+
       if (currentStep < targetStep) {
         currentStep++;
         
@@ -666,6 +675,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         if (!isMuted) {
           audio.playVictory();
         }
+        showToast(`🏁 ¡${activePlayer.name} ha llegado a la meta!`);
         
         const finishedPlayers = players.filter(p => p.hasFinished).length;
         const newRank = finishedPlayers + 1;
@@ -684,7 +694,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
              });
           });
           
-          setWinner(players.find(p => p.rank === 1)?.id ?? pId);
+          const wId = players.find(p => p.rank === 1)?.id ?? pId;
+          winnerRef.current = wId;
+          setWinner(wId);
           addLog(`🏁 ¡La partida ha terminado!`, 'system');
           
           if (activePlayer.type === 'human' && newRank === 1) {
@@ -832,10 +844,8 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     setDiceValues(null);
     setHasRolled(false);
     setTimer(10);
-    if (!extraTurn) {
-    }
 
-    if (winner !== null) return;
+    if (winner !== null || winnerRef.current !== null) return;
 
     if (!extraTurn) {
       consecutiveDoublesCountRef.current = 0;
@@ -965,7 +975,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     }
 
     const isActiveBot = activePlayer && (activePlayer.type === 'bot' || (activePlayer.type === 'human' && isHumanAutoplay));
-    if (isPlaying && isActiveBot && !winner && !isAnimatingMove) {
+    if (isPlaying && isActiveBot && !winner && winnerRef.current === null && !isAnimatingMove) {
       if (!hasRolled && !isRolling) {
         // Wait 1.0s before Bot rolls the dice
         botTimeoutRef.current = window.setTimeout(() => {

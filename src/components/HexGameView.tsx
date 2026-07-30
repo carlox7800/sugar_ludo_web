@@ -64,6 +64,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   const consecutiveDoublesCountRef = useRef<number>(0);
   const lastMovedTokenRef = useRef<{ playerId: number; tokenId: number } | null>(null);
   const vibrationIntervalRef = useRef<number | null>(null);
+  const winnerRef = useRef<HexPlayer | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [explosionData, setExplosionData] = useState<{ cellIndex: number | string; color: HexPlayerColor } | null>(null);
 
@@ -250,7 +251,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // Next Turn
   const moveToken = (tokenId: number, moveVal: number, moveIndices: number[]) => {
-    if (gameState.isAnimating || gameState.winner) return;
+    if (gameState.isAnimating || gameState.winner || winnerRef.current !== null) return;
 
     setGameState((prev) => ({ ...prev, isAnimating: true }));
     setTimer(10); // TRASPLANTE 4J: Reinicio síncrono del timer
@@ -276,6 +277,10 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     let currentStepAnim = oldStep;
 
     const animateNextStep = () => {
+      if (winnerRef.current !== null) {
+        setGameState(prev => ({ ...prev, isAnimating: false }));
+        return;
+      }
       currentStepAnim++;
       
       if (!isMuted) audio.playStep();
@@ -367,6 +372,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
       if (hasWon && !gameState.players[activePlayer.id].hasFinished) {
         if (!isMuted) audio.playVictory();
+        showToast(`🏁 ¡${activePlayer.name} ha llegado a la meta!`);
       }
 
       // Sincronizar dados
@@ -461,6 +467,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                );
             }
             newWinner = newPlayers.find(p => p.rank === 1) || activePlayer;
+            winnerRef.current = newWinner;
             updatedLogs.push({
               id: Math.random().toString(),
               message: `🏁 ¡La partida ha terminado!`,
@@ -517,7 +524,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     setMoveSelectorTokenId(null);
     setTimer(10);
     
-    if (gameState.winner !== null) return;
+    if (gameState.winner !== null || winnerRef.current !== null) return;
 
     if (!extraTurn) {
       consecutiveDoublesCountRef.current = 0;
@@ -574,7 +581,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // Roll Dice (2 dice mechanism)
   const handleRollDice = () => {
-    if (gameState.isRolling || gameState.hasRolled || gameState.isAnimating || gameState.winner) return;
+    if (gameState.isRolling || gameState.hasRolled || gameState.isAnimating || gameState.winner || winnerRef.current !== null) return;
 
     setGameState((prev) => ({ ...prev, isRolling: true }));
     if (!isMuted) audio.playDiceRoll();
@@ -722,7 +729,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     }
 
     const isActiveBot = activePlayer?.type === 'bot' || (activePlayer?.type === 'human' && isHumanAutoplay);
-    if (gameState.winner || !isActiveBot || gameState.isRolling || gameState.isAnimating) return;
+    if (gameState.winner || winnerRef.current !== null || !isActiveBot || gameState.isRolling || gameState.isAnimating) return;
 
     if (!gameState.hasRolled) {
       botTimeoutRef.current = window.setTimeout(() => {
@@ -856,6 +863,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // Restart Game
   const handleReset = () => {
+    winnerRef.current = null;
     setGameState(createInitialHexState(playerCount, humanColor, botDifficulty));
     setDiceValues(null);
     setRemainingMoves([]);
