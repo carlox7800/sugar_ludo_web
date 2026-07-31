@@ -39,7 +39,17 @@ export const GameControls: React.FC<GameControlsProps> = ({
   appTheme,
   setAppTheme,
 }) => {
-
+  const isWaitingForRoll = isHumanTurnToRoll && !isRolling && !hasRolled;
+  const turnGlowStyle = isWaitingForRoll ? (
+    currentTurnPlayer.color === 'yellow' ? 'ring-2 ring-yellow-400 shadow-[0_0_20px_#facc15] animate-pulse' :
+    currentTurnPlayer.color === 'red' ? 'ring-2 ring-rose-500 shadow-[0_0_20px_#f43f5e] animate-pulse' :
+    currentTurnPlayer.color === 'green' ? 'ring-2 ring-emerald-400 shadow-[0_0_20px_#4ade80] animate-pulse' :
+    currentTurnPlayer.color === 'blue' ? 'ring-2 ring-cyan-400 shadow-[0_0_20px_#38bdf8] animate-pulse' :
+    currentTurnPlayer.color === 'purple' ? 'ring-2 ring-fuchsia-500 shadow-[0_0_20px_#d946ef] animate-pulse' :
+    currentTurnPlayer.color === 'cyan' ? 'ring-2 ring-cyan-300 shadow-[0_0_20px_#22d3ee] animate-pulse' :
+    currentTurnPlayer.color === 'magenta' ? 'ring-2 ring-rose-400 shadow-[0_0_20px_#f43f5e] animate-pulse' :
+    'ring-2 ring-cyan-400 shadow-[0_0_20px_#38bdf8] animate-pulse'
+  ) : '';
 
   // Render dice dots based on rolled value
   const renderDiceDots = (value: number, color: PlayerColor) => {
@@ -155,7 +165,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
 
       {/* 3. Dice Container & Roll Buttons */}
       {!winnerPlayer && (
-        <div className="flex items-center justify-center py-4 bg-[oklch(0.08_0.02_285)] rounded-2xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.12))] gap-8 relative overflow-hidden">
+        <div className="flex items-center justify-center py-4 bg-[oklch(0.08_0.02_285)] rounded-2xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.12))] gap-8 relative overflow-hidden transition-all duration-300">
           {/* Subtle background glow for user action */}
           {isGlowActive && (
             <div className="absolute inset-0 bg-[var(--candy-cyan,oklch(0.82_0.15_200))]/5 animate-pulse pointer-events-none" />
@@ -185,7 +195,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
                   onClick={() => isHumanTurnToRoll && !isRolling && !hasRolled && onRollDice()}
                   className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 relative ${isUsed ? 'opacity-30 grayscale scale-90' : ''} ${
                     isHumanTurnToRoll && !isRolling && !hasRolled
-                      ? 'cursor-pointer hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(0,242,255,0.15)] border border-border'
+                      ? `cursor-pointer hover:scale-105 active:scale-95 border border-border ${turnGlowStyle}`
                       : 'shadow-md border border-border'
                   } ${isRolling ? 'animate-spin' : ''} ${bgColors[currentTurnPlayer.color]} ${
                     isGlowActive ? 'ring-4 ring-[var(--color-p-blue)] ring-offset-2 ring-offset-[var(--bg-root)]' : ''

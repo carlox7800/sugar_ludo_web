@@ -383,6 +383,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
     // Turn off tactile alert immediately on roll touch
     setIsGlowActive(false);
+    audio.stopTurnAlertLoop();
     if (vibrationIntervalRef.current) {
       clearInterval(vibrationIntervalRef.current);
       vibrationIntervalRef.current = null;
@@ -956,6 +957,19 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       setTimer(10);
     }
   }, [timer, isPlaying, winner]);
+
+  // Continuous Turn Alert Sound for Human Player
+  useEffect(() => {
+    const isHumanTurnToRoll = isPlaying && activePlayer && activePlayer.type === 'human' && !isHumanAutoplay && !hasRolled && !isRolling && winner === null;
+    if (isHumanTurnToRoll && !isMuted) {
+      audio.startTurnAlertLoop();
+    } else {
+      audio.stopTurnAlertLoop();
+    }
+    return () => {
+      audio.stopTurnAlertLoop();
+    };
+  }, [isPlaying, activePlayer, isHumanAutoplay, hasRolled, isRolling, winner, isMuted]);
 
   // Autoplay handler when timer expires or for Bots
   const handleAutoplay = () => {

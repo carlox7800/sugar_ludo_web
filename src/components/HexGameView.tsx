@@ -583,9 +583,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   const handleRollDice = () => {
     if (gameState.isRolling || gameState.hasRolled || gameState.isAnimating || gameState.winner || winnerRef.current !== null) return;
 
+    audio.stopTurnAlertLoop();
     setGameState((prev) => ({ ...prev, isRolling: true }));
     if (!isMuted) audio.playDiceRoll();
-    setGameState((prev) => ({ ...prev, isRolling: true }));
     setIsGlowActive(false);
 
     setTimeout(() => {
@@ -871,6 +871,20 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       }
     };
   }, [gameState.currentTurnIndex, gameState.hasRolled, gameState.isRolling, gameState.winner, isMuted]);
+
+  // Continuous Turn Alert Sound for Human Player
+  useEffect(() => {
+    const activePlayer = gameState.players[gameState.currentTurnIndex];
+    const isHumanTurnToRoll = activePlayer && activePlayer.type === 'human' && !isHumanAutoplay && !gameState.hasRolled && !gameState.isRolling && gameState.winner === null;
+    if (isHumanTurnToRoll && !isMuted) {
+      audio.startTurnAlertLoop();
+    } else {
+      audio.stopTurnAlertLoop();
+    }
+    return () => {
+      audio.stopTurnAlertLoop();
+    };
+  }, [gameState.players, gameState.currentTurnIndex, isHumanAutoplay, gameState.hasRolled, gameState.isRolling, gameState.winner, isMuted]);
 
   // Restart Game
   const handleReset = () => {

@@ -14,6 +14,7 @@ class LudoAudio {
   private musicVolume: number = 0.15;
   private sfxVolume: number = 1.0;
   private isMuted: boolean = false;
+  private turnAlertInterval: number | null = null;
 
   private init() {
     if (!this.ctx) {
@@ -321,6 +322,21 @@ class LudoAudio {
     osc2.stop(t + decay + 0.1);
     subOsc.stop(t + decay + 0.1);
     osc1Harmonic.stop(t + decay + 0.1);
+  }
+
+  public startTurnAlertLoop() {
+    if (this.turnAlertInterval !== null) return;
+    this.playTurnAlert();
+    this.turnAlertInterval = window.setInterval(() => {
+      this.playTurnAlert();
+    }, 1500);
+  }
+
+  public stopTurnAlertLoop() {
+    if (this.turnAlertInterval !== null) {
+      clearInterval(this.turnAlertInterval);
+      this.turnAlertInterval = null;
+    }
   }
 
   /**
