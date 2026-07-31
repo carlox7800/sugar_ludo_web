@@ -82,12 +82,12 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
   // Calculate CSS classes for position
   let posClass = '';
   switch(position) {
-    case 'bottom-left': posClass = 'bottom-6 left-6'; break;
-    case 'bottom-right': posClass = 'bottom-6 right-6 flex-row-reverse'; break;
-    case 'top-left': posClass = 'top-6 left-6'; break;
-    case 'top-right': posClass = 'top-6 right-6 flex-row-reverse'; break;
-    case 'mid-left': posClass = 'top-1/2 -translate-y-1/2 left-6'; break;
-    case 'mid-right': posClass = 'top-1/2 -translate-y-1/2 right-6 flex-row-reverse'; break;
+    case 'top-left': posClass = 'top-4 md:top-6 left-2 md:left-6'; break;
+    case 'top-right': posClass = 'top-4 md:top-6 right-2 md:right-6 flex-row-reverse'; break;
+    case 'bottom-left': posClass = 'bottom-10 md:bottom-6 left-2 md:left-6'; break;
+    case 'bottom-right': posClass = 'bottom-10 md:bottom-6 right-2 md:right-6 flex-row-reverse'; break;
+    case 'mid-left': posClass = 'top-[22%] md:top-1/2 -translate-y-1/2 left-2 md:left-6'; break;
+    case 'mid-right': posClass = 'top-[22%] md:top-1/2 -translate-y-1/2 right-2 md:right-6 flex-row-reverse'; break;
   }
 
   return (

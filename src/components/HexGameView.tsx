@@ -900,7 +900,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center bg-[#0a0f1c] text-white relative overflow-hidden">
+    <div className="w-full flex-1 flex flex-col items-center text-white relative overflow-hidden">
       {/* Toast Banner (Floating Overlay - Zero Layout Shift) */}
       {notification && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/90 backdrop-blur-md px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-extrabold shadow-[0_8px_32px_rgba(0,0,0,0.6)] pointer-events-none">
@@ -910,11 +910,14 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       )}
 
       {/* Main Game Stage */}
-      <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[700px] z-10">
+      <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[600px] z-10">
         
         {/* Center Game Board */}
-        <div className="z-10 w-full max-w-[800px] mx-auto scale-[0.8] md:scale-100 flex items-center justify-center">
-          <div className="relative mx-auto w-fit">
+        <div 
+          className="z-10 w-full mx-auto flex items-center justify-center"
+          style={{ maxWidth: 'min(700px, calc((100vh - 220px) * 1.05))' }}
+        >
+          <div className="relative mx-auto w-full">
             <HexagonalLudoBoardView
               appTheme={appTheme}
               tokens={gameState.tokens}
@@ -929,44 +932,60 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         </div>
 
         {/* Corners with PlayerCorners */}
-        {gameState.players.filter(p => p.isActive).map((p, index) => {
-           let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
-           if (gameState.players.length === 6) {
-             const positions: any[] = ['bottom-left', 'mid-left', 'top-left', 'top-right', 'mid-right', 'bottom-right'];
-             pos = positions[index % 6];
-           } else if (gameState.players.length === 5) {
-             const positions: any[] = ['bottom-left', 'mid-left', 'top-left', 'top-right', 'bottom-right'];
-             pos = positions[index % 5];
-           } else {
-             const corners: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
-             pos = corners[index % 4];
-           }
+        {/* Corners with PlayerCorners */}
+        {(() => {
+           const activePlayers = gameState.players.filter(p => p.isActive);
+           const humanIdx = activePlayers.findIndex(p => p.type === 'human');
+           
+           return activePlayers.map((p, index) => {
+             let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
+             
+             if (p.type === 'human') {
+               pos = 'bottom-left';
+             } else {
+               const baseIdx = humanIdx >= 0 ? humanIdx : 0;
+               const offset = (index - baseIdx + activePlayers.length) % activePlayers.length;
+               
+               if (activePlayers.length === 6) {
+                 const positions: any[] = ['bottom-left', 'bottom-right', 'mid-right', 'top-right', 'top-left', 'mid-left'];
+                 pos = positions[offset];
+               } else if (activePlayers.length === 5) {
+                 const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left', 'mid-left'];
+                 pos = positions[offset];
+               } else if (activePlayers.length === 4) {
+                 const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
+                 pos = positions[offset];
+               } else if (activePlayers.length === 3) {
+                 pos = offset === 1 ? 'bottom-right' : 'top-left';
+               } else if (activePlayers.length === 2) {
+                 pos = offset === 1 ? 'top-right' : 'bottom-left';
+               }
+             }
 
-           return (
-             <PlayerCorner
-               key={p.id}
-               player={p as any}
-               position={pos}
-               isActiveTurn={currentTurn === p.id}
-               isHumanTurnToRoll={currentTurn === p.id && p.type === 'human' && !gameState.hasRolled && !gameState.isRolling && !gameState.isAnimating}
-               isRolling={gameState.isRolling}
-               hasRolled={gameState.hasRolled}
-               diceValues={diceValues}
-               remainingMoves={remainingMoves}
-               onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
-               timer={timer}
-             />
-           );
-        })}
+             return (
+               <PlayerCorner
+                 key={p.id}
+                 player={p as any}
+                 position={pos}
+                 isActiveTurn={currentTurn === p.id}
+                 isHumanTurnToRoll={currentTurn === p.id && p.type === 'human' && !gameState.hasRolled && !gameState.isRolling && !gameState.isAnimating}
+                 isRolling={gameState.isRolling}
+                 hasRolled={gameState.hasRolled}
+                 diceValues={diceValues}
+                 remainingMoves={remainingMoves}
+                 onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
+                 timer={timer}
+               />
+             );
+           });
+        })()}
 
         {/* Minimalist Log Ticker */}
         {gameState.logs.length > 0 && (
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
-            <div className="bg-[oklch(0.12_0.02_285/0.7)] backdrop-blur-md rounded-full px-6 py-2 border border-[var(--panel-border,oklch(0.7_0.27_350/0.2))] shadow-[0_0_15px_rgba(0,0,0,0.5)] animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <span className="text-white/90 text-sm font-medium tracking-wide drop-shadow-md">
-                {gameState.logs[gameState.logs.length - 1].message}
-              </span>
-            </div>
+          <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full text-center px-4">
+            <span className="text-white/50 text-[10px] font-medium tracking-widest uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] animate-pulse">
+              {gameState.logs[gameState.logs.length - 1].message}
+            </span>
           </div>
         )}
       </div>

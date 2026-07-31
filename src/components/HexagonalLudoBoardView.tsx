@@ -463,11 +463,11 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
   const activePlayer = players[currentTurnIndex];
 
   return (
-    <div className="relative w-full max-w-[650px] mx-auto select-none flex items-center justify-center p-0">
+    <div className="relative w-full mx-auto select-none flex items-center justify-center p-0">
       <svg
         viewBox="139 156 722 688"
         className="w-full h-auto drop-shadow-[0_12px_24px_rgba(0,0,0,0.5)]"
-        style={{ touchAction: 'none', maxHeight: 'calc(100vh - 130px)' }}
+        style={{ touchAction: 'none' }}
       >
           <HexBoardStaticSVG />
 
