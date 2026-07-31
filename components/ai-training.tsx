@@ -76,17 +76,17 @@ export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStar
       </div>
 
       {/* Central container */}
-      <article className="glass relative overflow-hidden rounded-3xl p-6 sm:p-8">
+      <article className="glass relative overflow-hidden rounded-3xl p-5 sm:p-6">
         <div className="pointer-events-none absolute -right-12 -top-12 size-60 rounded-full bg-[oklch(0.7_0.27_350/0.28)] blur-3xl" />
         <div className="pointer-events-none absolute -bottom-16 left-10 size-60 rounded-full bg-[oklch(0.82_0.15_200/0.2)] blur-3xl" />
 
-        <div className="relative flex flex-col gap-8">
+        <div className="relative flex flex-col gap-5 sm:gap-6">
           {/* Title */}
           <header className="text-center">
-            <h2 className="font-display text-4xl font-extrabold tracking-tight text-[var(--candy-magenta)] neon-magenta sm:text-5xl">
+            <h2 className="font-display text-3xl font-extrabold tracking-tight text-[var(--candy-magenta)] neon-magenta sm:text-4xl">
               SUGAR LUDO
             </h2>
-            <p className="mt-1 font-display text-sm font-bold uppercase tracking-[0.25em] text-[var(--candy-cyan)] neon-cyan">
+            <p className="mt-1 font-display text-xs font-bold uppercase tracking-[0.25em] text-[var(--candy-cyan)] neon-cyan">
               Edición Clásica Premium
             </p>
           </header>
@@ -143,12 +143,12 @@ export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStar
           </fieldset>
 
           {/* Action buttons */}
-          <div className="flex flex-col gap-3 pt-1">
-            <button onClick={handleStart} className="btn-3d flex w-full items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(145deg,oklch(0.78_0.2_150),oklch(0.72_0.18_160))] py-4 font-display text-lg font-extrabold uppercase tracking-wide text-[oklch(0.18_0.03_285)] shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.5_0.14_155),0_14px_26px_oklch(0.5_0.14_155/0.55)]">
+          <div className="flex flex-col gap-2 pt-1">
+            <button onClick={handleStart} className="btn-3d flex w-full items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(145deg,oklch(0.78_0.2_150),oklch(0.72_0.18_160))] py-3 font-display text-lg font-extrabold uppercase tracking-wide text-[oklch(0.18_0.03_285)] shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.5_0.14_155),0_14px_26px_oklch(0.5_0.14_155/0.55)]">
               <Play className="size-6 fill-current" strokeWidth={1} />
               Comenzar Juego
             </button>
-            <button className="btn-3d flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-[oklch(1_0_0/0.06)] py-3.5 font-display text-base font-bold text-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.15)]">
+            <button className="btn-3d flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-[oklch(1_0_0/0.06)] py-2.5 font-display text-base font-bold text-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.15)]">
               <BookOpen className="size-5 text-[var(--candy-cyan)]" strokeWidth={2.4} />
               Guía rápida
             </button>
@@ -177,7 +177,7 @@ function PillButton({
       onClick={onClick}
       aria-pressed={selected}
       className={cn(
-        'btn-3d rounded-2xl py-3 font-display text-base font-extrabold transition-colors',
+        'btn-3d rounded-2xl py-2.5 font-display text-sm sm:text-base font-extrabold transition-colors',
         selected
           ? 'text-[oklch(0.16_0.03_285)]'
           : 'border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground hover:text-foreground',

@@ -630,10 +630,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     // Diagnostic log
     addLog(`Moviendo ficha ${tokenIndex + 1} de ${PLAYER_NAMES[token.color]} hacia casilla ${targetStep}...`, 'move', token.color);
 
-    // Run interval for step-by-step audio + animation
-    const stepInterval = setInterval(() => {
+    // Run recursive timeout for step-by-step audio + animation
+    const animateNextStep = () => {
       if (winnerRef.current !== null) {
-        clearInterval(stepInterval);
         setIsAnimatingMove(false);
         return;
       }
@@ -654,13 +653,18 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         if (!isMuted) {
           audio.playStep();
         }
-      } else {
-        clearInterval(stepInterval);
         
+        setTimeout(animateNextStep, 250); // 250ms ensures 220ms CSS transition is finished
+      } else {
         // Step complete, check logic rules (captures, goal, win)
-        handleMoveCompletion(playerIndex, tokenIndex, targetStep, moveIndices, leftover);
+        setTimeout(() => {
+          handleMoveCompletion(playerIndex, tokenIndex, targetStep, moveIndices, leftover);
+        }, 50); // slight delay to allow last step to settle visually before applying rules/captures
       }
-    }, 240);
+    };
+    
+    // Start animation loop
+    setTimeout(animateNextStep, 50);
   };
 
   // Execute rules check on landing cell

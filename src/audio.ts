@@ -61,9 +61,20 @@ class LudoAudio {
 
   private initBgmElement() {
     if (!this.bgmAudioElement) {
-      this.bgmAudioElement = new Audio('/tam-lin.mp3');
+      this.bgmAudioElement = new Audio();
       this.bgmAudioElement.loop = true;
       this.bgmAudioElement.preload = 'auto';
+
+      // Fetch the audio as a blob to prevent external download managers (like IDM) 
+      // from intercepting the media request from the <audio> tag.
+      fetch('/tam-lin.mp3')
+        .then(res => res.blob())
+        .then(blob => {
+          if (this.bgmAudioElement) {
+            this.bgmAudioElement.src = URL.createObjectURL(blob);
+          }
+        })
+        .catch(err => console.warn('LudoAudio: Failed to fetch BGM blob', err));
     }
     if (this.ctx && this.musicMasterGain && !this.bgmMediaSource && this.bgmAudioElement) {
       try {

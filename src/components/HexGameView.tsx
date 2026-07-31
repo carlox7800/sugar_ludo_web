@@ -298,12 +298,12 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       });
 
       if (currentStepAnim < newStep) {
-        setTimeout(animateNextStep, 200); // 200ms per step
+        setTimeout(animateNextStep, 250); // 250ms per step (allows 220ms CSS transition to finish)
       } else {
         // Finished moving, do captures and rules
         setTimeout(() => {
           finalizeMove(newStep);
-        }, 200);
+        }, 250);
       }
     };
 
@@ -507,9 +507,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       // If moveVal was a combo (e.g. 5 + 3 = 4 steps total), animate the remaining 3 steps
       if (newStep > 1) {
         currentStepAnim = 1;
-        setTimeout(animateNextStep, 200);
+        setTimeout(animateNextStep, 250);
       } else {
-        setTimeout(() => finalizeMove(newStep), 200);
+        setTimeout(() => finalizeMove(newStep), 250);
       }
     } else {
       animateNextStep();

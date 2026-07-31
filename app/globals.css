@@ -73,6 +73,15 @@
     font-family: var(--font-display);
   }
 
+  /* Hide scrollbar */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
   /* Deep atmospheric background with neon glow blooms */
   .cyber-bg {
     background-color: #1a0f2e;

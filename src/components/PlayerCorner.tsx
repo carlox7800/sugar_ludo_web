@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Player, PlayerColor } from '../types';
+import { useAuth } from '@/lib/auth-context';
+import { PRESET_AVATARS } from '@/components/avatar-selector-modal';
 
 interface PlayerCornerProps {
   player: Player;
@@ -28,6 +30,17 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
 }) => {
   const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
   const [currentMessage, setCurrentMessage] = useState<string | null>(null);
+  
+  const { user } = useAuth();
+  
+  const getActiveAvatar = () => {
+    if (!user) return PRESET_AVATARS[0];
+    return PRESET_AVATARS.find(a => a.id === user.photoURL) || PRESET_AVATARS[0];
+  };
+  const activeAvatar = getActiveAvatar();
+  
+  const isHuman = player.type === 'human';
+  const displayName = isHuman ? (user?.nickname || 'Tú') : player.name;
 
   useEffect(() => {
     if (currentMessage) {
@@ -137,7 +150,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
              {activeMenu && (
                <>
                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setActiveMenu(null)} />
-                 <div className="absolute bottom-[100%] mb-2 left-0 md:left-1/2 md:-translate-x-1/2 origin-bottom-left md:origin-bottom z-50 animate-in fade-in zoom-in slide-in-from-bottom-2 duration-200 bg-[#0f172a]/95 backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px]">
+                 <div className="absolute bottom-[100%] mb-2 left-0 origin-bottom-left z-50 animate-in fade-in zoom-in slide-in-from-bottom-2 duration-200 bg-[#0f172a]/95 backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px]">
                    {activeMenu === 'emoji' ? (
                      <div className="flex gap-2 justify-center p-1">
                        {['🤣', '😡', '🥺', '😎', '😴'].map((emoji) => (
@@ -182,10 +195,18 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
         )}
         
         <div className={`w-14 h-14 md:w-20 md:h-20 rounded-full flex items-center justify-center bg-[oklch(0.12_0.02_285/0.8)] backdrop-blur-md border border-[var(--panel-border,oklch(0.7_0.27_350/0.3))] shadow-lg transition-all duration-300 ${isActiveTurn ? `ring-4 ring-offset-2 ring-offset-[oklch(0.08_0.02_285)] ${ringColors[player.color] || ringColors['blue']} animate-pulse scale-110` : 'opacity-70 grayscale-[0.3]'}`}>
-           {/* Simple Avatar Placeholder */}
-           <svg className="w-7 h-7 md:w-10 md:h-10 text-white opacity-80" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-           </svg>
+           {isHuman ? (
+             <div 
+               className="w-full h-full rounded-full flex items-center justify-center text-3xl md:text-4xl"
+               style={{ backgroundColor: `${activeAvatar.color}33`, color: activeAvatar.color }}
+             >
+               {activeAvatar.emoji}
+             </div>
+           ) : (
+             <svg className="w-7 h-7 md:w-10 md:h-10 text-white opacity-80" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+             </svg>
+           )}
            {isActiveTurn && timer > 0 && (
               <div className="absolute -bottom-1 -right-1 md:-bottom-2 md:-right-2 bg-black border border-white/20 text-white text-[9px] md:text-xs font-bold rounded-full w-5 h-5 md:w-7 md:h-7 flex items-center justify-center shadow-lg">
                 {timer}
@@ -193,7 +214,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
            )}
         </div>
         <span className={`text-[10px] md:text-xs mt-2 font-bold font-mono tracking-wider drop-shadow-md ${isActiveTurn ? 'text-white' : 'text-white/60'}`}>
-          {player.name}
+          {displayName}
         </span>
       </div>
 

@@ -54,7 +54,7 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-col gap-2 overflow-y-auto" aria-label="Menú principal">
+      <nav className="flex flex-col gap-2 overflow-y-auto no-scrollbar" aria-label="Menú principal">
         {NAV_ITEMS.map((item) => (
           <NavButton 
             key={item.label} 
