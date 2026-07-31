@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Player, Token, GameLog, GameConfig, PlayerColor, AppTheme, UserProfile } from './types';
 import { GameBoard, getCellCoord, isSafeCell, START_OFFSETS } from './components/GameBoard';
-import { GameControls } from './components/GameControls';
+import { PlayerCorner } from './components/PlayerCorner';
 import { ConsoleLogs } from './components/ConsoleLogs';
 import { audio } from './audio';
 import { globalLogger } from '@/lib/logger';
@@ -1159,9 +1159,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
               appTheme={appTheme}
             />
           ) : (
-            <>
-              {/* Left column: Interactive Game Board */}
-              <div className="w-full lg:w-3/5 flex flex-col gap-4">
+            <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[600px]">
+              {/* Center GameBoard */}
+              <div className="z-10 scale-[0.85] md:scale-100 max-w-[650px] w-full mx-auto">
                 <GameBoard
                   appTheme={appTheme}
                   tokens={tokens}
@@ -1173,35 +1173,59 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                 />
               </div>
 
-              {/* Right column: Dynamic Live Controls & Logs */}
-              <div className="w-full lg:w-2/5 flex flex-col gap-4 shrink-0">
-                <GameControls
-                  appTheme={appTheme}
-                  setAppTheme={setAppTheme}
-                  isPlaying={isPlaying}
-                  onStartGame={handleStartGame}
-                  onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
-                  diceValues={diceValues}
-                  remainingMoves={remainingMoves}
-                  isRolling={isRolling}
-                  currentTurnPlayer={activePlayer}
-                  hasRolled={hasRolled}
-                  timer={timer}
-                  winnerPlayer={winner !== null ? players[winner] : null}
-                  onResetGame={handleResetGame}
-                  isHumanTurnToRoll={activePlayer?.type === 'human' && !hasRolled && !isRolling && !isAnimatingMove}
-                  isGlowActive={isGlowActive}
-                />
+              {/* Corners with PlayerCorners */}
+              {(() => {
+                 const activePlayers = players.filter(p => p.isActive);
+                 const humanIdx = activePlayers.findIndex(p => p.type === 'human');
+                 
+                 return activePlayers.map((p, index) => {
+                   let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
+                   
+                   if (p.type === 'human') {
+                     pos = 'bottom-left';
+                   } else {
+                     // Determine relative position based on turn order distance from human
+                     // If no human, just use index as base
+                     const baseIdx = humanIdx >= 0 ? humanIdx : 0;
+                     const offset = (index - baseIdx + activePlayers.length) % activePlayers.length;
+                     
+                     if (activePlayers.length === 2) {
+                       pos = 'top-right';
+                     } else if (activePlayers.length === 3) {
+                       pos = offset === 1 ? 'bottom-right' : 'top-left';
+                     } else {
+                       const corners: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
+                       pos = corners[offset];
+                     }
+                   }
 
-                <ConsoleLogs
-                  logs={logs}
-                  onClear={() => setLogs([])}
-                  isOpen={isLogsOpen}
-                  onToggle={() => setIsLogsOpen(!isLogsOpen)}
-                  mode="game"
-                />
-              </div>
-            </>
+                   return (
+                     <PlayerCorner
+                       key={p.id}
+                       player={p}
+                       position={pos}
+                       isActiveTurn={currentTurn === p.id}
+                       isHumanTurnToRoll={currentTurn === p.id && p.type === 'human' && !hasRolled && !isRolling && !isAnimatingMove}
+                       isRolling={isRolling}
+                       hasRolled={hasRolled}
+                       diceValues={diceValues}
+                       remainingMoves={remainingMoves}
+                       onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
+                       timer={timer}
+                     />
+                   );
+                 });
+              })()}
+
+              {/* Minimalist Log Ticker */}
+              {logs.length > 0 && (
+                <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full text-center px-4">
+                  <span className="text-white/50 text-[10px] font-medium tracking-widest uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] animate-pulse">
+                    {logs[logs.length - 1].message}
+                  </span>
+                </div>
+              )}
+            </div>
           )
         ) : null}
       </main>

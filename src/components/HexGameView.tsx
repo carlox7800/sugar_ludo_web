@@ -16,6 +16,7 @@ import {
   HexLog,
 } from '../HexGameEngine';
 import { HexagonalLudoBoardView } from './HexagonalLudoBoardView';
+import { PlayerCorner } from './PlayerCorner';
 import { GameControls } from './GameControls';
 import { ConsoleLogs } from './ConsoleLogs';
 import { globalLogger } from '@/lib/logger';
@@ -74,6 +75,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   };
 
   const activePlayer = gameState.players[gameState.currentTurnIndex];
+  const currentTurn = activePlayer?.id;
 
   const getPlayableTokenIdsHex = (pId: number, moves: number[], currentTokens = gameState.tokens): number[] => {
     if (moves.length === 0) return [];
@@ -897,79 +899,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     setTimer(10);
   };
 
-  // Color Map dictionaries for UI styling
-  const turnTitles: Record<HexPlayerColor, string> = {
-    purple: 'Morado',
-    green: 'Verde',
-    blue: 'Azul',
-    orange: 'Naranja',
-    yellow: 'Amarillo',
-    red: 'Rojo',
-  };
-
-  const textColors: Record<HexPlayerColor, string> = {
-    purple: 'text-purple-500',
-    green: 'text-p-green',
-    blue: 'text-p-blue',
-    orange: 'text-orange-500',
-    yellow: 'text-p-yellow',
-    red: 'text-p-red',
-  };
-
-  const bgColors: Record<HexPlayerColor, string> = {
-    purple: 'bg-purple-500',
-    green: 'bg-[var(--color-p-green)]',
-    blue: 'bg-[var(--color-p-blue)]',
-    orange: 'bg-orange-500',
-    yellow: 'bg-[var(--color-p-yellow)]',
-    red: 'bg-p-red',
-  };
-
-  // Dice Dots Renderer
-  const renderDiceDots = (value: number, color: HexPlayerColor) => {
-    const isDarkDots = color === 'yellow';
-    const dotColor = isDarkDots ? 'bg-gray-800' : 'bg-white';
-
-    const dotPositions: Record<number, string[]> = {
-      1: ['col-start-2 row-start-2'],
-      2: ['col-start-1 row-start-1', 'col-start-3 row-start-3'],
-      3: ['col-start-1 row-start-1', 'col-start-2 row-start-2', 'col-start-3 row-start-3'],
-      4: [
-        'col-start-1 row-start-1',
-        'col-start-3 row-start-1',
-        'col-start-1 row-start-3',
-        'col-start-3 row-start-3',
-      ],
-      5: [
-        'col-start-1 row-start-1',
-        'col-start-3 row-start-1',
-        'col-start-2 row-start-2',
-        'col-start-1 row-start-3',
-        'col-start-3 row-start-3',
-      ],
-      6: [
-        'col-start-1 row-start-1',
-        'col-start-3 row-start-1',
-        'col-start-1 row-start-2',
-        'col-start-3 row-start-2',
-        'col-start-1 row-start-3',
-        'col-start-3 row-start-3',
-      ],
-    };
-
-    const activeDots = dotPositions[value] || [];
-
-    return (
-      <div className="grid grid-cols-3 grid-rows-3 gap-1.5 w-12 h-12 p-2">
-        {activeDots.map((pos, idx) => (
-          <div key={idx} className={`w-2.5 h-2.5 rounded-full ${dotColor} ${pos} shadow-inner`} />
-        ))}
-      </div>
-    );
-  };
-
   return (
-    <div className="w-full flex flex-col lg:flex-row items-center lg:items-start justify-center gap-4 relative">
+    <div className="w-full h-full flex flex-col items-center bg-[#0a0f1c] text-white relative overflow-hidden">
       {/* Toast Banner (Floating Overlay - Zero Layout Shift) */}
       {notification && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/90 backdrop-blur-md px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-extrabold shadow-[0_8px_32px_rgba(0,0,0,0.6)] pointer-events-none">
@@ -978,55 +909,66 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         </div>
       )}
 
-      {/* Left Column: Interactive Hexagonal Board View */}
-      <div className="w-full lg:w-3/5 flex flex-col gap-3">
-        <HexagonalLudoBoardView
-          appTheme={appTheme}
-          tokens={gameState.tokens}
-          players={gameState.players}
-          currentTurnIndex={gameState.currentTurnIndex}
-          playableTokenIds={playableTokenIds}
-          onTokenClick={handleTokenClick}
-          humanPlayerId={gameState.players.findIndex((p) => p.type === 'human')}
-          explosionData={explosionData}
-        />
-      </div>
+      {/* Main Game Stage */}
+      <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[700px] z-10">
+        
+        {/* Center Game Board */}
+        <div className="z-10 w-full max-w-[800px] mx-auto scale-[0.8] md:scale-100 flex items-center justify-center">
+          <div className="relative mx-auto w-fit">
+            <HexagonalLudoBoardView
+              appTheme={appTheme}
+              tokens={gameState.tokens}
+              players={gameState.players}
+              currentTurnIndex={gameState.currentTurnIndex}
+              playableTokenIds={playableTokenIds}
+              onTokenClick={handleTokenClick}
+              humanPlayerId={gameState.players.findIndex(p => p.type === 'human')}
+              explosionData={explosionData}
+            />
+          </div>
+        </div>
 
-      {/* Right Column: Unified Game Control Panel & Console Logs */}
-      <div className="w-full lg:w-2/5 flex flex-col gap-3 shrink-0">
-        {console.log("🔍 [RASTREO-SELECTOR-6J]", { file: 'HexGameView.tsx', component: 'GameControls', activePlayer, isHumanTurnToRoll })}
-        <GameControls
-          appTheme={appTheme}
-          setAppTheme={() => {}}
-          isPlaying={true}
-          onStartGame={() => {}}
-          onRollDice={handleRollDice}
-          diceValues={diceValues}
-          remainingMoves={remainingMoves}
-          isRolling={gameState.isRolling}
-          currentTurnPlayer={activePlayer as any}
-          hasRolled={gameState.hasRolled}
-          timer={timer}
-          winnerPlayer={gameState.winner ? (activePlayer as any) : null}
-          onResetGame={handleReset}
-          isHumanTurnToRoll={isHumanTurnToRoll as boolean}
-          isGlowActive={isGlowActive}
-        />
+        {/* Corners with PlayerCorners */}
+        {gameState.players.filter(p => p.isActive).map((p, index) => {
+           let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
+           if (gameState.players.length === 6) {
+             const positions: any[] = ['bottom-left', 'mid-left', 'top-left', 'top-right', 'mid-right', 'bottom-right'];
+             pos = positions[index % 6];
+           } else if (gameState.players.length === 5) {
+             const positions: any[] = ['bottom-left', 'mid-left', 'top-left', 'top-right', 'bottom-right'];
+             pos = positions[index % 5];
+           } else {
+             const corners: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
+             pos = corners[index % 4];
+           }
 
-        {/* Live Game Logs */}
-        <ConsoleLogs
-          logs={gameState.logs.map((l) => ({
-            id: l.id,
-            message: l.message,
-            timestamp: l.timestamp,
-            type: l.type as any,
-            playerColor: l.color as any,
-          }))}
-          onClear={() => setGameState((prev) => ({ ...prev, logs: [] }))}
-          isOpen={isLogsOpen}
-          onToggle={() => setIsLogsOpen(!isLogsOpen)}
-          mode="game"
-        />
+           return (
+             <PlayerCorner
+               key={p.id}
+               player={p as any}
+               position={pos}
+               isActiveTurn={currentTurn === p.id}
+               isHumanTurnToRoll={currentTurn === p.id && p.type === 'human' && !gameState.hasRolled && !gameState.isRolling && !gameState.isAnimating}
+               isRolling={gameState.isRolling}
+               hasRolled={gameState.hasRolled}
+               diceValues={diceValues}
+               remainingMoves={remainingMoves}
+               onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
+               timer={timer}
+             />
+           );
+        })}
+
+        {/* Minimalist Log Ticker */}
+        {gameState.logs.length > 0 && (
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
+            <div className="bg-[oklch(0.12_0.02_285/0.7)] backdrop-blur-md rounded-full px-6 py-2 border border-[var(--panel-border,oklch(0.7_0.27_350/0.2))] shadow-[0_0_15px_rgba(0,0,0,0.5)] animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <span className="text-white/90 text-sm font-medium tracking-wide drop-shadow-md">
+                {gameState.logs[gameState.logs.length - 1].message}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Move Selection Modal (2 Dice choosing popup) */}
