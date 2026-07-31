@@ -5,7 +5,7 @@ import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle } from 'lucide-rea
 import { getSocket } from '@/lib/socket'
 import { useAuth } from '@/lib/auth-context'
 import { GameBoard } from '@/src/components/GameBoard'
-import { GameControls } from '@/src/components/GameControls'
+import { PlayerCorner } from '@/src/components/PlayerCorner'
 import { Token, Player, PlayerColor } from '@/src/types'
 import { globalLogger } from '@/lib/logger'
 import { audio } from '@/src/audio'
@@ -59,7 +59,7 @@ export function OnlineGameEngine({
         id: idx,
         name: isMe ? `${p.playerName || p.name || 'Tú'} (Tú)` : (p.playerName || p.name || `Jugador ${idx + 1}`),
         color: COLORS_ORDER[idx] || 'yellow',
-        type: isMe ? 'human' : (p.isBot ? 'bot' : 'human'),
+        type: isMe ? 'human' : 'bot',
         isActive: p.isConnected !== false,
       }
     })
@@ -102,7 +102,13 @@ export function OnlineGameEngine({
   // Timer & UI Notifications
   const [turnTimer, setTurnTimer] = useState<number>(10)
   const [notification, setNotification] = useState<string | null>(null)
-  const [muted, setMuted] = useState(false)
+  const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false)
+  const [audioSettings, setAudioSettings] = useState({
+    musicVolume: 0.15,
+    sfxVolume: 1.0,
+    isMuted: false
+  })
+  const muted = audioSettings.isMuted
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
 
   // Derived state
@@ -452,6 +458,35 @@ export function OnlineGameEngine({
   }, [currentTurnPlayerId, winnerPlayer, hasRolled, isRolling])
 
   // ---------------------------------------------------------------------------
+  // Ambient & Turn Alerts (Audio & Vibration)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    audio.setVolumes(audioSettings.musicVolume, audioSettings.sfxVolume, audioSettings.isMuted)
+    if (!audioSettings.isMuted) {
+      audio.playBackgroundMusic(true)
+    } else {
+      audio.playBackgroundMusic(false)
+    }
+    return () => {
+      audio.playBackgroundMusic(false)
+    }
+  }, [audioSettings])
+
+  useEffect(() => {
+    const isHumanTurnToRoll = isMyTurn && !hasRolled && !isRolling && !isAnimatingMove && !winnerPlayer;
+    if (isHumanTurnToRoll) {
+      if (!muted) {
+        audio.playTurnAlert()
+        audio.startTurnAlertLoop()
+      }
+      if (navigator.vibrate) navigator.vibrate(100)
+    } else {
+      audio.stopTurnAlertLoop()
+    }
+    return () => audio.stopTurnAlertLoop()
+  }, [isMyTurn, hasRolled, isRolling, isAnimatingMove, winnerPlayer, muted])
+
+  // ---------------------------------------------------------------------------
   // Server Socket Event Listeners
   // ---------------------------------------------------------------------------
   useEffect(() => {
@@ -620,6 +655,7 @@ export function OnlineGameEngine({
       const stepInterval = setInterval(() => {
         iteration += 1
         if (iteration <= animSteps) {
+          if (!muted) audio.playStep()
           const newStep = startStep === -1 ? 0 : startStep + iteration
           setTokens((prev) =>
             prev.map((t) =>
@@ -791,6 +827,7 @@ export function OnlineGameEngine({
   const handleRollDice = () => {
     if (!isMyTurn || hasRolled || isRolling) return
     setIsRolling(true)
+    if (!muted) audio.playDiceRoll()
     globalLogger.log('SOCKET', 'Emitiendo intent_roll_dice', { roomId: gameData.roomId, playerId: myPlayerId })
     socket.emit('intent_roll_dice', {
       roomId: gameData.roomId,
@@ -883,50 +920,87 @@ export function OnlineGameEngine({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[oklch(0.12_0.03_285)] text-foreground p-3 sm:p-6 gap-4">
-      {/* Top Header Controls */}
-      <div className="flex items-center justify-between gap-3">
-        <button
-          onClick={() => setIsExitModalOpen(true)}
-          className="btn-3d flex items-center gap-2 rounded-2xl border border-border bg-[oklch(1_0_0/0.05)] px-4 py-2 text-sm font-bold text-foreground hover:bg-[oklch(1_0_0/0.1)]"
-        >
-          <ArrowLeft className="size-4" />
-          <span>Salir de la Mesa</span>
-        </button>
-
-        {/* Turn Status & Timer Badge */}
-        <div className="flex items-center gap-3">
-          <div className={`flex items-center gap-2 rounded-full px-4 py-1.5 font-display text-sm font-extrabold border ${
-            isMyTurn 
-              ? 'border-[var(--candy-cyan)] bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)] shadow-[0_0_12px_var(--candy-cyan)]' 
-              : 'border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground'
-          }`}>
-            <span>{isMyTurn ? '¡ES TU TURNO! ⚡' : `Turno de ${currentTurnPlayer.name}`}</span>
-            <span className="ml-2 font-mono text-base text-foreground">{turnTimer}s</span>
-          </div>
-
-          <button
-            onClick={() => setMuted((m) => !m)}
-            className="flex size-10 items-center justify-center rounded-2xl border border-border bg-[oklch(1_0_0/0.05)] text-[var(--candy-cyan)]"
+    <div className="w-full flex-1 flex flex-col items-center text-foreground relative overflow-hidden bg-[oklch(0.12_0.03_285)] min-h-screen">
+      
+      {/* Upper Navigation & Sound controls */}
+      <header className="w-full bg-root/80 backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-4 py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-[0_4px_30px_oklch(0.82_0.15_200/0.05)] shrink-0">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setIsExitModalOpen(true)}
+            className="p-1.5 -ml-2 rounded-xl text-t-muted hover:text-[var(--candy-cyan,oklch(0.82_0.15_200))] hover:bg-[var(--candy-cyan,oklch(0.82_0.15_200))/0.1] transition-colors cursor-pointer"
+            title="Volver"
           >
-            {muted ? <VolumeX className="size-5" /> : <Volume2 className="size-5" />}
+            <ArrowLeft size={22} />
           </button>
+          <Sparkles className="text-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse shrink-0 drop-shadow-[0_0_8px_var(--candy-magenta,oklch(0.7_0.27_350))]" size={20} />
+          <span className="font-extrabold text-lg text-t-primary tracking-widest font-mono uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">Entrenamiento Online</span>
         </div>
-      </div>
 
-      {/* Toast Banner (Floating Overlay - Zero Layout Shift) */}
-      {notification && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/90 backdrop-blur-md px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-extrabold shadow-[0_8px_32px_rgba(0,0,0,0.6)] pointer-events-none">
-          <Sparkles className="size-4 text-[var(--candy-cyan)]" />
-          <span>{notification}</span>
+        <div className="flex items-center gap-3 relative">
+          <button
+            onClick={() => setIsAudioMenuOpen(!isAudioMenuOpen)}
+            className={`p-2 rounded-xl text-t-muted hover:text-t-primary hover:bg-panel transition-colors cursor-pointer flex items-center justify-center border ${isAudioMenuOpen ? 'border-p-cyan bg-panel' : 'border-border'}`}
+            title="Ajustes de Sonido"
+          >
+            {muted ? <VolumeX size={18} className="text-p-red" /> : <Volume2 size={18} className="text-p-green" />}
+          </button>
+          
+          {/* Audio Popover */}
+          {isAudioMenuOpen && (
+            <div className="absolute top-12 right-0 w-64 bg-surface border border-border rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] p-4 z-50 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-t-primary">Mezcla de Audio</span>
+                <button
+                  onClick={() => setAudioSettings(s => ({ ...s, isMuted: !s.isMuted }))}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg border transition-colors ${muted ? 'bg-p-red/20 text-p-red border-p-red/50' : 'bg-surface text-t-muted border-border hover:bg-panel'}`}
+                >
+                  {muted ? 'MUTEADO' : 'MUTEAR'}
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-xs text-t-muted">
+                    <span>Música (Tam Lin)</span>
+                    <span>{Math.round(audioSettings.musicVolume * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" min="0" max="1" step="0.05" 
+                    value={audioSettings.musicVolume}
+                    onChange={(e) => setAudioSettings(s => ({ ...s, musicVolume: parseFloat(e.target.value) }))}
+                    disabled={muted}
+                    className="w-full accent-p-cyan cursor-pointer disabled:opacity-50"
+                  />
+                </div>
+                
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between text-xs text-t-muted">
+                    <span>Efectos SFX</span>
+                    <span>{Math.round(audioSettings.sfxVolume * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" min="0" max="1" step="0.05" 
+                    value={audioSettings.sfxVolume}
+                    onChange={(e) => setAudioSettings(s => ({ ...s, sfxVolume: parseFloat(e.target.value) }))}
+                    disabled={muted}
+                    className="w-full accent-p-green cursor-pointer disabled:opacity-50"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </header>
 
-      {/* Visual Game Board & Controls */}
-      <main className="w-full max-w-7xl mx-auto flex flex-1 flex-col lg:flex-row items-center lg:items-start justify-center gap-6">
-        {/* Left Column: Game Board */}
-        <div className="w-full lg:w-3/5 flex flex-col items-center justify-center">
-          <div className="relative w-full max-w-2xl aspect-square glass rounded-3xl p-4 flex items-center justify-center">
+      {/* Main Game Stage */}
+      <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[600px] z-10">
+        
+        {/* Center Game Board */}
+        <div 
+          className="z-10 w-full mx-auto flex items-center justify-center"
+          style={{ maxWidth: 'min(700px, calc((100vh - 220px) * 1.05))' }}
+        >
+          <div className="relative mx-auto w-full">
             <GameBoard
               tokens={tokens}
               currentTurn={activePlayerIndex}
@@ -939,26 +1013,67 @@ export function OnlineGameEngine({
           </div>
         </div>
 
-        {/* Right Column: Action Controls */}
-        <div className="w-full lg:w-2/5 max-w-md flex flex-col gap-4 shrink-0">
-          <GameControls
-            isPlaying={true}
-            onStartGame={() => {}}
-            onRollDice={handleRollDice}
-            diceValues={diceValues}
-            remainingMoves={remainingMoves}
-            isRolling={isRolling}
-            currentTurnPlayer={currentTurnPlayer}
-            hasRolled={hasRolled}
-            timer={turnTimer}
-            winnerPlayer={winnerPlayer}
-            onResetGame={onExit}
-            isHumanTurnToRoll={isMyTurn && !hasRolled && !isRolling && !isAnimatingMove}
-            isGlowActive={isMyTurn && !hasRolled && !isRolling}
-            appTheme="dark"
-          />
-        </div>
-      </main>
+        {/* Corners with PlayerCorners */}
+        {(() => {
+          const activePlayers = formattedPlayers;
+          const humanIdx = activePlayers.findIndex(p => p.type === 'human');
+
+          return activePlayers.map((p, index) => {
+            let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
+
+            if (p.type === 'human') {
+              pos = 'bottom-left';
+            } else {
+              const baseIdx = humanIdx >= 0 ? humanIdx : 0;
+              const offset = (index - baseIdx + activePlayers.length) % activePlayers.length;
+
+              if (activePlayers.length === 6) {
+                const positions: any[] = ['bottom-left', 'bottom-right', 'mid-right', 'top-right', 'top-left', 'mid-left'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 5) {
+                const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left', 'mid-left'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 4) {
+                const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 3) {
+                pos = offset === 1 ? 'bottom-right' : 'top-left';
+              } else if (activePlayers.length === 2) {
+                pos = offset === 1 ? 'top-right' : 'bottom-left';
+              }
+            }
+
+            const isActiveTurn = activePlayerIndex === p.id;
+            const isHumanTurnToRoll = isActiveTurn && isMyTurn && !hasRolled && !isRolling && !isAnimatingMove;
+
+            return (
+              <PlayerCorner
+                key={p.id}
+                player={p as any}
+                position={pos}
+                isActiveTurn={isActiveTurn}
+                isHumanTurnToRoll={isHumanTurnToRoll}
+                isRolling={isRolling && isActiveTurn}
+                hasRolled={hasRolled && isActiveTurn}
+                diceValues={isActiveTurn ? diceValues : null}
+                remainingMoves={isActiveTurn ? remainingMoves : []}
+                onRollDice={handleRollDice}
+                timer={isActiveTurn ? turnTimer : 0}
+              />
+            );
+          });
+        })()}
+
+        {/* Minimalist Log Ticker */}
+        {notification && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 bg-black/60 backdrop-blur-md px-5 py-2 rounded-full border border-white/10 shadow-2xl max-w-sm w-[90%] text-center pointer-events-none animate-in fade-in slide-in-from-bottom-2">
+            <p className="text-xs font-bold text-[var(--candy-cyan)] truncate flex items-center justify-center gap-2">
+              <Sparkles className="size-3.5 shrink-0" />
+              <span>{notification}</span>
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Exit Modal */}
       {isExitModalOpen && (
