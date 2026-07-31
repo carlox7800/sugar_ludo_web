@@ -132,12 +132,13 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       return;
     }
 
-    const rawHumanIdx = COLORS_ORDER.indexOf(gameConfig.humanColor);
-    const humanIdx = rawHumanIdx >= 0 ? rawHumanIdx : 0;
+    // Pick a random human color/position from COLORS_ORDER
+    const randomHumanIdx = Math.floor(Math.random() * COLORS_ORDER.length);
+    const assignedHumanColor = COLORS_ORDER[randomHumanIdx];
 
-    // Initialize players based on player count and human color selection
+    // Initialize players based on player count and random human color selection
     const tempPlayers: Player[] = COLORS_ORDER.map((color, idx) => {
-      const isHuman = color === gameConfig.humanColor;
+      const isHuman = color === assignedHumanColor;
       return {
         id: idx,
         color,
@@ -147,10 +148,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       };
     });
 
-    // Determine which players are active using a clockwise pattern from human
-    // to keep them adjacent or opposite
+    // Determine which players are active using a pattern starting from human
     for (let i = 0; i < gameConfig.playerCount; i++) {
-      const activeIdx = (humanIdx + i) % 4;
+      const activeIdx = (randomHumanIdx + i) % 4;
       if (tempPlayers[activeIdx]) {
         tempPlayers[activeIdx].isActive = true;
       }
@@ -181,12 +181,12 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     setLogs([]);
 
     // Turn starts with the human player
-    setCurrentTurn(humanIdx);
+    setCurrentTurn(randomHumanIdx);
     setTimer(10);
     setIsPlaying(true);
 
     addLog(`¡Partida iniciada! Modo ${gameConfig.playerCount} jugadores contra Bots (${gameConfig.botDifficulty === 'hard' ? 'Inteligentes' : gameConfig.botDifficulty === 'medium' ? 'Medios' : 'Fáciles'}).`, 'system');
-    addLog(`Es el turno de ${tempPlayers[humanIdx].name} (${PLAYER_NAMES[gameConfig.humanColor]}). ¡Lanza el dado!`, 'system', tempPlayers[humanIdx].color);
+    addLog(`Es el turno de ${tempPlayers[randomHumanIdx].name} (${PLAYER_NAMES[assignedHumanColor]}). ¡Lanza el dado!`, 'system', tempPlayers[randomHumanIdx].color);
   };
 
   // Reset/Restart Game
@@ -210,7 +210,14 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       clearTimeout(botTimeoutRef.current);
       botTimeoutRef.current = null;
     }
-    
+  };
+
+  const handleRestartGame = () => {
+    if (config) {
+      handleStartGame(config);
+    } else {
+      handleResetGame();
+    }
   };
 
   // Get active current player
@@ -1368,7 +1375,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
             </div>
             <div className="flex flex-col gap-3 w-full mt-2">
               <button
-                onClick={handleResetGame}
+                onClick={handleRestartGame}
                 className="w-full flex items-center justify-center gap-2 py-4 bg-[linear-gradient(145deg,oklch(0.78_0.2_150),color-mix(in_oklch,oklch(0.78_0.2_150),black_12%))] text-[oklch(0.18_0.03_285)] font-black rounded-2xl text-lg hover:brightness-110 active:scale-95 shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.5_0.14_155),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.14_155),transparent_55%)] transition-all cursor-pointer uppercase tracking-wider font-display"
               >
                 Jugar de Nuevo

@@ -37,8 +37,10 @@ export function createInitialHexState(
   botDifficulty: 'easy' | 'medium' | 'hard'
 ): HexGameState {
   const activeColors = HEX_COLORS_ORDER.slice(0, playerCount);
+  const assignedHumanColor = activeColors[Math.floor(Math.random() * activeColors.length)];
+
   const players: HexPlayer[] = activeColors.map((color, idx) => {
-    const isHuman = color === humanColor;
+    const isHuman = color === assignedHumanColor;
     return {
       id: idx,
       color,
@@ -61,7 +63,7 @@ export function createInitialHexState(
     }
   });
 
-  const humanIdx = players.findIndex((p) => p.color === humanColor);
+  const humanIdx = players.findIndex((p) => p.color === assignedHumanColor);
   const startTurnIdx = humanIdx >= 0 ? humanIdx : 0;
 
   const logs: HexLog[] = [
