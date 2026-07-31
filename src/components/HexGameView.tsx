@@ -631,6 +631,17 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           let newTokens = [...prev.tokens];
           if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
             const lastId = lastMovedTokenRef.current.tokenId;
+            const lastToken = prev.tokens.find(t => t.playerId === activePlayer.id && t.id === lastId);
+
+            if (lastToken && lastToken.step > 0 && lastToken.step < 83) {
+              const targetCellIndex = getCellIndexForToken(lastToken.color, lastToken.step);
+              if (typeof targetCellIndex === 'number' || typeof targetCellIndex === 'string') {
+                setExplosionData({ cellIndex: targetCellIndex, color: activePlayer.color });
+                setTimeout(() => setExplosionData(null), 3500);
+                if (!isMuted) audio.playFireworks();
+              }
+            }
+
             newTokens = newTokens.map(t => {
               if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 83) {
                 return { ...t, step: 0 };

@@ -118,7 +118,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       roll: 'ROLL',
       capture: 'CAPTURE',
       move: 'MOVE',
-      warning: 'ERROR',
+      warning: 'GAME-FLOW',
       win: 'GAME-FLOW',
     };
     globalLogger.log(globalTypeMap[type] || 'GAME-FLOW', message, { playerColor });
@@ -417,6 +417,15 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
             let newTokens = [...tokens];
             if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
               const lastId = lastMovedTokenRef.current.tokenId;
+              const lastToken = tokens.find(t => t.playerId === activePlayer.id && t.id === lastId);
+              
+              if (lastToken && lastToken.step > 0 && lastToken.step < 57) {
+                const cellIndex = (START_OFFSETS[lastToken.color] + lastToken.step - 1) % 52;
+                setExplosionData({ cellIndex, color: activePlayer.color });
+                setTimeout(() => setExplosionData(null), 3500);
+                if (!isMuted) audio.playFireworks();
+              }
+
               newTokens = newTokens.map(t => {
                 if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 57) {
                   return { ...t, step: 0 };
