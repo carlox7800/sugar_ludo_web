@@ -197,10 +197,14 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
         <div className={`w-14 h-14 md:w-20 md:h-20 rounded-full flex items-center justify-center bg-[oklch(0.12_0.02_285/0.8)] backdrop-blur-md border border-[var(--panel-border,oklch(0.7_0.27_350/0.3))] shadow-lg transition-all duration-300 ${isActiveTurn ? `ring-4 ring-offset-2 ring-offset-[oklch(0.08_0.02_285)] ${ringColors[player.color] || ringColors['blue']} animate-pulse scale-110` : 'opacity-70 grayscale-[0.3]'}`}>
            {isHuman ? (
              <div 
-               className="w-full h-full rounded-full flex items-center justify-center text-3xl md:text-4xl"
+               className="w-full h-full rounded-full flex items-center justify-center text-3xl md:text-4xl overflow-hidden"
                style={{ backgroundColor: `${activeAvatar.color}33`, color: activeAvatar.color }}
              >
-               {activeAvatar.emoji}
+               {user?.photoURL?.startsWith('http') || user?.photoURL?.startsWith('data:') ? (
+                 <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover rounded-full" />
+               ) : (
+                 activeAvatar.emoji
+               )}
              </div>
            ) : (
              <svg className="w-7 h-7 md:w-10 md:h-10 text-white opacity-80" viewBox="0 0 24 24" fill="currentColor">

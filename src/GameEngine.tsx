@@ -8,6 +8,8 @@ import { audio } from './audio';
 import { globalLogger } from '@/lib/logger';
 import { Volume2, VolumeX, BookOpen, Sparkles, Trophy, ArrowLeft, Settings, X, Palette, Music, Terminal } from 'lucide-react';
 import { HexGameView } from './components/HexGameView';
+import { useAuth } from '@/lib/auth-context';
+import { recordMatchResult } from '@/lib/stats-service';
 
 // Clockwise standard colors list
 const COLORS_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue'];
@@ -22,7 +24,7 @@ const PLAYER_NAMES: Record<PlayerColor, string> = {
 };
 
 export default function GameEngine({ initialConfig, onExit }: { initialConfig: GameConfig, onExit: () => void }) {
-  // Navigation State
+  const { user } = useAuth();
   
 
   // User Profile
@@ -703,6 +705,19 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         
         setPlayers(prev => prev.map(p => p.id === pId ? { ...p, hasFinished: true, rank: newRank } : p));
         addLog(`🎉 ¡${activePlayer.name} ha finalizado en la posición #${newRank}!`, 'system', activePlayer.color);
+
+        if (activePlayer.type === 'human' && user?.uid) {
+          const botOpponents = players.filter(p => p.id !== pId).map(p => p.name);
+          recordMatchResult(user.uid, {
+            mode: `Entrenamiento IA (${players.filter(p => p.isActive).length}J)`,
+            rank: newRank,
+            totalPlayers: players.filter(p => p.isActive).length,
+            opponents: botOpponents,
+            durationSeconds: 120,
+            xpGained: newRank === 1 ? 150 : 40,
+            coinsEarned: newRank === 1 ? 100 : 20,
+          });
+        }
 
         const activePlayersCount = players.filter(p => p.isActive).length;
         if (newRank >= activePlayersCount - 1) {

@@ -22,6 +22,8 @@ import { ConsoleLogs } from './ConsoleLogs';
 import { globalLogger } from '@/lib/logger';
 import { audio } from '../audio';
 import { Sparkles, Trophy, ArrowLeft, RotateCcw, Volume2, VolumeX, Zap, ShieldCheck, Award } from 'lucide-react';
+import { useAuth } from '@/lib/auth-context';
+import { recordMatchResult } from '@/lib/stats-service';
 
 interface HexGameViewProps {
   playerCount: 5 | 6;
@@ -40,6 +42,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   isMuted,
   appTheme,
 }) => {
+  const { user } = useAuth();
   const [gameState, setGameState] = useState<HexGameState>(() =>
     createInitialHexState(playerCount, humanColor, botDifficulty)
   );
@@ -454,6 +457,19 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             color: activePlayer.color,
           });
           globalLogger.log('GAME-FLOW', `🎉 ¡${activePlayer.name} ha finalizado en la posición #${newRank}!`, { playerColor: activePlayer.color });
+
+          if (activePlayer.type === 'human' && user?.uid) {
+            const botOpponents = prev.players.filter(p => p.id !== activePlayer.id).map(p => p.name);
+            recordMatchResult(user.uid, {
+              mode: `Entrenamiento IA Hexagonal (${prev.players.filter(p => p.isActive).length}J)`,
+              rank: newRank,
+              totalPlayers: prev.players.filter(p => p.isActive).length,
+              opponents: botOpponents,
+              durationSeconds: 150,
+              xpGained: newRank === 1 ? 150 : 40,
+              coinsEarned: newRank === 1 ? 100 : 20,
+            });
+          }
 
           const activeCount = prev.players.filter(p => p.isActive).length;
           let requiredFinishers = 1;

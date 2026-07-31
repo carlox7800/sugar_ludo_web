@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { AvatarSelectorModal, PRESET_AVATARS } from './avatar-selector-modal'
+import { HistoryModal } from './history-modal'
 
 interface ProfileModalProps {
   isOpen: boolean
@@ -15,6 +16,7 @@ const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
 export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const { user, setNickname, setAvatar } = useAuth()
   const [isAvatarSelectorOpen, setIsAvatarSelectorOpen] = useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isEditingNick, setIsEditingNick] = useState(false)
   const [newNick, setNewNick] = useState('')
   const [errorNick, setErrorNick] = useState('')
@@ -100,7 +102,11 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   className="relative flex size-24 items-center justify-center overflow-hidden rounded-full border-2 border-[oklch(1_0_0/0.3)] shadow-inner text-5xl transition-transform group-hover:scale-105"
                   style={{ backgroundColor: `${activeAvatar.color}33`, color: activeAvatar.color }}
                 >
-                  {activeAvatar.emoji}
+                  {user.photoURL?.startsWith('http') || user.photoURL?.startsWith('data:') ? (
+                    <img src={user.photoURL} alt="Avatar" className="size-full object-cover rounded-full" />
+                  ) : (
+                    activeAvatar.emoji
+                  )}
                 </div>
                 <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Pencil className="size-6 text-white" />
@@ -165,13 +171,13 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 {/* XP Progress Bar */}
                 <div className="mt-2 flex flex-col gap-1">
                   <div className="flex justify-between text-xs font-bold">
-                    <span className="text-[var(--candy-cyan)]">Nivel 13</span>
-                    <span className="text-muted-foreground">2,340 / 3,000 XP</span>
+                    <span className="text-[var(--candy-cyan)]">Nivel {user.level || 1}</span>
+                    <span className="text-muted-foreground">{(user.xp || 0).toLocaleString()} / {((user.level || 1) * 300).toLocaleString()} XP</span>
                   </div>
                   <div className="h-2.5 overflow-hidden rounded-full border border-border bg-[oklch(0.12_0.02_285)]">
                     <div
                       className="h-full rounded-full bg-[linear-gradient(90deg,oklch(0.82_0.15_200),oklch(0.7_0.27_350))] shadow-[0_0_10px_oklch(0.7_0.27_350/0.8)]"
-                      style={{ width: '78%' }}
+                      style={{ width: `${Math.min(100, Math.round(((user.xp || 0) / ((user.level || 1) * 300)) * 100))}%` }}
                     />
                   </div>
                 </div>
@@ -185,10 +191,15 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 Estadísticas de Carrera
               </h4>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatCard label="Victorias" value="128" icon={Trophy} color="var(--candy-cyan)" />
-                <StatCard label="Derrotas" value="42" icon={ShieldAlert} color="oklch(0.65 0.22 25)" />
-                <StatCard label="Efectividad" value="75.2%" icon={Swords} color="var(--candy-magenta)" />
-                <StatCard label="Racha Actual" value="7 🔥" icon={Flame} color="var(--candy-orange)" />
+                <StatCard label="Victorias" value={(user.totalWins || 0).toString()} icon={Trophy} color="var(--candy-cyan)" />
+                <StatCard label="Derrotas" value={(user.totalLosses || 0).toString()} icon={ShieldAlert} color="oklch(0.65 0.22 25)" />
+                <StatCard 
+                  label="Efectividad" 
+                  value={((user.totalGames || ((user.totalWins || 0) + (user.totalLosses || 0))) > 0 ? (((user.totalWins || 0) / (user.totalGames || ((user.totalWins || 0) + (user.totalLosses || 0)))) * 100).toFixed(1) + '%' : '0%')} 
+                  icon={Swords} 
+                  color="var(--candy-magenta)" 
+                />
+                <StatCard label="Racha Actual" value={`${user.winStreak || 0} 🔥`} icon={Flame} color="var(--candy-orange)" />
               </div>
             </div>
 
@@ -205,18 +216,18 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               </div>
             </div>
 
-            {/* History Button (Próximamente) */}
+            {/* History Button (Activo) */}
             <div className="pt-2">
               <button
-                disabled
-                className="btn-3d relative flex w-full items-center justify-between rounded-2xl border border-border bg-[oklch(1_0_0/0.04)] px-5 py-4 font-display text-base font-bold text-muted-foreground opacity-80 cursor-not-allowed"
+                onClick={() => setIsHistoryOpen(true)}
+                className="btn-3d relative flex w-full items-center justify-between rounded-2xl border border-[var(--candy-cyan)]/40 bg-[oklch(0.82_0.15_200/0.1)] px-5 py-4 font-display text-base font-bold text-foreground hover:bg-[oklch(0.82_0.15_200/0.18)] transition-all cursor-pointer shadow-[0_0_15px_oklch(0.82_0.15_200/0.15)]"
               >
                 <div className="flex items-center gap-3">
                   <History className="size-5 text-[var(--candy-cyan)]" />
                   <span>Historial de Partidas</span>
                 </div>
-                <span className="rounded-full bg-[var(--candy-orange)]/20 px-3 py-1 font-display text-xs font-extrabold text-[var(--candy-orange)] border border-[var(--candy-orange)]/30">
-                  Próximamente
+                <span className="rounded-full bg-[var(--candy-cyan)]/20 px-3 py-1 font-display text-xs font-extrabold text-[var(--candy-cyan)] border border-[var(--candy-cyan)]/30">
+                  Ver Todo
                 </span>
               </button>
             </div>
@@ -229,6 +240,11 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         onClose={() => setIsAvatarSelectorOpen(false)} 
         currentAvatar={user.photoURL}
         onSelect={setAvatar}
+      />
+
+      <HistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
       />
     </>
   )

@@ -24,6 +24,14 @@ export interface User {
   photoURL: string | null
   nickname: string | null
   nicknameUpdatedAt: number | null
+  coins?: number
+  xp?: number
+  level?: number
+  totalWins?: number
+  totalLosses?: number
+  totalGames?: number
+  rankPoints?: number
+  winStreak?: number
   isDev?: boolean
 }
 
@@ -33,7 +41,7 @@ interface AuthState {
   loginDev: () => void
   logout: () => Promise<void>
   setNickname: (nickname: string) => Promise<void>
-  setAvatar: (photoURL: string) => Promise<void>
+  setAvatar: (photoURL: string, deleteUrl?: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined)
@@ -62,6 +70,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 photoURL: data.photoURL || firebaseUser.photoURL || '1',
                 nickname: data.nickname || null,
                 nicknameUpdatedAt: data.nicknameUpdatedAt || null,
+                coins: data.coins ?? 200,
+                xp: data.xp ?? 0,
+                level: data.level ?? 1,
+                totalWins: data.totalWins ?? 0,
+                totalLosses: data.totalLosses ?? 0,
+                totalGames: data.totalGames ?? 0,
+                rankPoints: data.rankPoints ?? 0,
+                winStreak: data.winStreak ?? 0,
                 isDev: false,
               })
             } else {
@@ -183,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const setAvatar = async (photoURL: string) => {
+  const setAvatar = async (photoURL: string, deleteUrl?: string) => {
     if (!user) return
 
     if (user.isDev) {
@@ -191,8 +207,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       saveDevUser(updatedUser)
     } else {
       const userRef = doc(db, 'users', user.uid)
+      
+      // Intentar borrado silencioso de imagen anterior en ImgBB si existe
+      try {
+        const userDoc = await getDoc(userRef)
+        if (userDoc.exists()) {
+          const oldDeleteUrl = userDoc.data().avatarDeleteUrl
+          if (oldDeleteUrl) {
+            fetch(oldDeleteUrl).catch(() => {})
+          }
+        }
+      } catch (e) {
+        console.warn('No se pudo borrar avatar anterior:', e)
+      }
+
       await updateDoc(userRef, {
         photoURL,
+        ...(deleteUrl ? { avatarDeleteUrl: deleteUrl } : {}),
       })
     }
   }

@@ -30,7 +30,11 @@ export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
           className="relative flex size-28 items-center justify-center overflow-hidden rounded-full border-2 border-[oklch(1_0_0/0.3)] shadow-[inset_0_2px_8px_oklch(0_0_0/0.4)] text-[64px]"
           style={{ backgroundColor: `${activeAvatar.color}33`, color: activeAvatar.color }}
         >
-          {activeAvatar.emoji}
+          {user?.photoURL?.startsWith('http') || user?.photoURL?.startsWith('data:') ? (
+            <img src={user.photoURL} alt="Avatar" className="size-full object-cover rounded-full" />
+          ) : (
+            activeAvatar.emoji
+          )}
         </div>
         <span className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[var(--candy-gold)] px-2.5 py-1 font-display text-[11px] font-extrabold text-[oklch(0.25_0.08_60)] shadow-[0_4px_10px_oklch(0.85_0.16_90/0.6)]">
           <Crown className="size-3" strokeWidth={2.6} />
@@ -53,8 +57,8 @@ export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
 
       {/* Mini stats */}
       <div className="mt-1 grid w-full grid-cols-2 gap-3">
-        <Stat label="Victorias" value="128" accent="var(--candy-cyan)" />
-        <Stat label="Racha" value="7" accent="var(--candy-orange)" />
+        <Stat label="Victorias" value={(user?.totalWins || 0).toString()} accent="var(--candy-cyan)" />
+        <Stat label="Racha" value={(user?.winStreak || 0).toString()} accent="var(--candy-orange)" />
       </div>
     </section>
   )
