@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Player, PlayerColor } from '../types';
 
 interface PlayerCornerProps {
@@ -26,6 +26,18 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
   onRollDice,
   timer,
 }) => {
+  const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
+  const [currentMessage, setCurrentMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentMessage) {
+      const msgTimer = setTimeout(() => {
+        setCurrentMessage(null);
+      }, 3500);
+      return () => clearTimeout(msgTimer);
+    }
+  }, [currentMessage]);
+
   const isLeft = position.includes('left');
   const isBottom = position.includes('bottom');
   
@@ -94,11 +106,78 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
     <div className={`absolute z-40 flex items-center gap-4 ${posClass}`}>
       {/* Avatar Wrapper */}
       <div className="relative flex flex-col items-center">
+        {/* Floating Comic Speech/Thought Bubble */}
+        {currentMessage && (
+          <div className="absolute bottom-[100%] mb-2 z-50 pointer-events-none animate-in fade-in zoom-in slide-in-from-bottom-2 duration-300">
+            <div className="relative bg-white text-gray-900 font-extrabold text-xs md:text-sm px-3.5 py-1.5 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] border border-gray-200 whitespace-nowrap flex items-center gap-1.5">
+              <span>{currentMessage}</span>
+              {/* Speech bubble tail */}
+              <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-white" />
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons for Human Player */}
         {player.type === 'human' && (
-          <div className="flex gap-2 mb-2">
-             <button className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase">Emoji</button>
-             <button className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase">Chat</button>
+          <div className="relative flex gap-2 mb-2">
+             <button 
+               onClick={() => setActiveMenu(activeMenu === 'emoji' ? null : 'emoji')}
+               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase"
+             >
+               Emoji
+             </button>
+             <button 
+               onClick={() => setActiveMenu(activeMenu === 'chat' ? null : 'chat')}
+               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase"
+             >
+               Chat
+             </button>
+
+             {/* Popover Menu */}
+             {activeMenu && (
+               <>
+                 <div className="fixed inset-0 z-40 cursor-default" onClick={() => setActiveMenu(null)} />
+                 <div className="absolute bottom-[100%] mb-2 left-0 md:left-1/2 md:-translate-x-1/2 origin-bottom-left md:origin-bottom z-50 animate-in fade-in zoom-in slide-in-from-bottom-2 duration-200 bg-[#0f172a]/95 backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px]">
+                   {activeMenu === 'emoji' ? (
+                     <div className="flex gap-2 justify-center p-1">
+                       {['🤣', '😡', '🥺', '😎', '😴'].map((emoji) => (
+                         <button
+                           key={emoji}
+                           onClick={() => {
+                             setCurrentMessage(emoji);
+                             setActiveMenu(null);
+                           }}
+                           className="text-xl md:text-2xl hover:scale-125 transition-transform active:scale-95 p-1 hover:bg-white/10 rounded-xl"
+                         >
+                           {emoji}
+                         </button>
+                       ))}
+                     </div>
+                   ) : (
+                     <div className="flex flex-col gap-1 p-1">
+                       {[
+                         '¡Te tengo en la mira! 🎯',
+                         '¡Por favor, no me comas! 🏃',
+                         '¡Vaya suerte tienes! 🍀',
+                         '¡Juega rápido, me duermo! ⏳',
+                         '¡Muy buena jugada! 👏',
+                       ].map((phrase) => (
+                         <button
+                           key={phrase}
+                           onClick={() => {
+                             setCurrentMessage(phrase);
+                             setActiveMenu(null);
+                           }}
+                           className="text-[10px] md:text-[11px] font-semibold text-white/90 hover:text-white hover:bg-white/15 px-2.5 py-1 rounded-xl text-left transition-all active:scale-95 whitespace-nowrap"
+                         >
+                           {phrase}
+                         </button>
+                       ))}
+                     </div>
+                   )}
+                 </div>
+               </>
+             )}
           </div>
         )}
         
