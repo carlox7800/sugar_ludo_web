@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Player, PlayerColor } from '../types';
 import { useAuth } from '@/lib/auth-context';
 import { PRESET_AVATARS } from '@/components/avatar-selector-modal';
@@ -18,7 +18,7 @@ interface PlayerCornerProps {
   reactionMessage?: string | null;
 }
 
-export const PlayerCorner: React.FC<PlayerCornerProps> = ({
+export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   player,
   position,
   isActiveTurn,
@@ -296,4 +296,4 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
       )}
     </div>
   );
-};
+});

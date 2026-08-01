@@ -1,3 +1,5 @@
+import { globalLogger } from '@/lib/logger';
+
 class LudoAudio {
   private ctx: AudioContext | null = null;
   
@@ -205,7 +207,9 @@ class LudoAudio {
     this.init();
     if (!this.ctx) return;
 
-    const t = this.ctx.currentTime;
+    // Look-ahead buffer to avoid main thread render jitter
+    const t = this.ctx.currentTime + 0.015;
+    globalLogger.log('AUDIO', 'Ejecutando playStep()', { audioTime: this.ctx.currentTime, bufferTime: t });
 
     // Contact Click Nodes
     const clickOsc1 = this.ctx.createOscillator();
@@ -348,6 +352,15 @@ class LudoAudio {
       clearInterval(this.turnAlertInterval);
       this.turnAlertInterval = null;
     }
+  }
+
+  public stopAll() {
+    this.stopTurnAlertLoop();
+    if (this.bgmAudioElement) {
+      this.bgmAudioElement.pause();
+      this.bgmAudioElement.currentTime = 0;
+    }
+    this.isBgmPlaying = false;
   }
 
   /**

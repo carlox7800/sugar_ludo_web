@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { PlayerColor, Token, CellCoord } from '../types';
 
 import { AppTheme } from '../types';
@@ -199,7 +199,7 @@ export function getBaseSlotCoord(color: PlayerColor, slotId: number): { x: numbe
   return { x, y };
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({
+export const GameBoard: React.FC<GameBoardProps> = memo(({
   tokens,
   currentTurn,
   playableTokenIds,
@@ -569,4 +569,4 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       </svg>
     </div>
   );
-};
+});

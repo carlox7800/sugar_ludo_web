@@ -102,6 +102,7 @@ export function OnlineGameEngine({
   const [hasRolled, setHasRolled] = useState(false)
   const [isAnimatingMove, setIsAnimatingMove] = useState(false)
   const [winnerPlayer, setWinnerPlayer] = useState<Player | null>(null)
+  const [explosionData, setExplosionData] = useState<{ cellIndex: number; color: PlayerColor } | null>(null)
   
   // Timer & UI Notifications
   const [turnTimer, setTurnTimer] = useState<number>(10)
@@ -153,6 +154,14 @@ export function OnlineGameEngine({
   const lastMovedTokenGlobalIdRef = useRef<number | null>(null)
   const barrierLifetimesRef = useRef<Record<number, number>>({})
   const finishedPlayerIndicesRef = useRef<number[]>([])
+  const lastProcessedMoveRef = useRef<string>('')
+  const pendingMoveRef = useRef<{ data: any; timeout: NodeJS.Timeout | null }>({ data: null, timeout: null })
+  // Ref so socket handlers always see the latest formattedPlayers without needing it in useEffect deps
+  const formattedPlayersRef = useRef<Player[]>(formattedPlayers)
+  formattedPlayersRef.current = formattedPlayers
+  // Ref so animation closures always read the current muted state (never stale from mount-time capture)
+  const mutedRef = useRef<boolean>(muted)
+  mutedRef.current = muted
   const [rankings, setRankings] = useState<Player[]>([])
 
   const updateBarrierLifetimes = (currentTokens: Token[] = tokensRef.current, endingPlayerIdx?: number) => {
@@ -472,10 +481,14 @@ export function OnlineGameEngine({
     } else {
       audio.playBackgroundMusic(false)
     }
-    return () => {
-      audio.playBackgroundMusic(false)
-    }
   }, [audioSettings])
+
+  // Master Cleanup on Unmount
+  useEffect(() => {
+    return () => {
+      audio.stopAll()
+    }
+  }, [])
 
   useEffect(() => {
     const isHumanTurnToRoll = isMyTurn && !hasRolled && !isRolling && !isAnimatingMove && !winnerPlayer;
@@ -591,6 +604,32 @@ export function OnlineGameEngine({
     // 3. Token Moved (with Step-by-Step animation & Rules checking)
     const handleTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number }) => {
       globalLogger.log('SOCKET', 'Recibido event_token_moved', data)
+
+      if (pendingMoveRef.current.timeout) {
+        clearTimeout(pendingMoveRef.current.timeout)
+      }
+
+      pendingMoveRef.current.data = data
+      pendingMoveRef.current.timeout = setTimeout(() => {
+        processTokenMoved(pendingMoveRef.current.data)
+      }, 50)
+    }
+
+    const processTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number }) => {
+      // CRITICAL GUARD: never start a second animation while one is already running.
+      // This is the definitive protection against concurrent animation loops that cause double sounds.
+      if (isAnimatingMoveRef.current) {
+        globalLogger.log('SOCKET', 'Ignorando event_token_moved: animación en curso.')
+        return
+      }
+
+      const moveSignature = `${data.playerId}-${data.tokenId}-${data.newPathIndex}`
+      if (lastProcessedMoveRef.current === moveSignature) {
+        globalLogger.log('SOCKET', 'Ignorando evento duplicado exacto (prevención de sonido doble).')
+        return
+      }
+      lastProcessedMoveRef.current = moveSignature
+
       const serverPlayerIdx = gameData.players.findIndex((p) => p.playerId === data.playerId)
       if (serverPlayerIdx < 0) return
 
@@ -655,12 +694,12 @@ export function OnlineGameEngine({
 
       setIsAnimatingMove(true)
 
-      // Step-by-step animation loop (120ms per step)
+      // Step-by-step animation loop (recursive setTimeout avoids browser interval bunching)
       let iteration = 0
-      const stepInterval = setInterval(() => {
+      const animateNextStep = () => {
         iteration += 1
         if (iteration <= animSteps) {
-          if (!muted) audio.playStep()
+          if (!mutedRef.current) audio.playStep()
           const newStep = startStep === -1 ? 0 : startStep + iteration
           setTokens((prev) =>
             prev.map((t) =>
@@ -669,9 +708,8 @@ export function OnlineGameEngine({
                 : t
             )
           )
+          setTimeout(animateNextStep, 250)
         } else {
-          clearInterval(stepInterval)
-
           // Animation finished: apply landing rules (captures & goals)
           let updatedMoves = [...remainingMovesRef.current]
           if (consumedVal > 0) {
@@ -692,6 +730,7 @@ export function OnlineGameEngine({
           if (targetStep === goalStep) {
             showToast('🎉 ¡Ficha en la meta! +10 pasos de bono')
             bonusSteps += 10
+            if (!mutedRef.current) audio.playGoal()
           }
 
           // Capture Check (Perimeter cells)
@@ -712,6 +751,9 @@ export function OnlineGameEngine({
                 capturedOpponents = opponents.map((o) => ({ playerId: o.playerId, id: o.id }))
                 showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`)
                 bonusSteps += 20
+                if (!mutedRef.current) audio.playFireworks()
+                setExplosionData({ cellIndex: pIndex + 1, color: opponents[0].color })
+                setTimeout(() => setExplosionData(null), 3500)
               }
             }
           }
@@ -740,7 +782,7 @@ export function OnlineGameEngine({
             const playerGoalTokens = finalTokens.filter((t) => t.playerId === serverPlayerIdx && t.step === goalStep)
             if (playerGoalTokens.length === 4 && !finishedPlayerIndicesRef.current.includes(serverPlayerIdx)) {
               finishedPlayerIndicesRef.current.push(serverPlayerIdx)
-              const finishedPlayer = formattedPlayers[serverPlayerIdx]
+              const finishedPlayer = formattedPlayersRef.current[serverPlayerIdx]
               setRankings((prev) => [...prev, finishedPlayer])
               showToast(`🏆 ¡${finishedPlayer.name} completó todas sus fichas!`)
 
@@ -776,7 +818,10 @@ export function OnlineGameEngine({
             }
           }
         }
-      }, 240)
+      }
+      
+      // Start the loop
+      setTimeout(animateNextStep, 50)
     }
 
     // Disconnection / Reconnection / GameOver Events
@@ -796,7 +841,7 @@ export function OnlineGameEngine({
 
     const handleGameOverAbandonment = (data: { winnerId: string }) => {
       const winnerIdx = gameData.players.findIndex((p) => p.playerId === data.winnerId)
-      const wPlayer = formattedPlayers[winnerIdx >= 0 ? winnerIdx : 0]
+      const wPlayer = formattedPlayersRef.current[winnerIdx >= 0 ? winnerIdx : 0]
       setWinnerPlayer(wPlayer)
       showToast(`🏆 ¡Partida finalizada! Ganador: ${wPlayer.name}`)
     }
@@ -861,7 +906,7 @@ export function OnlineGameEngine({
       socket.off('event_chat', handleEventChat)
       socket.off('player_reaction', handleEventChat)
     }
-  }, [socket, gameData.players, formattedPlayers])
+  }, [])
 
   // Send Chat / Emoji Reaction Intent to Backend
   const handleSendReaction = (message: string) => {
@@ -976,6 +1021,7 @@ export function OnlineGameEngine({
   }
 
   const handleConfirmExit = () => {
+    audio.stopAll()
     socket.emit('intent_end_turn', {
       roomId: gameData.roomId,
       nextPlayerId: 0,
@@ -985,7 +1031,7 @@ export function OnlineGameEngine({
   }
 
   return (
-    <div className="w-full flex-1 flex flex-col items-center text-foreground relative overflow-hidden bg-[oklch(0.12_0.03_285)] min-h-screen">
+    <div className="min-h-screen w-full flex flex-col font-sans cyber-bg text-foreground relative overflow-hidden items-center">
       
       {/* Upper Navigation & Sound controls */}
       <header className="w-full bg-root/80 backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-4 py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-[0_4px_30px_oklch(0.82_0.15_200/0.05)] shrink-0">
@@ -1074,6 +1120,7 @@ export function OnlineGameEngine({
               humanPlayerId={activePlayerIndex}
               appTheme="dark"
               isZeroIndexed={true}
+              explosionData={explosionData}
             />
           </div>
         </div>
@@ -1131,12 +1178,11 @@ export function OnlineGameEngine({
           });
         })()}
 
-        {/* Minimalist Log Ticker */}
+        {/* Toast Banner (Top Floating Overlay - Zero Layout Shift) */}
         {notification && (
-          <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full text-center px-4">
-            <span className="text-white/50 text-[10px] font-medium tracking-widest uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] animate-pulse">
-              {notification}
-            </span>
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/90 backdrop-blur-md px-6 py-2 text-[var(--candy-cyan)] font-display text-xs md:text-sm font-extrabold shadow-[0_8px_32px_rgba(0,0,0,0.6)] pointer-events-none whitespace-nowrap">
+            <Sparkles className="size-4 text-[var(--candy-cyan)] shrink-0 animate-pulse" />
+            <span>{notification}</span>
           </div>
         )}
       </div>

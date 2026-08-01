@@ -1,4 +1,4 @@
-export type LogLevel = 'SOCKET' | 'GAME-FLOW' | 'TOKENS' | 'ERROR' | 'SYSTEM' | 'ROLL' | 'CAPTURE' | 'MOVE';
+export type LogLevel = 'SOCKET' | 'GAME-FLOW' | 'TOKENS' | 'ERROR' | 'SYSTEM' | 'ROLL' | 'CAPTURE' | 'MOVE' | 'AUDIO';
 
 export interface LogEntry {
   timestamp: string;
