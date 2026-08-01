@@ -474,9 +474,10 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
           {/* Tokens Layer */}
           {tokens.map((token) => {
             const pos = getTokenCoordinates(token, tokens);
-            const isPlayable = playableTokenIds.includes(token.id) && activePlayer?.color === token.color;
+            const globalId = token.playerId * 4 + token.id;
+            const isPlayable = (playableTokenIds.includes(token.id) || playableTokenIds.includes(globalId)) && activePlayer?.color === token.color;
             const tokenInfo = HEX_COLOR_INFO[token.color];
-            const isBase = token.step === 0;
+            const isBase = token.step <= 0;
 
             return (
               <g

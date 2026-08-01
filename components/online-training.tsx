@@ -42,6 +42,14 @@ export function OnlineTraining({
   const [isSearching, setIsSearching] = useState(false)
   const [notification, setNotification] = useState<string | null>(null)
 
+  // Dev Sandbox State
+  const [isDevSandbox, setIsDevSandbox] = useState(false)
+  const isDevSandboxRef = useRef(false)
+  useEffect(() => {
+    isDevSandboxRef.current = isDevSandbox
+  }, [isDevSandbox])
+
+
   // Auto-connect socket when opening Online Training
   useEffect(() => {
     const socket = connect()
@@ -64,14 +72,31 @@ export function OnlineTraining({
 
     const handleMatchFound = (gameData: any) => {
       const receivedCount = gameData.players?.length ?? 0
-      if (receivedCount < quickPlayersRef.current) {
+      if (receivedCount < quickPlayersRef.current && !isDevSandboxRef.current) {
         return // Ignore match if it doesn't meet our requested player count
       }
       setIsSearching(false)
       showToast('¡Partida encontrada! Entrando a la mesa...')
       
+      let finalPlayers = [...(gameData.players || [])]
+
+      // DEV SANDBOX INJECTION
+      if (isDevSandboxRef.current && finalPlayers.length >= 2) {
+        // Ensure there are 6 players by injecting bots
+        const botsNeeded = 6 - finalPlayers.length
+        for (let i = 0; i < botsNeeded; i++) {
+          finalPlayers.push({
+            playerId: `dev_bot_${i}`,
+            playerName: `Bot ${i + 1}`,
+            isBot: true,
+            isConnected: true
+          })
+        }
+      }
+
       const enrichedGameData = {
         ...gameData,
+        players: finalPlayers,
         roomId: gameData.roomId || gameData.id,
         myPlayerId: user?.uid || socket.id || playerId,
       }
@@ -133,11 +158,11 @@ export function OnlineTraining({
     const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
     const playerName = user?.nickname || user?.displayName || 'Jugador'
 
-    showToast('Creando sala privada en el servidor...')
+    showToast(isDevSandbox ? 'Creando sala Dev Sandbox...' : 'Creando sala privada en el servidor...')
     socket.emit('create_private_room', {
       playerId,
       playerName,
-      targetPlayers: createPlayers,
+      targetPlayers: isDevSandbox ? 2 : createPlayers, // Force 2 real players for sandbox
     })
   }
 
@@ -157,12 +182,14 @@ export function OnlineTraining({
     const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
     const playerName = user?.nickname || user?.displayName || 'Jugador'
     const code = roomCode.trim()
+    
+    isDevSandboxRef.current = isDevSandbox
 
     showToast(`Uniéndose a la sala ${code}...`)
     socket.emit('join_private_room', {
       playerId,
       playerName,
-      targetPlayers: createPlayers,
+      targetPlayers: isDevSandbox ? 2 : createPlayers,
       roomCode: code,
       code: code,
     })
@@ -382,6 +409,7 @@ export function OnlineTraining({
                               onClick={() => setCreatePlayers(count)}
                               accent="var(--candy-magenta)"
                               shadow="oklch(0.45 0.2 350)"
+                              disabled={isDevSandbox}
                             >
                               {count} Jug
                             </PillButton>
@@ -389,9 +417,34 @@ export function OnlineTraining({
                         </div>
 
                         <p className="text-center text-sm text-muted-foreground mt-1">
-                          Crea una sala privada para {createPlayers} jugadores e invita a tus amigos con un código.
+                          {isDevSandbox 
+                            ? 'Modo Dev Sandbox activo: La sala iniciará con 2 jugadores reales y el resto serán bots.'
+                            : `Crea una sala privada para ${createPlayers} jugadores e invita a tus amigos con un código.`}
                         </p>
                       </fieldset>
+
+                      {/* DEV SANDBOX TOGGLE */}
+                      <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-[var(--candy-gold)] bg-[var(--candy-gold)]/5 px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className="font-display text-sm font-bold text-[var(--candy-gold)] flex items-center gap-1">
+                            <Sparkles className="size-4" /> Dev Sandbox
+                          </span>
+                          <span className="text-xs text-muted-foreground">Forzar tablero hexagonal (6 jug) con 2 dispositivos reales</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsDevSandbox(!isDevSandbox)}
+                          className={cn(
+                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                            isDevSandbox ? "bg-[var(--candy-gold)]" : "bg-muted"
+                          )}
+                        >
+                          <span className={cn(
+                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                            isDevSandbox ? "translate-x-6" : "translate-x-1"
+                          )} />
+                        </button>
+                      </div>
 
                       <button
                         onClick={handleCreateRoom}
@@ -408,6 +461,13 @@ export function OnlineTraining({
                         Código de tu Sala Privada
                       </span>
                       
+                      {isDevSandbox && (
+                        <div className="bg-[var(--candy-gold)]/20 text-[var(--candy-gold)] px-3 py-1 rounded-lg text-xs font-bold mb-2 flex items-center gap-2 border border-[var(--candy-gold)]/50">
+                          <Sparkles className="size-3" />
+                          Modo Hex Sandbox Activo
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-3 rounded-xl bg-[oklch(0_0_0/0.4)] px-6 py-3 border border-[var(--candy-magenta)]">
                         <span className="font-mono text-3xl font-extrabold tracking-widest text-[var(--candy-cyan)]">
                           {createdRoomCode}
@@ -451,6 +511,29 @@ export function OnlineTraining({
                       placeholder="Ej. 123456"
                       className="w-full rounded-2xl border-2 border-[var(--candy-gold)]/40 bg-[oklch(0_0_0/0.3)] px-6 py-4 font-mono text-2xl font-extrabold text-center tracking-widest text-[var(--candy-gold)] outline-none transition-colors focus:border-[var(--candy-gold)] focus:bg-[oklch(0_0_0/0.5)] placeholder:text-muted-foreground/30 uppercase"
                     />
+                  </div>
+
+                  {/* DEV SANDBOX TOGGLE IN JOIN */}
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-[var(--candy-gold)] bg-[var(--candy-gold)]/5 px-4 py-3">
+                    <div className="flex flex-col">
+                      <span className="font-display text-sm font-bold text-[var(--candy-gold)] flex items-center gap-1">
+                        <Sparkles className="size-4" /> Dev Sandbox
+                      </span>
+                      <span className="text-xs text-muted-foreground">Únete a una sala Hex (6 jug) forzada</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsDevSandbox(!isDevSandbox)}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        isDevSandbox ? "bg-[var(--candy-gold)]" : "bg-muted"
+                      )}
+                    >
+                      <span className={cn(
+                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                        isDevSandbox ? "translate-x-6" : "translate-x-1"
+                      )} />
+                    </button>
                   </div>
 
                   <button

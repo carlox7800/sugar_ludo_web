@@ -99,7 +99,7 @@ export function createInitialHexState(
 }
 
 export function getCellIndexForToken(color: HexPlayerColor, step: number): number | string {
-  if (step === 0) return 'BASE';
+  if (step <= 0) return 'BASE';
   const startCell = HEX_COLOR_INFO[color].startCell;
 
   // Main board loop: steps 1 to 77 cover the perimeter until home entry

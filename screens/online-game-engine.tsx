@@ -10,7 +10,11 @@ import { Token, Player, PlayerColor } from '@/src/types'
 import { globalLogger } from '@/lib/logger'
 import { audio } from '@/src/audio'
 
-const COLORS_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'orange']
+import { HexagonalLudoBoardView } from '@/src/components/HexagonalLudoBoardView'
+import { HEX_COLORS_ORDER, STAR_CELLS } from '@/src/HexBoardConstants'
+import { getCellIndexForToken, hasBarrierAtHex } from '@/src/HexGameEngine'
+
+const SQUARE_COLORS_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'orange']
 
 // --- NATIVE 0-INDEXED MULTI-BOARD MATH HELPERS ---
 const getTrackSteps = (pCount: number): number => pCount === 6 ? 77 : 51
@@ -55,6 +59,10 @@ export function OnlineGameEngine({
     return (gameData.players || []).findIndex((p) => p.playerId === myPlayerId || p.socketId === socket.id)
   }, [gameData.players, myPlayerId, socket.id])
 
+  // Determine if it's a hex game based on player count
+  const isHexGame = (gameData.players?.length || 0) > 4
+  const currentColorsOrder = isHexGame ? (HEX_COLORS_ORDER as PlayerColor[]) : SQUARE_COLORS_ORDER
+
   // Map server players to GameBoard Player interface
   const formattedPlayers: Player[] = useMemo(() => {
     return (gameData.players || []).map((p, idx) => {
@@ -62,12 +70,12 @@ export function OnlineGameEngine({
       return {
         id: idx,
         name: isMe ? `${p.playerName || p.name || 'Tú'} (Tú)` : (p.playerName || p.name || `Jugador ${idx + 1}`),
-        color: COLORS_ORDER[idx] || 'yellow',
+        color: currentColorsOrder[idx] || 'yellow',
         type: isMe ? 'human' : 'bot',
         isActive: p.isConnected !== false,
       }
     })
-  }, [gameData.players, myPlayerId, socket.id])
+  }, [gameData.players, myPlayerId, socket.id, currentColorsOrder])
 
   const defaultPlayer: Player = {
     id: 0,
@@ -77,10 +85,11 @@ export function OnlineGameEngine({
     isActive: true,
   }
 
-  // Initialize 4 tokens for each active player
+  // Initialize tokens for each active player
   const initialTokensList: Token[] = []
+  const tokensPerPlayer = isHexGame ? 3 : 4
   formattedPlayers.forEach((p) => {
-    for (let tId = 0; tId < 4; tId++) {
+    for (let tId = 0; tId < tokensPerPlayer; tId++) {
       initialTokensList.push({
         id: tId,
         playerId: p.id,
@@ -279,6 +288,79 @@ export function OnlineGameEngine({
     const playerTokens = currentTokens.filter((t) => t.playerId === playerIdx)
     const playableIds: number[] = []
     const pCount = gameData.players.length
+
+    if (isHexGame) {
+      const hasFive = moves.includes(5)
+      const hasSumFive = moves.length === 2 && moves[0] + moves[1] === 5
+
+      playerTokens.forEach((t) => {
+        const globalId = t.playerId * 4 + t.id
+        if (t.step <= 0) {
+          if (hasFive || hasSumFive) {
+            const startIdx = getCellIndexForToken(t.color as any, 1)
+            if (typeof startIdx === 'number') {
+              let myCount = 0
+              let enemyCount = 0
+              currentTokens.forEach((tk) => {
+                const tkIdx = getCellIndexForToken(tk.color as any, tk.step)
+                if (typeof tkIdx === 'number' && tkIdx === startIdx) {
+                  if (tk.color === t.color) myCount++
+                  else enemyCount++
+                }
+              })
+              const isExpellable = myCount === 1 && enemyCount === 1
+              const isBlocked = myCount + enemyCount >= 2 && !isExpellable
+
+              if (!isBlocked) {
+                playableIds.push(globalId)
+              }
+            }
+          }
+        } else if (t.step > 0 && t.step < 83) {
+          let canMove = false
+          for (const m of moves) {
+            if (t.step + m <= 83) {
+              let blocked = false
+              for (let stepOffset = 1; stepOffset <= m; stepOffset++) {
+                const pathStep = t.step + stepOffset
+                const pIndex = getCellIndexForToken(t.color as any, pathStep)
+                if (typeof pIndex === 'number' && hasBarrierAtHex(pIndex, currentTokens as any)) {
+                  blocked = true
+                  break
+                }
+              }
+              if (!blocked) {
+                canMove = true
+                break
+              }
+            }
+          }
+
+          if (!canMove && moves.length === 2) {
+            const sum = moves[0] + moves[1]
+            if (t.step + sum <= 83) {
+              let blocked = false
+              for (let stepOffset = 1; stepOffset <= sum; stepOffset++) {
+                const pathStep = t.step + stepOffset
+                const pIndex = getCellIndexForToken(t.color as any, pathStep)
+                if (typeof pIndex === 'number' && hasBarrierAtHex(pIndex, currentTokens as any)) {
+                  blocked = true
+                  break
+                }
+              }
+              if (!blocked) canMove = true
+            }
+          }
+
+          if (canMove) {
+            playableIds.push(globalId)
+          }
+        }
+      })
+
+      return playableIds
+    }
+
     const trackSteps = getTrackSteps(pCount)
     const goalStep = getGoalStep(pCount)
     const perimeter = getTotalPerimeter(pCount)
@@ -665,9 +747,9 @@ export function OnlineGameEngine({
       let consumedVal = 0
       let animSteps = 0
 
-      if (startStep === -1) {
+      if (startStep <= 0) {
         consumedVal = 5
-        animSteps = 1 // Direct 1 step from Base (-1) to First Cell (0)
+        animSteps = 1 // Direct 1 step from Base (-1/0) to First Cell (0 or 1)
       } else {
         consumedVal = targetStep - startStep
         animSteps = targetStep - startStep
@@ -700,7 +782,8 @@ export function OnlineGameEngine({
         iteration += 1
         if (iteration <= animSteps) {
           if (!mutedRef.current) audio.playStep()
-          const newStep = startStep === -1 ? 0 : startStep + iteration
+          const baseFirstCell = isHexGame ? 1 : 0
+          const newStep = startStep <= 0 ? baseFirstCell : startStep + iteration
           setTokens((prev) =>
             prev.map((t) =>
               t.playerId === serverPlayerIdx && t.id === tokenIndex
@@ -728,32 +811,66 @@ export function OnlineGameEngine({
 
           // Goal Check
           if (targetStep === goalStep) {
-            showToast('🎉 ¡Ficha en la meta! +10 pasos de bono')
-            bonusSteps += 10
+            const goalBonus = isHexGame ? 15 : 10
+            showToast(`🎉 ¡Ficha en la meta! +${goalBonus} pasos de bono`)
+            bonusSteps += goalBonus
             if (!mutedRef.current) audio.playGoal()
           }
 
           // Capture Check (Perimeter cells)
-          if (targetStep >= 0 && targetStep < trackSteps && currentToken) {
-            const pIndex = (getStartOffset(currentToken.color, pCount) + targetStep) % perimeter
-            const isStartCell = [1, 14, 27, 40, 53, 66].includes(pIndex)
-            const isGoldStar = [8, 21, 34, 47, 60, 73].includes(pIndex)
+          if (currentToken) {
+            if (isHexGame) {
+              const targetCellIndex = getCellIndexForToken(currentToken.color as any, targetStep)
+              if (typeof targetCellIndex === 'number') {
+                if (targetStep === 1) {
+                  const cellTokens = tokensRef.current.filter(
+                    (t) => t.step > 0 && t.step <= 76 && getCellIndexForToken(t.color as any, t.step) === targetCellIndex
+                  )
+                  const myTokens = cellTokens.filter((t) => t.color === currentToken.color)
+                  const enemyTokens = cellTokens.filter((t) => t.color !== currentToken.color)
 
-            if (!isStartCell && !isGoldStar) {
-              const opponents = tokensRef.current.filter((t) => {
-                if (t.playerId === serverPlayerIdx || t.step === -1 || t.step === goalStep) return false
-                if (t.step < 0 || t.step >= trackSteps) return false
-                const oppPIndex = (getStartOffset(t.color, pCount) + t.step) % perimeter
-                return oppPIndex === pIndex
-              })
+                  if (myTokens.length === 1 && enemyTokens.length === 1) {
+                    capturedOpponents = [{ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id }]
+                    showToast('💥 ¡Expulsión de salida! Ficha enemiga enviada a casa (+0 bonus)')
+                    if (!mutedRef.current) audio.playFireworks()
+                    setExplosionData({ cellIndex: targetCellIndex, color: enemyTokens[0].color })
+                    setTimeout(() => setExplosionData(null), 3500)
+                  }
+                } else if (!STAR_CELLS.includes(targetCellIndex)) {
+                  const enemyTokens = tokensRef.current.filter(
+                    (t) => t.playerId !== serverPlayerIdx && t.step > 0 && t.step <= 76 && getCellIndexForToken(t.color as any, t.step) === targetCellIndex
+                  )
+                  if (enemyTokens.length === 1) {
+                    capturedOpponents = [{ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id }]
+                    showToast('⚔️ ¡Ficha capturada! +25 pasos de bono')
+                    bonusSteps += 25
+                    if (!mutedRef.current) audio.playFireworks()
+                    setExplosionData({ cellIndex: targetCellIndex, color: enemyTokens[0].color })
+                    setTimeout(() => setExplosionData(null), 3500)
+                  }
+                }
+              }
+            } else if (targetStep >= 0 && targetStep < trackSteps) {
+              const pIndex = (getStartOffset(currentToken.color, pCount) + targetStep) % perimeter
+              const isStartCell = [1, 14, 27, 40, 53, 66].includes(pIndex)
+              const isGoldStar = [8, 21, 34, 47, 60, 73].includes(pIndex)
 
-              if (opponents.length > 0) {
-                capturedOpponents = opponents.map((o) => ({ playerId: o.playerId, id: o.id }))
-                showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`)
-                bonusSteps += 20
-                if (!mutedRef.current) audio.playFireworks()
-                setExplosionData({ cellIndex: pIndex + 1, color: opponents[0].color })
-                setTimeout(() => setExplosionData(null), 3500)
+              if (!isStartCell && !isGoldStar) {
+                const opponents = tokensRef.current.filter((t) => {
+                  if (t.playerId === serverPlayerIdx || t.step === -1 || t.step === goalStep) return false
+                  if (t.step < 0 || t.step >= trackSteps) return false
+                  const oppPIndex = (getStartOffset(t.color, pCount) + t.step) % perimeter
+                  return oppPIndex === pIndex
+                })
+
+                if (opponents.length > 0) {
+                  capturedOpponents = opponents.map((o) => ({ playerId: o.playerId, id: o.id }))
+                  showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`)
+                  bonusSteps += 20
+                  if (!mutedRef.current) audio.playFireworks()
+                  setExplosionData({ cellIndex: pIndex + 1, color: opponents[0].color })
+                  setTimeout(() => setExplosionData(null), 3500)
+                }
               }
             }
           }
@@ -780,7 +897,8 @@ export function OnlineGameEngine({
           // Check for Player Win / Completion
           if (targetStep === goalStep) {
             const playerGoalTokens = finalTokens.filter((t) => t.playerId === serverPlayerIdx && t.step === goalStep)
-            if (playerGoalTokens.length === 4 && !finishedPlayerIndicesRef.current.includes(serverPlayerIdx)) {
+            const requiredTokens = isHexGame ? 3 : 4
+            if (playerGoalTokens.length === requiredTokens && !finishedPlayerIndicesRef.current.includes(serverPlayerIdx)) {
               finishedPlayerIndicesRef.current.push(serverPlayerIdx)
               const finishedPlayer = formattedPlayersRef.current[serverPlayerIdx]
               setRankings((prev) => [...prev, finishedPlayer])
@@ -957,8 +1075,8 @@ export function OnlineGameEngine({
     const pCount = gameData.players.length
     const goalStep = getGoalStep(pCount)
 
-    if (startStep === -1) {
-      targetStep = 0
+    if (startStep <= 0) {
+      targetStep = isHexGame ? 1 : 0
     } else if (targetStep > goalStep) {
       targetStep = goalStep
     }
@@ -978,9 +1096,14 @@ export function OnlineGameEngine({
   }
 
   // Handle Token Click from Board (with Dice Choice Modal detection)
-  const handleTokenClick = (tokenId: number) => {
+  const handleTokenClick = (rawTokenId: number) => {
     if (!isMyTurnRef.current || isAnimatingMoveRef.current || isRollingRef.current || !hasRolled) return
     isProcessingTimeoutRef.current = false
+
+    let tokenId = rawTokenId
+    if (isHexGame && rawTokenId < 4) {
+      tokenId = activePlayerIndex * 4 + rawTokenId
+    }
 
     if (playableTokenIds.includes(tokenId)) {
       const tokenIndex = tokenId % 4
@@ -988,7 +1111,7 @@ export function OnlineGameEngine({
       const token = tokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
       if (!token) return
 
-      if (token.step === -1) {
+      if (token.step <= 0) {
         // Base exit
         if (remainingMoves.includes(5)) {
           executeMoveIntent(tokenId, 5)
@@ -1112,16 +1235,29 @@ export function OnlineGameEngine({
           style={{ maxWidth: 'min(700px, calc((100vh - 220px) * 1.05))' }}
         >
           <div className="relative mx-auto w-full">
-            <GameBoard
-              tokens={tokens}
-              currentTurn={activePlayerIndex}
-              playableTokenIds={playableTokenIds}
-              onTokenClick={handleTokenClick}
-              humanPlayerId={activePlayerIndex}
-              appTheme="dark"
-              isZeroIndexed={true}
-              explosionData={explosionData}
-            />
+            {isHexGame ? (
+              <HexagonalLudoBoardView
+                players={formattedPlayers as any}
+                tokens={tokens as any}
+                currentTurnIndex={activePlayerIndex}
+                playableTokenIds={playableTokenIds}
+                humanPlayerId={myPlayerIndex}
+                onTokenClick={handleTokenClick}
+                explosionData={explosionData}
+                appTheme="dark"
+              />
+            ) : (
+              <GameBoard
+                tokens={tokens}
+                currentTurn={activePlayerIndex}
+                playableTokenIds={playableTokenIds}
+                onTokenClick={handleTokenClick}
+                humanPlayerId={activePlayerIndex}
+                appTheme="dark"
+                isZeroIndexed={true}
+                explosionData={explosionData}
+              />
+            )}
           </div>
         </div>
 
