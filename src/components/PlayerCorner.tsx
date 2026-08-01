@@ -14,6 +14,8 @@ interface PlayerCornerProps {
   remainingMoves: number[];
   onRollDice: () => void;
   timer: number;
+  onSendReaction?: (message: string) => void;
+  reactionMessage?: string | null;
 }
 
 export const PlayerCorner: React.FC<PlayerCornerProps> = ({
@@ -27,9 +29,14 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
   remainingMoves,
   onRollDice,
   timer,
+  onSendReaction,
+  reactionMessage,
 }) => {
   const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
-  const [currentMessage, setCurrentMessage] = useState<string | null>(null);
+  const [localMessage, setLocalMessage] = useState<string | null>(null);
+
+  // Sync external reaction or use local
+  const currentMessage = reactionMessage !== undefined ? reactionMessage : localMessage;
   
   const { user } = useAuth();
   
@@ -43,13 +50,13 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
   const displayName = isHuman ? (user?.nickname || 'Tú') : player.name;
 
   useEffect(() => {
-    if (currentMessage) {
+    if (localMessage && reactionMessage === undefined) {
       const msgTimer = setTimeout(() => {
-        setCurrentMessage(null);
+        setLocalMessage(null);
       }, 3500);
       return () => clearTimeout(msgTimer);
     }
-  }, [currentMessage]);
+  }, [localMessage, reactionMessage]);
 
   const isLeft = position.includes('left');
   const isBottom = position.includes('bottom');
@@ -115,17 +122,34 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
     case 'mid-right': posClass = 'top-[22%] md:top-1/2 -translate-y-1/2 right-2 md:right-6 flex-row-reverse'; break;
   }
 
+  const isTopPosition = position?.startsWith('top-');
+  const isRightPosition = position?.endsWith('-right');
+
   return (
     <div className={`absolute z-40 flex items-center gap-4 ${posClass}`}>
       {/* Avatar Wrapper */}
       <div className="relative flex flex-col items-center">
         {/* Floating Comic Speech/Thought Bubble */}
         {currentMessage && (
-          <div className="absolute bottom-[100%] mb-2 z-50 pointer-events-none animate-in fade-in zoom-in slide-in-from-bottom-2 duration-300">
+          <div className={`absolute z-50 pointer-events-none duration-300 ${
+            isTopPosition 
+              ? 'top-[100%] mt-2 animate-in fade-in zoom-in slide-in-from-top-2' 
+              : 'bottom-[100%] mb-2 animate-in fade-in zoom-in slide-in-from-bottom-2'
+          } ${
+            isRightPosition ? 'right-0' : 'left-0'
+          }`}>
             <div className="relative bg-white text-gray-900 font-extrabold text-xs md:text-sm px-3.5 py-1.5 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] border border-gray-200 whitespace-nowrap flex items-center gap-1.5">
               <span>{currentMessage}</span>
               {/* Speech bubble tail */}
-              <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-white" />
+              {isTopPosition ? (
+                <div className={`absolute -top-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[7px] border-b-white ${
+                  isRightPosition ? 'right-4' : 'left-4'
+                }`} />
+              ) : (
+                <div className={`absolute -bottom-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-white ${
+                  isRightPosition ? 'right-4' : 'left-4'
+                }`} />
+              )}
             </div>
           </div>
         )}
@@ -135,13 +159,13 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
           <div className="relative flex gap-2 mb-2">
              <button 
                onClick={() => setActiveMenu(activeMenu === 'emoji' ? null : 'emoji')}
-               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase"
+               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase cursor-pointer"
              >
                Emoji
              </button>
              <button 
                onClick={() => setActiveMenu(activeMenu === 'chat' ? null : 'chat')}
-               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase"
+               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase cursor-pointer"
              >
                Chat
              </button>
@@ -150,17 +174,29 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
              {activeMenu && (
                <>
                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setActiveMenu(null)} />
-                 <div className="absolute bottom-[100%] mb-2 left-0 origin-bottom-left z-50 animate-in fade-in zoom-in slide-in-from-bottom-2 duration-200 bg-[#0f172a]/95 backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px]">
+                 <div className={`absolute z-50 duration-200 bg-[#0f172a]/95 backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px] ${
+                   isTopPosition 
+                     ? 'top-[100%] mt-2 animate-in fade-in zoom-in slide-in-from-top-2' 
+                     : 'bottom-[100%] mb-2 animate-in fade-in zoom-in slide-in-from-bottom-2'
+                 } ${
+                   isRightPosition 
+                     ? (isTopPosition ? 'right-0 origin-top-right' : 'right-0 origin-bottom-right')
+                     : (isTopPosition ? 'left-0 origin-top-left' : 'left-0 origin-bottom-left')
+                 }`}>
                    {activeMenu === 'emoji' ? (
                      <div className="flex gap-2 justify-center p-1">
                        {['🤣', '😡', '🥺', '😎', '😴'].map((emoji) => (
                          <button
                            key={emoji}
                            onClick={() => {
-                             setCurrentMessage(emoji);
+                             if (onSendReaction) {
+                               onSendReaction(emoji);
+                             } else {
+                               setLocalMessage(emoji);
+                             }
                              setActiveMenu(null);
                            }}
-                           className="text-xl md:text-2xl hover:scale-125 transition-transform active:scale-95 p-1 hover:bg-white/10 rounded-xl"
+                           className="text-xl md:text-2xl hover:scale-125 transition-transform active:scale-95 p-1 hover:bg-white/10 rounded-xl cursor-pointer"
                          >
                            {emoji}
                          </button>
@@ -178,10 +214,14 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = ({
                          <button
                            key={phrase}
                            onClick={() => {
-                             setCurrentMessage(phrase);
+                             if (onSendReaction) {
+                               onSendReaction(phrase);
+                             } else {
+                               setLocalMessage(phrase);
+                             }
                              setActiveMenu(null);
                            }}
-                           className="text-[10px] md:text-[11px] font-semibold text-white/90 hover:text-white hover:bg-white/15 px-2.5 py-1 rounded-xl text-left transition-all active:scale-95 whitespace-nowrap"
+                           className="text-[10px] md:text-[11px] font-semibold text-white/90 hover:text-white hover:bg-white/15 px-2.5 py-1 rounded-xl text-left transition-all active:scale-95 whitespace-nowrap cursor-pointer"
                          >
                            {phrase}
                          </button>

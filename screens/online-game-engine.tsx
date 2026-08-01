@@ -51,6 +51,10 @@ export function OnlineGameEngine({
 
   const myPlayerId = gameData.myPlayerId || user?.uid || socket.id
 
+  const myPlayerIndex = useMemo(() => {
+    return (gameData.players || []).findIndex((p) => p.playerId === myPlayerId || p.socketId === socket.id)
+  }, [gameData.players, myPlayerId, socket.id])
+
   // Map server players to GameBoard Player interface
   const formattedPlayers: Player[] = useMemo(() => {
     return (gameData.players || []).map((p, idx) => {
@@ -102,6 +106,7 @@ export function OnlineGameEngine({
   // Timer & UI Notifications
   const [turnTimer, setTurnTimer] = useState<number>(10)
   const [notification, setNotification] = useState<string | null>(null)
+  const [playerReactions, setPlayerReactions] = useState<Record<string, string>>({})
   const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false)
   const [audioSettings, setAudioSettings] = useState({
     musicVolume: 0.15,
@@ -802,6 +807,37 @@ export function OnlineGameEngine({
       showToast('🔄 Estado resincronizado.')
     }
 
+    const handleEventChat = (data: { playerId?: string; senderId?: string; message?: string; text?: string }) => {
+      const senderId = data.playerId || data.senderId || ''
+      const msg = data.message || data.text || ''
+      if (!msg) return
+
+      // Translate senderId (UUID/socketId/slotIndex) to seat index (0..5)
+      let targetSeatIndex = -1
+      if (senderId) {
+        targetSeatIndex = (gameData.players || []).findIndex(
+          (p) => p.playerId === senderId || p.socketId === senderId || String(p.slotIndex) === String(senderId)
+        )
+      }
+
+      if (targetSeatIndex === -1 && !isNaN(Number(senderId))) {
+        targetSeatIndex = Number(senderId)
+      }
+
+      if (targetSeatIndex < 0) return
+
+      setPlayerReactions((prev) => ({ ...prev, [targetSeatIndex]: msg }))
+      setTimeout(() => {
+        setPlayerReactions((prev) => {
+          const newState = { ...prev }
+          if (newState[targetSeatIndex] === msg) {
+             delete newState[targetSeatIndex]
+          }
+          return newState
+        })
+      }, 3500)
+    }
+
     socket.on('event_turn_started', handleTurnStarted)
     socket.on('event_dice_result', handleDiceResult)
     socket.on('event_token_moved', handleTokenMoved)
@@ -810,6 +846,8 @@ export function OnlineGameEngine({
     socket.on('event_player_expelled', handlePlayerExpelled)
     socket.on('event_game_over_by_abandonment', handleGameOverAbandonment)
     socket.on('event_state_resynced', handleStateResynced)
+    socket.on('event_chat', handleEventChat)
+    socket.on('player_reaction', handleEventChat)
 
     return () => {
       socket.off('event_turn_started', handleTurnStarted)
@@ -820,8 +858,35 @@ export function OnlineGameEngine({
       socket.off('event_player_expelled', handlePlayerExpelled)
       socket.off('event_game_over_by_abandonment', handleGameOverAbandonment)
       socket.off('event_state_resynced', handleStateResynced)
+      socket.off('event_chat', handleEventChat)
+      socket.off('player_reaction', handleEventChat)
     }
   }, [socket, gameData.players, formattedPlayers])
+
+  // Send Chat / Emoji Reaction Intent to Backend
+  const handleSendReaction = (message: string) => {
+    if (!socket || !gameData?.roomId) return
+    const playerName = user?.nickname || 'Jugador'
+    socket.emit('intent_chat', {
+      roomId: gameData.roomId,
+      playerId: myPlayerId,
+      playerName,
+      message,
+    })
+
+    // Optimistic local update using myPlayerIndex (seat number)
+    const targetSeat = myPlayerIndex >= 0 ? myPlayerIndex : 0
+    setPlayerReactions((prev) => ({ ...prev, [targetSeat]: message }))
+    setTimeout(() => {
+      setPlayerReactions((prev) => {
+        const newState = { ...prev }
+        if (newState[targetSeat] === message) {
+          delete newState[targetSeat]
+        }
+        return newState
+      })
+    }, 3500)
+  }
 
   // Roll Dice Action
   const handleRollDice = () => {
@@ -1059,6 +1124,8 @@ export function OnlineGameEngine({
                 remainingMoves={isActiveTurn ? remainingMoves : []}
                 onRollDice={handleRollDice}
                 timer={isActiveTurn ? turnTimer : 0}
+                onSendReaction={p.id === (myPlayerIndex >= 0 ? myPlayerIndex : 0) ? handleSendReaction : undefined}
+                reactionMessage={playerReactions[p.id]}
               />
             );
           });
@@ -1066,11 +1133,10 @@ export function OnlineGameEngine({
 
         {/* Minimalist Log Ticker */}
         {notification && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 bg-black/60 backdrop-blur-md px-5 py-2 rounded-full border border-white/10 shadow-2xl max-w-sm w-[90%] text-center pointer-events-none animate-in fade-in slide-in-from-bottom-2">
-            <p className="text-xs font-bold text-[var(--candy-cyan)] truncate flex items-center justify-center gap-2">
-              <Sparkles className="size-3.5 shrink-0" />
-              <span>{notification}</span>
-            </p>
+          <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full text-center px-4">
+            <span className="text-white/50 text-[10px] font-medium tracking-widest uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] animate-pulse">
+              {notification}
+            </span>
           </div>
         )}
       </div>
@@ -1115,11 +1181,11 @@ export function OnlineGameEngine({
         }
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[oklch(0.16_0.03_285)] border border-[var(--candy-cyan)]/40 p-4 rounded-3xl shadow-2xl flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[210] flex items-center justify-center p-4">
+            <div className="bg-[oklch(0.16_0.03_285)] border border-[#06b6d4]/40 p-4 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_20px_#06b6d440] flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
               <div className="flex flex-col items-center gap-1">
-                <h3 className="text-foreground font-extrabold text-sm text-center font-display uppercase tracking-wider">Mover Ficha</h3>
-                <p className="text-xs text-muted-foreground font-medium">Elige el dado:</p>
+                <h3 className="text-white font-extrabold text-sm text-center font-display uppercase tracking-wider drop-shadow-[0_0_8px_rgba(0,242,255,0.4)]">Mover Ficha</h3>
+                <p className="text-xs text-slate-400 font-medium">Elige el dado:</p>
               </div>
               <div className="flex flex-row flex-wrap justify-center gap-2 mt-1">
                 {options.map((optVal, i) => (
@@ -1129,7 +1195,7 @@ export function OnlineGameEngine({
                       setMoveSelectorTokenId(null)
                       executeMoveIntent(moveSelectorTokenId, optVal)
                     }}
-                    className="w-12 h-12 bg-[var(--candy-cyan)]/15 border border-[var(--candy-cyan)] hover:bg-[var(--candy-cyan)] hover:text-black text-[var(--candy-cyan)] rounded-2xl flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow-[0_0_12px_var(--candy-cyan)] font-display font-extrabold text-xl"
+                    className="w-12 h-12 bg-[#06b6d4]/15 border border-[#06b6d4] hover:bg-[#06b6d4] hover:text-black text-[#06b6d4] rounded-2xl flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow-[0_0_12px_#06b6d4] font-display font-extrabold text-xl"
                   >
                     {optVal}
                   </button>
@@ -1137,7 +1203,7 @@ export function OnlineGameEngine({
               </div>
               <button
                 onClick={() => setMoveSelectorTokenId(null)}
-                className="mt-1 text-muted-foreground hover:text-foreground text-xs font-bold tracking-widest uppercase transition-colors text-center"
+                className="mt-1 py-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all text-center cursor-pointer"
               >
                 Cancelar
               </button>
