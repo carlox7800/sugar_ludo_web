@@ -41,43 +41,48 @@ export interface OnlineGameData {
     socketId?: string
     isConnected?: boolean
     isBot?: boolean
+    slotIndex?: number
   }>
   myPlayerId: string
 }
 
 export function OnlineGameEngine({ 
   gameData, 
-  onExit 
+  onExit,
+  modeType
 }: { 
   gameData: OnlineGameData
   onExit: () => void 
+  modeType?: string
 }) {
   const { user } = useAuth()
   const socket = getSocket()
 
   const myPlayerId = gameData.myPlayerId || user?.uid || socket.id
 
+  const [dynamicPlayers, setDynamicPlayers] = useState(gameData.players || [])
+
   const myPlayerIndex = useMemo(() => {
-    return (gameData.players || []).findIndex((p) => p.playerId === myPlayerId || p.socketId === socket.id)
-  }, [gameData.players, myPlayerId, socket.id])
+    return dynamicPlayers.findIndex((p) => p.playerId === myPlayerId || p.socketId === socket.id)
+  }, [dynamicPlayers, myPlayerId, socket.id])
 
   // Determine if it's a hex game based on player count
-  const isHexGame = (gameData.players?.length || 0) > 4
+  const isHexGame = dynamicPlayers.length > 4
   const currentColorsOrder = isHexGame ? (HEX_COLORS_ORDER as PlayerColor[]) : SQUARE_COLORS_ORDER
 
   // Map server players to GameBoard Player interface
   const formattedPlayers: Player[] = useMemo(() => {
-    return (gameData.players || []).map((p, idx) => {
+    return dynamicPlayers.map((p, idx) => {
       const isMe = p.playerId === myPlayerId || p.socketId === socket.id
       return {
         id: idx,
         name: isMe ? `${p.playerName || p.name || 'Tú'} (Tú)` : (p.playerName || p.name || `Jugador ${idx + 1}`),
         color: currentColorsOrder[idx] || 'yellow',
-        type: isMe ? 'human' : 'bot',
+        type: p.isBot ? 'bot' : 'human',
         isActive: p.isConnected !== false,
       }
     })
-  }, [gameData.players, myPlayerId, socket.id, currentColorsOrder])
+  }, [dynamicPlayers, myPlayerId, socket.id, currentColorsOrder])
 
   const defaultPlayer: Player = {
     id: 0,
@@ -155,9 +160,13 @@ export function OnlineGameEngine({
 
   const currentTurnPlayer: Player = formattedPlayers[activePlayerIndex] || formattedPlayers[0] || defaultPlayer
 
-  const isMyTurn = currentTurnPlayerId === myPlayerId || (
-    gameData.players[activePlayerIndex]?.socketId === socket.id
-  )
+  const isActingHost = () => {
+    const firstActiveHuman = formattedPlayersRef.current.find(p => p.type !== 'bot' && p.isActive)
+    return firstActiveHuman?.id === myPlayerIndex
+  }
+
+  const isBotTurn = currentTurnPlayer.type === 'bot'
+  const isMyTurn = currentTurnPlayerId === myPlayerId || (isBotTurn && isActingHost())
 
   // Refs to prevent closure staleness and duplicate timer triggers
   const tokensRef = useRef(tokens)
@@ -186,6 +195,16 @@ export function OnlineGameEngine({
   const finishedPlayerIndicesRef = useRef<number[]>([])
   const lastProcessedMoveRef = useRef<string>('')
   const pendingMoveRef = useRef<{ data: any; timeout: NodeJS.Timeout | null }>({ data: null, timeout: null })
+  // Prevenir cierre accidental de pestaña (F5 / Cierre)
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = '' // Requerido por Chrome para mostrar la alerta nativa
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [])
+
   // Ref so socket handlers always see the latest formattedPlayers without needing it in useEffect deps
   const formattedPlayersRef = useRef<Player[]>(formattedPlayers)
   formattedPlayersRef.current = formattedPlayers
@@ -556,7 +575,11 @@ export function OnlineGameEngine({
         if (isAnimatingMoveRef.current || isRollingRef.current) return prev
 
         if (prev <= 1) {
-          if (isMyTurnRef.current && !isProcessingTimeoutRef.current) {
+          const amIHost = isActingHost()
+          const currentIsBot = formattedPlayersRef.current[activePlayerIndexRef.current]?.type === 'bot'
+          const shouldIPlay = isMyTurnRef.current || (currentIsBot && amIHost)
+
+          if (shouldIPlay && !isProcessingTimeoutRef.current) {
             isProcessingTimeoutRef.current = true
             if (!hasRolledRef.current && !isRollingRef.current) {
               globalLogger.log('GAME-FLOW', 'Tiempo agotado (Lanzar). Emitiendo intent_roll_dice.')
@@ -745,7 +768,8 @@ export function OnlineGameEngine({
 
       // Intercept Penalty return to base (-1)
       if (targetStep === -1) {
-        audio.playCapture()
+        if ('playCapture' in audio) (audio as any).playCapture()
+        else audio.playStep()
         setTokens((prev) =>
           prev.map((t) =>
             t.playerId === serverPlayerIdx && t.id === tokenIndex
@@ -965,17 +989,39 @@ export function OnlineGameEngine({
 
     // Disconnection / Reconnection / GameOver Events
     const handlePlayerDisconnected = (data: { playerId: string }) => {
-      const p = gameData.players.find((pl) => pl.playerId === data.playerId)
-      showToast(`⚠️ Jugador ${p?.playerName || ''} desconectado.`)
+      setDynamicPlayers(prev => {
+        const updated = [...prev]
+        const idx = updated.findIndex(p => p.playerId === data.playerId)
+        if (idx !== -1) {
+          updated[idx] = { ...updated[idx], isConnected: false, isBot: true }
+          showToast(`🔴 ${updated[idx].playerName || updated[idx].name || 'Jugador'} desconectado. El servidor lo suplirá.`)
+        }
+        return updated
+      })
     }
 
     const handlePlayerReconnected = (data: { playerId: string }) => {
-      const p = gameData.players.find((pl) => pl.playerId === data.playerId)
-      showToast(`✅ Jugador ${p?.playerName || ''} se reconectó.`)
+      setDynamicPlayers(prev => {
+        const updated = [...prev]
+        const idx = updated.findIndex(p => p.playerId === data.playerId)
+        if (idx !== -1) {
+          updated[idx] = { ...updated[idx], isConnected: true, isBot: false }
+          showToast(`🟢 ${updated[idx].playerName || updated[idx].name || 'Jugador'} se reconectó.`)
+        }
+        return updated
+      })
     }
 
-    const handlePlayerExpelled = () => {
-      showToast(`🚨 Jugador expulsado por inactividad.`)
+    const handlePlayerExpelled = (data: { playerId: string }) => {
+      setDynamicPlayers(prev => {
+        const updated = [...prev]
+        const idx = updated.findIndex(p => p.playerId === data.playerId)
+        if (idx !== -1) {
+          updated[idx] = { ...updated[idx], isConnected: false, isBot: true }
+          showToast(`💀 ${updated[idx].playerName || updated[idx].name || 'Jugador'} expulsado por inactividad.`)
+        }
+        return updated
+      })
     }
 
     const handleGameOverAbandonment = (data: { winnerId: string }) => {
@@ -1266,7 +1312,7 @@ export function OnlineGameEngine({
                 humanPlayerId={myPlayerIndex}
                 onTokenClick={handleTokenClick}
                 explosionData={explosionData}
-                appTheme="dark"
+                appTheme="sugar"
               />
             ) : (
               <GameBoard
@@ -1275,7 +1321,7 @@ export function OnlineGameEngine({
                 playableTokenIds={playableTokenIds}
                 onTokenClick={handleTokenClick}
                 humanPlayerId={activePlayerIndex}
-                appTheme="dark"
+                appTheme="sugar"
                 isZeroIndexed={true}
                 explosionData={explosionData}
               />
@@ -1351,7 +1397,11 @@ export function OnlineGameEngine({
           <div className="glass flex flex-col items-center gap-5 rounded-3xl border border-[var(--candy-magenta)] p-8 text-center max-w-sm w-full">
             <AlertTriangle className="size-14 text-[var(--candy-magenta)]" />
             <h2 className="font-display text-xl font-extrabold text-foreground">¿Abandonar la Partida?</h2>
-            <p className="text-sm text-muted-foreground font-medium">Si sales ahora, el servidor te marcará como desconectado y el juego continuará sin ti.</p>
+            <p className="text-sm text-muted-foreground font-medium">
+              {modeType === 'competitive'
+                ? "Si lo hace, abandonará el juego actual y perderá todo su progreso y los fondos comprometidos en la sala."
+                : "Si lo hace, abandonará el juego actual y perderá todo su progreso en la sala."}
+            </p>
             <div className="flex gap-3 w-full mt-2">
               <button onClick={() => setIsExitModalOpen(false)} className="flex-1 rounded-xl bg-[oklch(1_0_0/0.1)] py-3 font-bold text-foreground hover:bg-[oklch(1_0_0/0.2)]">Seguir Jugando</button>
               <button onClick={handleConfirmExit} className="flex-1 rounded-xl bg-[var(--candy-magenta)] py-3 font-bold text-white hover:opacity-90 shadow-[0_0_15px_var(--candy-magenta)]">Salir</button>

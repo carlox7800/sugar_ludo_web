@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { X, Settings, Volume2, VolumeX, Smartphone, Palette, Copy, Check, LogOut, Info } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { globalLogger } from '@/lib/logger'
+import { APP_VERSION } from '@/lib/constants'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -234,7 +235,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {/* App Info Footer */}
           <div className="flex items-center justify-center gap-1.5 pt-2 text-[11px] font-semibold text-muted-foreground">
             <Info className="size-3.5" />
-            <span>Sugar Ludo v1.0.0 • Edición Premium</span>
+            <span>Sugar Ludo {APP_VERSION} Edición Premium</span>
           </div>
         </div>
       </div>

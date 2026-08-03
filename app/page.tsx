@@ -187,6 +187,7 @@ function PageContent() {
     return (
       <OnlineGameEngine 
         gameData={onlineGameData} 
+        modeType={onlineGameOrigin === 'competitive' ? 'competitive' : 'training'}
         onExit={() => {
           setOnlineGameData(null)
           setScreen(onlineGameOrigin)
