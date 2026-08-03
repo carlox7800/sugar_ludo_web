@@ -108,6 +108,13 @@
       inset 0 -18px 40px rgba(0, 0, 0, 0.25),
       0 20px 45px rgba(0, 0, 0, 0.45);
   }
+  @media (max-width: 768px) {
+    .glass {
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      will-change: transform;
+    }
+  }
 
   .glass-hover {
     transition:

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle } from 'lucide-react'
+import { recordMatchResult } from '@/lib/stats-service'
+import confetti from 'canvas-confetti'
 import { getSocket } from '@/lib/socket'
 import { useAuth } from '@/lib/auth-context'
 import { GameBoard } from '@/src/components/GameBoard'
@@ -111,6 +113,20 @@ export function OnlineGameEngine({
   const [hasRolled, setHasRolled] = useState(false)
   const [isAnimatingMove, setIsAnimatingMove] = useState(false)
   const [winnerPlayer, setWinnerPlayer] = useState<Player | null>(null)
+  const isAnimatingRef = useRef(false)
+  const isGameOverRef = useRef(false)
+
+  // Confetti effect when winner is declared
+  useEffect(() => {
+    if (winnerPlayer) {
+      confetti({
+        particleCount: 150,
+        spread: 100,
+        origin: { y: 0.6 },
+        zIndex: 9999
+      });
+    }
+  }, [winnerPlayer])
   const [explosionData, setExplosionData] = useState<{ cellIndex: number; color: PlayerColor } | null>(null)
   
   // Timer & UI Notifications

@@ -10,6 +10,7 @@ import { Volume2, VolumeX, BookOpen, Sparkles, Trophy, ArrowLeft, Settings, X, P
 import { HexGameView } from './components/HexGameView';
 import { useAuth } from '@/lib/auth-context';
 import { recordMatchResult } from '@/lib/stats-service';
+import confetti from 'canvas-confetti';
 
 // Clockwise standard colors list
 const COLORS_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue'];
@@ -73,6 +74,18 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   const [timer, setTimer] = useState<number>(10);
   const [barrierLifetimes, setBarrierLifetimes] = useState<Record<number, number>>({});
   const [notification, setNotification] = useState<string | null>(null);
+
+  // Confetti effect when game ends
+  useEffect(() => {
+    if (winner !== null) {
+      confetti({
+        particleCount: 150,
+        spread: 100,
+        origin: { y: 0.6 },
+        zIndex: 9999
+      });
+    }
+  }, [winner]);
 
   // Audio settings
   const [audioSettings, setAudioSettings] = useState({ musicVolume: 0.25, sfxVolume: 1.0, isMuted: false });
@@ -723,7 +736,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
             durationSeconds: 120,
             xpGained: newRank === 1 ? 150 : 40,
             coinsEarned: newRank === 1 ? 100 : 20,
-          });
+          }).catch(e => console.warn('Match record error:', e));
         }
 
         const activePlayersCount = players.filter(p => p.isActive).length;

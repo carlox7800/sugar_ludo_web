@@ -211,8 +211,22 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
 }) => {
   const cellSize = 50;
 
+  // Pre-calculate which tokens are on which cell to avoid O(n^2) filter on every render
+  const cellTokensMap = React.useMemo(() => {
+    const map = new Map<string, Token[]>();
+    tokens.forEach((t) => {
+      const normStep = isZeroIndexed ? t.step + 1 : t.step;
+      if (normStep === 0 || normStep === 57) return; // Ignore base and goal
+      const coord = getCellCoord(t.color, normStep);
+      const key = `${coord.row},${coord.col}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
+    });
+    return map;
+  }, [tokens, isZeroIndexed]);
+
   // Compute visual coordinates for all tokens, resolving overlaps on the same cell
-  const getTokenVisualCoord = (rawToken: Token): { x: number; y: number } => {
+  const getTokenVisualCoord = React.useCallback((rawToken: Token): { x: number; y: number } => {
     // Normalize step to 1-indexed (Base: 0, Path: 1..51, Goal: 57) for rendering if source is 0-indexed (-1, 0..50, 56)
     const token = isZeroIndexed ? { ...rawToken, step: rawToken.step + 1 } : rawToken;
 
@@ -240,13 +254,8 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
     const cx = gridCoord.col * cellSize + cellSize / 2;
     const cy = gridCoord.row * cellSize + cellSize / 2;
 
-    // Find all tokens currently sharing this same grid position (excluding those in base or goal)
-    const activeTokensOnCell = tokens.filter((t) => {
-      const normStep = isZeroIndexed ? t.step + 1 : t.step;
-      if (normStep === 0 || normStep === 57) return false;
-      const otherCoord = getCellCoord(t.color, normStep);
-      return otherCoord.row === gridCoord.row && otherCoord.col === gridCoord.col;
-    });
+    const key = `${gridCoord.row},${gridCoord.col}`;
+    const activeTokensOnCell = cellTokensMap.get(key) || [];
 
     if (activeTokensOnCell.length <= 1) {
       return { x: cx, y: cy };
@@ -261,7 +270,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
       x: cx + radius * Math.cos(angle),
       y: cy + radius * Math.sin(angle),
     };
-  };
+  }, [isZeroIndexed, cellTokensMap]);
 
   // Helper to render star path (large/centered or small)
   const renderStarPath = (cx: number, cy: number, r: number, color: string, strokeColor?: string) => {
@@ -547,6 +556,9 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
                 const dx = Math.cos(rad) * distance;
                 const dy = Math.sin(rad) * distance + 60; // Mayor efecto de gravedad
                 
+                // Deterministic pseudorandom for animationDelay (based on index) to avoid Math.random() in render
+                const randomDelay = (i * 17 % 100) / 1000 * 1.5; // 0 to 0.15s
+                
                 return (
                   <circle 
                     key={i} 
@@ -554,7 +566,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
                     fill={COLOR_MAP[explosionData.color]} 
                     style={{
                       animation: `fireworkParticle 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
-                      animationDelay: `${Math.random() * 0.15}s`,
+                      animationDelay: `${randomDelay}s`,
                       '--dx': `${dx}px`,
                       '--dy': `${dy}px`,
                       transformOrigin: `${x + 25}px ${y + 25}px`

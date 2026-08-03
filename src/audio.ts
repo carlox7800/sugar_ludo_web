@@ -65,7 +65,7 @@ class LudoAudio {
     if (!this.bgmAudioElement) {
       this.bgmAudioElement = new Audio();
       this.bgmAudioElement.loop = true;
-      this.bgmAudioElement.preload = 'auto';
+      this.bgmAudioElement.preload = 'none';
 
       // Fetch the audio as a blob to prevent external download managers (like IDM) 
       // from intercepting the media request from the <audio> tag.

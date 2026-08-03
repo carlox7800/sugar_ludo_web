@@ -30,6 +30,7 @@ import { audio } from '../audio';
 import { Sparkles, Trophy, ArrowLeft, RotateCcw, Volume2, VolumeX, Zap, ShieldCheck, Award } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { recordMatchResult } from '@/lib/stats-service';
+import confetti from 'canvas-confetti';
 
 interface HexGameViewProps {
   playerCount: 5 | 6;
@@ -54,12 +55,24 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   );
 
   useEffect(() => {
-    console.log("HexGameView mounted - using modern GameControls!");
+    // mounted
   }, []);
 
   const [timer, setTimer] = useState<number>(10);
   const [isLogsOpen, setIsLogsOpen] = useState<boolean>(true);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Confetti effect when game ends
+  useEffect(() => {
+    if (gameState.winner) {
+      confetti({
+        particleCount: 150,
+        spread: 100,
+        origin: { y: 0.6 },
+        zIndex: 9999
+      });
+    }
+  }, [gameState.winner]);
 
   // 2-Dice Specific State
   const [diceValues, setDiceValues] = useState<[number, number] | null>(null);
@@ -478,7 +491,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               durationSeconds: 150,
               xpGained: newRank === 1 ? 150 : 40,
               coinsEarned: newRank === 1 ? 100 : 20,
-            });
+            }).catch(e => console.warn('Match record error:', e));
           }
 
           const activeCount = prev.players.filter(p => p.isActive).length;
