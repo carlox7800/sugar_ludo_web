@@ -115,6 +115,76 @@ export function getCellIndexForToken(color: HexPlayerColor, step: number): numbe
   return 'GOAL';
 }
 
+// --- CONSTANTES DE HOMOLOGACIÓN HEXAGONAL ---
+export const HEX_BONUS_CAPTURE = 25;
+export const HEX_BONUS_GOAL = 15;
+export const MAX_CONSECUTIVE_DOUBLES = 3;
+
+/**
+ * Calcula el bono de pasos para el tablero Hexagonal (5 y 6 jugadores)
+ * +25 por captura de ficha enemiga
+ * +15 por llegada a la meta (casilla 83)
+ */
+export function calculateHexMoveBonus(finalStep: number, isGoal: boolean, capturedAny: boolean): number {
+  let bonus = 0;
+  if (capturedAny) {
+    bonus += HEX_BONUS_CAPTURE;
+  }
+  if (isGoal && finalStep === 83) {
+    bonus += HEX_BONUS_GOAL;
+  }
+  return bonus;
+}
+
+/**
+ * Procesa la penalización por 3 dobles consecutivos en el tablero Hexagonal.
+ * Retorna las fichas actualizadas enviando la última ficha movida a la base (step = 0).
+ */
+export function processHexThreeDoublesPenalty(
+  tokens: HexToken[],
+  playerId: number,
+  lastMovedTokenId: number | null
+): { updatedTokens: HexToken[]; penalizedToken: HexToken | null } {
+  if (lastMovedTokenId === null) {
+    return { updatedTokens: tokens, penalizedToken: null };
+  }
+
+  let penalizedToken: HexToken | null = null;
+  const updatedTokens = tokens.map((t) => {
+    if (t.playerId === playerId && t.id === lastMovedTokenId && t.step > 0 && t.step < 83) {
+      penalizedToken = t;
+      return { ...t, step: 0 };
+    }
+    return t;
+  });
+
+  return { updatedTokens, penalizedToken };
+}
+
+/**
+ * Valida la mecánica de expulsión y capturas en la casilla de salida ocupada del tablero Hexagonal.
+ * Retorna si la acción resulta en expulsión directa (+0 bono) o en captura (+25 bono).
+ */
+export function checkHexStartCellExpulsion(
+  startCellIndex: number,
+  currentTokens: HexToken[],
+  movingTokenColor: HexPlayerColor
+): { isExpulsion: boolean; capturedTokens: HexToken[] } {
+  const enemyTokensOnStart = currentTokens.filter((tk) => {
+    if (tk.color === movingTokenColor || tk.step <= 0 || tk.step >= 83) return false;
+    const tkIdx = getCellIndexForToken(tk.color, tk.step);
+    return typeof tkIdx === 'number' && tkIdx === startCellIndex;
+  });
+
+  // Si hay exactamente 1 ficha enemiga en la casilla de salida, es una expulsión directa (regreso a casa con +0 bono)
+  // Si hay 2 o más fichas enemigas o en otras casillas normales, se trata de captura normal (+25 bono)
+  const isExpulsion = enemyTokensOnStart.length === 1;
+  return {
+    isExpulsion,
+    capturedTokens: enemyTokensOnStart,
+  };
+}
+
 export function hasBarrierAtHex(perimeterIndex: number, currentTokens: HexToken[]): boolean {
   if (perimeterIndex < 0 || perimeterIndex > 77) return false;
   
@@ -130,3 +200,5 @@ export function hasBarrierAtHex(perimeterIndex: number, currentTokens: HexToken[
   
   return totalCount >= 2;
 }
+
+

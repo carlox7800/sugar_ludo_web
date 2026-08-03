@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ArrowLeft, Volume2, VolumeX, Play, BookOpen, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GameConfig } from '@/src/types'
+import { GameGuideModal } from '@/components/game-guide-modal'
 
 const PLAYER_OPTIONS = [2, 3, 4, 5, 6]
 
@@ -35,6 +36,7 @@ export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStar
   const [players, setPlayers] = useState(4)
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTY_OPTIONS)[number]['id']>('medio')
   const [muted, setMuted] = useState(false)
+  const [isGuideOpen, setIsGuideOpen] = useState(false)
 
   const handleStart = () => {
     console.log('Botón presionado');
@@ -148,13 +150,18 @@ export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStar
               <Play className="size-6 fill-current" strokeWidth={1} />
               Comenzar Juego
             </button>
-            <button className="btn-3d flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-[oklch(1_0_0/0.06)] py-2.5 font-display text-base font-bold text-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.15)]">
+            <button 
+              onClick={() => setIsGuideOpen(true)}
+              className="btn-3d flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-[oklch(1_0_0/0.06)] py-2.5 font-display text-base font-bold text-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.15)] hover:bg-[oklch(1_0_0/0.1)] active:scale-[0.98] transition-all duration-200 cursor-pointer"
+            >
               <BookOpen className="size-5 text-[var(--candy-cyan)]" strokeWidth={2.4} />
               Guía rápida
             </button>
           </div>
         </div>
       </article>
+
+      <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
     </section>
   )
 }

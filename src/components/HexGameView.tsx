@@ -14,6 +14,12 @@ import {
   hasBarrierAtHex,
   HexGameState,
   HexLog,
+  calculateHexMoveBonus,
+  processHexThreeDoublesPenalty,
+  checkHexStartCellExpulsion,
+  HEX_BONUS_CAPTURE,
+  HEX_BONUS_GOAL,
+  MAX_CONSECUTIVE_DOUBLES,
 } from '../HexGameEngine';
 import { HexagonalLudoBoardView } from './HexagonalLudoBoardView';
 import { PlayerCorner } from './PlayerCorner';
@@ -69,6 +75,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   const lastMovedTokenRef = useRef<{ playerId: number; tokenId: number } | null>(null);
   const vibrationIntervalRef = useRef<number | null>(null);
   const winnerRef = useRef<HexPlayer | null>(null);
+  const isAnimatingMoveRef = useRef<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [explosionData, setExplosionData] = useState<{ cellIndex: number | string; color: HexPlayerColor } | null>(null);
 
@@ -256,8 +263,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // Next Turn
   const moveToken = (tokenId: number, moveVal: number, moveIndices: number[]) => {
-    if (gameState.isAnimating || gameState.winner || winnerRef.current !== null) return;
+    if (gameState.isAnimating || gameState.winner || winnerRef.current !== null || isAnimatingMoveRef.current) return;
 
+    isAnimatingMoveRef.current = true;
     setGameState((prev) => ({ ...prev, isAnimating: true }));
     setTimer(10); // TRASPLANTE 4J: Reinicio síncrono del timer
     
@@ -266,6 +274,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     );
 
     if (!token) {
+      isAnimatingMoveRef.current = false;
       setGameState((prev) => ({ ...prev, isAnimating: false }));
       return;
     }
@@ -283,6 +292,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
     const animateNextStep = () => {
       if (winnerRef.current !== null) {
+        isAnimatingMoveRef.current = false;
         setGameState(prev => ({ ...prev, isAnimating: false }));
         return;
       }
@@ -495,6 +505,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             globalLogger.log('GAME-FLOW', `🏁 ¡La partida ha terminado!`);
           }
         }
+
+        isAnimatingMoveRef.current = false;
 
         return {
           ...prev,
@@ -727,7 +739,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   // Human Token Click
   const handleTokenClick = (tokenId: number) => {
     setIsHumanAutoplay(false); // Wake up human player
-    if (activePlayer.type !== 'human' || gameState.isAnimating || gameState.isRolling || !gameState.hasRolled) return;
+    if (activePlayer.type !== 'human' || gameState.isAnimating || gameState.isRolling || !gameState.hasRolled || isAnimatingMoveRef.current) return;
 
     if (playableTokenIds.includes(tokenId)) {
       const token = gameState.tokens.find((t) => t.playerId === activePlayer.id && t.id === tokenId);

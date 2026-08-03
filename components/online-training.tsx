@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Volume2, VolumeX, Zap, Key, PlusCircle, LogIn, Copy, Check, Sparkles, Loader2, Wifi, WifiOff } from 'lucide-react'
+import { ArrowLeft, Volume2, VolumeX, Zap, Key, PlusCircle, LogIn, Copy, Check, Sparkles, Loader2, Wifi, WifiOff, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSocket } from '@/lib/useSocket'
 import { useAuth } from '@/lib/auth-context'
+import { GameGuideModal } from '@/components/game-guide-modal'
 
 const PLAYER_OPTIONS = [2, 3, 4, 5, 6]
 
@@ -41,6 +42,7 @@ export function OnlineTraining({
   const [copiedCode, setCopiedCode] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
   const [notification, setNotification] = useState<string | null>(null)
+  const [isGuideOpen, setIsGuideOpen] = useState(false)
 
   // Dev Sandbox State
   const [isDevSandbox, setIsDevSandbox] = useState(false)
@@ -302,7 +304,7 @@ export function OnlineTraining({
 
           {/* TAB 1: PARTIDA RÁPIDA ⚡ */}
           {mainTab === 'quick' && (
-            <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
               <fieldset className="flex flex-col gap-3">
                 <legend className="mb-1 flex items-center gap-2 font-display text-sm font-extrabold uppercase tracking-wide text-foreground">
                   <span className="h-5 w-1.5 rounded-full bg-[var(--candy-cyan)] shadow-[0_0_12px_var(--candy-cyan)]" />
@@ -357,7 +359,7 @@ export function OnlineTraining({
 
           {/* TAB 2: BATALLA AMIGOS 🔑 */}
           {mainTab === 'friends' && (
-            <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
               {/* Sub-tabs selector: Crear Sala | Unirse */}
               <div className="flex rounded-xl bg-[oklch(0_0_0/0.2)] p-1 border border-border/40 w-full sm:w-80 mx-auto">
                 <button
@@ -547,8 +549,21 @@ export function OnlineTraining({
               )}
             </div>
           )}
+
+          <div className="-mt-2">
+            <button 
+              onClick={() => setIsGuideOpen(true)}
+              className="btn-3d flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-[oklch(1_0_0/0.06)] py-2.5 font-display text-base font-bold text-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.15)] hover:bg-[oklch(1_0_0/0.1)] active:scale-[0.98] transition-all duration-200 cursor-pointer"
+            >
+              <BookOpen className="size-5 text-[var(--candy-cyan)]" strokeWidth={2.4} />
+              Guía rápida
+            </button>
+          </div>
+
         </div>
       </article>
+
+      <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
     </section>
   )
 }

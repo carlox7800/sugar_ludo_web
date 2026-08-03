@@ -67,9 +67,10 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   const [moveSelectorTokenId, setMoveSelectorTokenId] = useState<number | null>(null);
   const [isRolling, setIsRolling] = useState<boolean>(false);
   const [hasRolled, setHasRolled] = useState<boolean>(false);
+  const [isAnimatingMove, setIsAnimatingMove] = useState<boolean>(false);
+  const isAnimatingMoveRef = useRef<boolean>(false);
   const [winner, setWinner] = useState<number | null>(null);
   const [timer, setTimer] = useState<number>(10);
-  const [isAnimatingMove, setIsAnimatingMove] = useState<boolean>(false);
   const [barrierLifetimes, setBarrierLifetimes] = useState<Record<number, number>>({});
   const [notification, setNotification] = useState<string | null>(null);
 
@@ -179,6 +180,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     setWinner(null);
     setDiceValues(null);
     setHasRolled(false);
+    isAnimatingMoveRef.current = false;
     setIsAnimatingMove(false);
     setLogs([]);
 
@@ -201,6 +203,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     setWinner(null);
     setDiceValues(null);
     setHasRolled(false);
+    isAnimatingMoveRef.current = false;
     setIsAnimatingMove(false);
     setIsGlowActive(false);
 
@@ -599,8 +602,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   // Perform a token step-by-step move animation
   const moveToken = (tokenId: number, moveVal: number, moveIndices: number[]) => {
-    if (isAnimatingMove || winner || winnerRef.current !== null) return;
+    if (isAnimatingMove || winner || winnerRef.current !== null || isAnimatingMoveRef.current) return;
 
+    isAnimatingMoveRef.current = true;
     setIsAnimatingMove(true);
     setTimer(10); // reset timer
 
@@ -609,6 +613,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     const token = tokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex);
 
     if (!token) {
+      isAnimatingMoveRef.current = false;
       setIsAnimatingMove(false);
       return;
     }
@@ -635,6 +640,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     // Run recursive timeout for step-by-step audio + animation
     const animateNextStep = () => {
       if (winnerRef.current !== null) {
+        isAnimatingMoveRef.current = false;
         setIsAnimatingMove(false);
         return;
       }
@@ -673,6 +679,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   const handleMoveCompletion = (pId: number, tId: number, finalStep: number, moveIndices: number[], leftover: number = 0) => {
     const movingToken = tokens.find((t) => t.playerId === pId && t.id === tId);
     if (!movingToken) {
+      isAnimatingMoveRef.current = false;
       setIsAnimatingMove(false);
       advanceTurn(false, tokens);
       return;
@@ -754,6 +761,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         
         // Remove remaining moves because this player is done
         setRemainingMoves([]);
+        isAnimatingMoveRef.current = false;
         setIsAnimatingMove(false);
         advanceTurn(false, tokens);
         return;
@@ -848,6 +856,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
     // Apply remaining moves & animation state update
     setRemainingMoves(newMoves);
+    isAnimatingMoveRef.current = false;
     setIsAnimatingMove(false);
 
     if (newMoves.length === 0) {
@@ -1050,7 +1059,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   // Handle Token Click from Board (for human player moves)
   const handleTokenClick = (tokenId: number) => {
     setIsHumanAutoplay(false); // Wake up human player
-    if (activePlayer.type !== 'human' || isAnimatingMove || isRolling || !hasRolled) return;
+    if (activePlayer.type !== 'human' || isAnimatingMove || isRolling || !hasRolled || isAnimatingMoveRef.current) return;
 
     if (playableTokenIds.includes(tokenId)) {
       const tokenIndex = tokenId % 4;
