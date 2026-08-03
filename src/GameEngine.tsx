@@ -51,7 +51,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   // Game Setup & Mode States
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [appTheme, setAppTheme] = useState<AppTheme>('dark');
+  const [appTheme, setAppTheme] = useState<AppTheme>('classic');
   const [config, setConfig] = useState<GameConfig | null>(null);
   useEffect(() => {
     if (initialConfig && !isPlaying) {

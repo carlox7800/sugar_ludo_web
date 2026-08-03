@@ -1312,7 +1312,7 @@ export function OnlineGameEngine({
                 humanPlayerId={myPlayerIndex}
                 onTokenClick={handleTokenClick}
                 explosionData={explosionData}
-                appTheme="sugar"
+                appTheme="classic"
               />
             ) : (
               <GameBoard
@@ -1321,7 +1321,7 @@ export function OnlineGameEngine({
                 playableTokenIds={playableTokenIds}
                 onTokenClick={handleTokenClick}
                 humanPlayerId={activePlayerIndex}
-                appTheme="sugar"
+                appTheme="classic"
                 isZeroIndexed={true}
                 explosionData={explosionData}
               />

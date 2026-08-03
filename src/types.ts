@@ -37,7 +37,7 @@ export interface GameConfig {
   botDifficulty: 'easy' | 'medium' | 'hard';
 }
 
-export type AppTheme = 'dark' | 'sugar';
+export type AppTheme = 'classic' | 'sugar';
 
 export interface UserProfile {
   level: number;
