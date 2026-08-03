@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info } fr
 import { usePlayer } from '@/lib/player-context'
 
 export function WalletScreen({ onBack }: { onBack: () => void }) {
-  const { coins } = usePlayer()
+  const { coins, setCoins } = usePlayer()
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit')
@@ -38,16 +38,42 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
   const handleDepositSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    const amount = parseInt(depositAmount, 10)
+    if (isNaN(amount) || amount <= 0) {
+      setNotification({ message: 'Ingrese un monto válido', type: 'info' })
+      return
+    }
+    
+    // Simulate instant deposit (1 USDT = 100 Sugar Coins)
+    const coinsToAdd = amount * 100
+    setCoins(coins + coinsToAdd)
+    
     setDepositAmount('')
     setTxId('')
-    showNotification('Depósito informado con éxito. En revisión.')
+    showNotification(`Depósito simulado acreditado con éxito (+${coinsToAdd} Coins)`)
   }
 
   const handleWithdrawSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    const amount = parseInt(withdrawAmount, 10)
+    if (isNaN(amount) || amount <= 0) {
+      setNotification({ message: 'Ingrese un monto válido', type: 'info' })
+      return
+    }
+
+    const coinsToDeduct = amount * 100
+    if (coins < coinsToDeduct) {
+      setNotification({ message: 'Saldo insuficiente', type: 'info' })
+      setTimeout(() => setNotification(null), 3000)
+      return
+    }
+
+    // Simulate instant withdrawal
+    setCoins(coins - coinsToDeduct)
+
     setWithdrawAmount('')
     setWithdrawAddress('')
-    showNotification('Solicitud de retiro enviada correctamente.')
+    showNotification(`Retiro simulado procesado con éxito (-${coinsToDeduct} Coins)`)
   }
 
   return (

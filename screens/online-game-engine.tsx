@@ -110,7 +110,12 @@ export function OnlineGameEngine({
   const [remainingMoves, setRemainingMoves] = useState<number[]>([])
   const [moveSelectorTokenId, setMoveSelectorTokenId] = useState<number | null>(null)
   const [isRolling, setIsRolling] = useState(false)
-  const [hasRolled, setHasRolled] = useState(false)
+  const [hasRolled, _setHasRolled] = useState(false)
+  const hasRolledRef = useRef(false)
+  const setHasRolled = (val: boolean) => {
+    hasRolledRef.current = val
+    _setHasRolled(val)
+  }
   const [isAnimatingMove, setIsAnimatingMove] = useState(false)
   const [winnerPlayer, setWinnerPlayer] = useState<Player | null>(null)
   const isAnimatingRef = useRef(false)
@@ -311,7 +316,7 @@ export function OnlineGameEngine({
 
       playerTokens.forEach((t) => {
         const globalId = t.playerId * 4 + t.id
-        if (t.step <= 0) {
+        if (t.step < 0) {
           if (hasFive || hasSumFive) {
             const startIdx = getCellIndexForToken(t.color as any, 1)
             if (typeof startIdx === 'number') {
@@ -553,10 +558,10 @@ export function OnlineGameEngine({
         if (prev <= 1) {
           if (isMyTurnRef.current && !isProcessingTimeoutRef.current) {
             isProcessingTimeoutRef.current = true
-            if (!hasRolled && !isRollingRef.current) {
+            if (!hasRolledRef.current && !isRollingRef.current) {
               globalLogger.log('GAME-FLOW', 'Tiempo agotado (Lanzar). Emitiendo intent_roll_dice.')
               handleRollDice()
-            } else if (hasRolled) {
+            } else if (hasRolledRef.current) {
               executeRandomValidMove()
             }
           }
@@ -567,7 +572,7 @@ export function OnlineGameEngine({
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [currentTurnPlayerId, winnerPlayer, hasRolled, isRolling])
+  }, [currentTurnPlayerId, winnerPlayer])
 
   // ---------------------------------------------------------------------------
   // Ambient & Turn Alerts (Audio & Vibration)
@@ -763,9 +768,9 @@ export function OnlineGameEngine({
       let consumedVal = 0
       let animSteps = 0
 
-      if (startStep <= 0) {
+      if (startStep < 0) {
         consumedVal = 5
-        animSteps = 1 // Direct 1 step from Base (-1/0) to First Cell (0 or 1)
+        animSteps = 1 // Direct 1 step from Base (-1) to First Cell (0 or 1)
       } else {
         consumedVal = targetStep - startStep
         animSteps = targetStep - startStep
@@ -799,7 +804,7 @@ export function OnlineGameEngine({
         if (iteration <= animSteps) {
           if (!mutedRef.current) audio.playStep()
           const baseFirstCell = isHexGame ? 1 : 0
-          const newStep = startStep <= 0 ? baseFirstCell : startStep + iteration
+          const newStep = startStep < 0 ? baseFirstCell : startStep + iteration
           setTokens((prev) =>
             prev.map((t) =>
               t.playerId === serverPlayerIdx && t.id === tokenIndex
@@ -1069,8 +1074,9 @@ export function OnlineGameEngine({
 
   // Roll Dice Action
   const handleRollDice = () => {
-    if (!isMyTurn || hasRolled || isRolling) return
+    if (!isMyTurnRef.current || hasRolledRef.current || isRollingRef.current || isAnimatingMoveRef.current) return
     setIsRolling(true)
+    isRollingRef.current = true
     if (!muted) audio.playDiceRoll()
     globalLogger.log('SOCKET', 'Emitiendo intent_roll_dice', { roomId: gameData.roomId, playerId: myPlayerId })
     socket.emit('intent_roll_dice', {
@@ -1091,7 +1097,7 @@ export function OnlineGameEngine({
     const pCount = gameData.players.length
     const goalStep = getGoalStep(pCount)
 
-    if (startStep <= 0) {
+    if (startStep < 0) {
       targetStep = isHexGame ? 1 : 0
     } else if (targetStep > goalStep) {
       targetStep = goalStep
@@ -1127,7 +1133,7 @@ export function OnlineGameEngine({
       const token = tokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
       if (!token) return
 
-      if (token.step <= 0) {
+      if (token.step < 0) {
         // Base exit
         if (remainingMoves.includes(5)) {
           executeMoveIntent(tokenId, 5)

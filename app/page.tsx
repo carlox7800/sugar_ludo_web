@@ -54,6 +54,7 @@ function PageContent() {
   })
   const [config, setConfig] = useState<GameConfig | null>(null)
   const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
+  const [onlineGameOrigin, setOnlineGameOrigin] = useState<Screen>('online-training')
   
   // UI States
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -83,8 +84,9 @@ function PageContent() {
     setScreen('game')
   }
 
-  const handleMatchFound = (gameData: OnlineGameData) => {
+  const handleMatchFound = (gameData: OnlineGameData, origin: Screen = 'online-training') => {
     setOnlineGameData(gameData)
+    setOnlineGameOrigin(origin)
     setScreen('online-game')
   }
 
@@ -130,7 +132,7 @@ function PageContent() {
           <div className="mx-auto w-full max-w-3xl flex-1">
             <OnlineTraining 
               onBack={() => setScreen('lobby')} 
-              onMatchFound={handleMatchFound}
+              onMatchFound={(data) => handleMatchFound(data, 'online-training')}
             />
           </div>
         )
@@ -139,7 +141,7 @@ function PageContent() {
           <div className="mx-auto w-full max-w-3xl flex-1">
             <CompetitiveTraining 
               onBack={() => setScreen('lobby')} 
-              onMatchFound={handleMatchFound}
+              onMatchFound={(data) => handleMatchFound(data, 'competitive')}
             />
           </div>
         )
@@ -187,7 +189,7 @@ function PageContent() {
         gameData={onlineGameData} 
         onExit={() => {
           setOnlineGameData(null)
-          setScreen('online-training')
+          setScreen(onlineGameOrigin)
         }} 
       />
     )
