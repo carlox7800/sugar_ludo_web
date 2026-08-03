@@ -7,6 +7,7 @@ import { ProfileCard } from '@/components/profile-card'
 import { GameModes } from '@/components/game-modes'
 import { AiTraining } from '@/components/ai-training'
 import { OnlineTraining } from '@/components/online-training'
+import { CompetitiveTraining } from '@/components/competitive-training'
 import { ProfileModal } from '@/components/profile-modal'
 import { SettingsModal } from '@/components/settings-modal'
 import GameEngine from '@/src/GameEngine'
@@ -33,6 +34,7 @@ export type Screen =
   | 'lobby'
   | 'training'
   | 'online-training'
+  | 'competitive'
   | 'online-game'
   | 'game'
   | 'tienda'
@@ -113,6 +115,7 @@ function PageContent() {
             <GameModes 
               onStartTraining={() => setScreen('training')} 
               onStartOnlineTraining={() => setScreen('online-training')} 
+              onStartCompetitive={() => setScreen('competitive')}
             />
           </div>
         )
@@ -126,6 +129,15 @@ function PageContent() {
         return (
           <div className="mx-auto w-full max-w-3xl flex-1">
             <OnlineTraining 
+              onBack={() => setScreen('lobby')} 
+              onMatchFound={handleMatchFound}
+            />
+          </div>
+        )
+      case 'competitive':
+        return (
+          <div className="mx-auto w-full max-w-3xl flex-1">
+            <CompetitiveTraining 
               onBack={() => setScreen('lobby')} 
               onMatchFound={handleMatchFound}
             />
@@ -190,7 +202,7 @@ function PageContent() {
 
         {/* Content area: offset for the fixed sidebar on desktop */}
         <div className="flex min-h-screen flex-col gap-5 px-4 pb-24 pt-4 sm:px-6 md:gap-6 md:pb-6 md:pl-[19.5rem] md:pr-6">
-          <TopBar onSettingsOpen={() => setIsSettingsOpen(true)} />
+          <TopBar onSettingsOpen={() => setIsSettingsOpen(true)} onStoreOpen={() => setScreen('tienda')} />
 
           {renderScreen()}
         </div>

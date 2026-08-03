@@ -81,10 +81,8 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
               Balance Disponible
             </span>
             
-            <div className="mt-3 flex items-center justify-center gap-2 z-10">
-              <div className="flex size-10 items-center justify-center rounded-full bg-[linear-gradient(145deg,oklch(0.85_0.16_90),oklch(0.7_0.27_350))] text-xl font-bold text-[oklch(0.18_0.03_285)] shadow-[0_4px_10px_oklch(0.85_0.16_90/0.4)]">
-                S
-              </div>
+            <div className="mt-3 flex items-center justify-center gap-3 z-10">
+              <img src="/sugar-coin.png" alt="Sugar Coin" className="size-10 sm:size-12 object-contain drop-shadow-[0_4px_12px_rgba(255,215,0,0.5)]" />
               <span className="font-display text-5xl font-extrabold text-foreground drop-shadow-lg">
                 {coins.toLocaleString('es')}
               </span>

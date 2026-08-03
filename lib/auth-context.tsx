@@ -42,6 +42,7 @@ interface AuthState {
   logout: () => Promise<void>
   setNickname: (nickname: string) => Promise<void>
   setAvatar: (photoURL: string, deleteUrl?: string) => Promise<void>
+  deductCoins: (amount: number) => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined)
@@ -228,6 +229,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const deductCoins = async (amount: number): Promise<boolean> => {
+    if (!user) return false
+    if ((user.coins ?? 200) < amount) return false
+
+    if (user.isDev) {
+      const updatedUser = { ...user, coins: (user.coins ?? 200) - amount }
+      saveDevUser(updatedUser)
+      return true
+    } else {
+      try {
+        const userRef = doc(db, 'users', user.uid)
+        await updateDoc(userRef, {
+          coins: (user.coins ?? 200) - amount
+        })
+        return true
+      } catch (error) {
+        console.error('Error al debitar monedas:', error)
+        return false
+      }
+    }
+  }
+
   if (!isLoaded) return null
 
   return (
@@ -239,6 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         setNickname,
         setAvatar,
+        deductCoins,
       }}
     >
       {children}

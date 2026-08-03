@@ -4,10 +4,12 @@ import { Play, Bot, Globe, Trophy } from 'lucide-react'
 
 export function GameModes({ 
   onStartTraining, 
-  onStartOnlineTraining 
+  onStartOnlineTraining,
+  onStartCompetitive
 }: { 
   onStartTraining: () => void
   onStartOnlineTraining?: () => void
+  onStartCompetitive?: () => void
 }) {
   return (
     <section className="flex flex-col gap-4">
@@ -71,7 +73,7 @@ export function GameModes({
           subtitle="Torneos"
           accent="oklch(0.78 0.18 55)"
           gradient="oklch(0.78 0.18 55), oklch(0.7 0.27 350)"
-          tag="PRÓX."
+          onClick={onStartCompetitive}
         />
       </div>
     </section>

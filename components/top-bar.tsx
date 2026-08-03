@@ -3,7 +3,7 @@
 import { Settings, Plus } from 'lucide-react'
 import { usePlayer } from '@/lib/player-context'
 
-export function TopBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
+export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => void; onStoreOpen?: () => void }) {
   const { coins, gems, level, xp, xpMax } = usePlayer()
   const xpPercent = Math.min(100, Math.max(0, (xp / xpMax) * 100))
 
@@ -40,14 +40,12 @@ export function TopBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
         
         {/* Coins Pill */}
         <div className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/50 bg-[oklch(0_0_0/0.3)] p-1 pr-2 sm:pr-3 shadow-inner">
-          <div className="flex size-6 sm:size-7 items-center justify-center rounded-full bg-[linear-gradient(145deg,oklch(0.85_0.16_90),oklch(0.7_0.27_350))] shadow-[0_2px_8px_oklch(0.85_0.16_90/0.4)]">
-            <span className="font-display text-xs font-extrabold text-[oklch(0.18_0.03_285)]">S</span>
-          </div>
+          <img src="/sugar-coin.png" alt="Sugar Coin" className="size-6 sm:size-7 object-contain drop-shadow-[0_2px_8px_rgba(255,215,0,0.4)]" />
           <span className="font-display text-xs sm:text-sm font-extrabold tracking-wide text-foreground">
             {coins.toLocaleString('es')}
           </span>
-          <button className="hidden xs:flex ml-0.5 sm:ml-1 size-5 sm:size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a5b4fc,#6366f1)] text-white shadow-[0_2px_5px_rgba(99,102,241,0.5)] transition-transform hover:scale-110">
-            <Plus className="size-3 sm:size-4" strokeWidth={3} />
+          <button onClick={onStoreOpen} className="flex ml-1 sm:ml-1.5 size-5 sm:size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a5b4fc,#6366f1)] text-white shadow-[0_2px_5px_rgba(99,102,241,0.5)] transition-transform hover:scale-110">
+            <Plus className="size-3.5 sm:size-4" strokeWidth={3} />
           </button>
         </div>
 
@@ -61,8 +59,8 @@ export function TopBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
           <span className="font-display text-xs sm:text-sm font-extrabold tracking-wide text-foreground">
             {gems.toLocaleString('es')}
           </span>
-          <button className="hidden xs:flex ml-0.5 sm:ml-1 size-5 sm:size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a5b4fc,#6366f1)] text-white shadow-[0_2px_5px_rgba(99,102,241,0.5)] transition-transform hover:scale-110">
-            <Plus className="size-3 sm:size-4" strokeWidth={3} />
+          <button onClick={onStoreOpen} className="flex ml-1 sm:ml-1.5 size-5 sm:size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a5b4fc,#6366f1)] text-white shadow-[0_2px_5px_rgba(99,102,241,0.5)] transition-transform hover:scale-110">
+            <Plus className="size-3.5 sm:size-4" strokeWidth={3} />
           </button>
         </div>
 
