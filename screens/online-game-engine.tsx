@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle, Trophy } from 'lucide-react'
 import { recordMatchResult } from '@/lib/stats-service'
 import confetti from 'canvas-confetti'
 import { getSocket } from '@/lib/socket'
@@ -29,6 +29,34 @@ const getStartOffset = (color: PlayerColor, pCount: number): number => {
   }
   const offsets4: Record<PlayerColor, number> = { blue: 1, green: 14, red: 27, yellow: 40, purple: 0, orange: 0 }
   return offsets4[color] || 0
+}
+
+const buildFinalRankings = (
+  finishedIndices: number[],
+  allPlayers: Player[],
+  allTokens: Token[],
+  goalStep: number
+): Player[] => {
+  const finishedList = finishedIndices.map((idx) => allPlayers[idx]).filter(Boolean)
+  const remainingPlayers = allPlayers.filter((p) => !finishedIndices.includes(p.id))
+
+  remainingPlayers.sort((a, b) => {
+    const aTokens = allTokens.filter((t) => t.playerId === a.id)
+    const bTokens = allTokens.filter((t) => t.playerId === b.id)
+
+    const aGoalCount = aTokens.filter((t) => t.step === goalStep).length
+    const bGoalCount = bTokens.filter((t) => t.step === goalStep).length
+
+    if (aGoalCount !== bGoalCount) {
+      return bGoalCount - aGoalCount
+    }
+
+    const aProgress = aTokens.reduce((sum, t) => sum + (t.step > 0 ? t.step : 0), 0)
+    const bProgress = bTokens.reduce((sum, t) => sum + (t.step > 0 ? t.step : 0), 0)
+    return bProgress - aProgress
+  })
+
+  return [...finishedList, ...remainingPlayers]
 }
 
 export interface OnlineGameData {
@@ -194,6 +222,7 @@ export function OnlineGameEngine({
   const barrierLifetimesRef = useRef<Record<number, number>>({})
   const finishedPlayerIndicesRef = useRef<number[]>([])
   const lastProcessedMoveRef = useRef<string>('')
+  const moveQueueRef = useRef<{ playerId: string; tokenId: number; newPathIndex: number }[]>([])
   const pendingMoveRef = useRef<{ data: any; timeout: NodeJS.Timeout | null }>({ data: null, timeout: null })
   // Prevenir cierre accidental de pestaña (F5 / Cierre)
   useEffect(() => {
@@ -727,43 +756,49 @@ export function OnlineGameEngine({
       }, 500)
     }
 
+    // Move Queue to process moves sequentially without dropping network events
+    const processNextQueuedMove = () => {
+      if (isAnimatingMoveRef.current) return
+      if (moveQueueRef.current.length === 0) return
+      const nextMove = moveQueueRef.current.shift()
+      if (nextMove) {
+        processTokenMoved(nextMove)
+      }
+    }
+
     // 3. Token Moved (with Step-by-Step animation & Rules checking)
     const handleTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number }) => {
       globalLogger.log('SOCKET', 'Recibido event_token_moved', data)
-
-      if (pendingMoveRef.current.timeout) {
-        clearTimeout(pendingMoveRef.current.timeout)
-      }
-
-      pendingMoveRef.current.data = data
-      pendingMoveRef.current.timeout = setTimeout(() => {
-        processTokenMoved(pendingMoveRef.current.data)
-      }, 50)
+      moveQueueRef.current.push(data)
+      processNextQueuedMove()
     }
 
     const processTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number }) => {
-      // CRITICAL GUARD: never start a second animation while one is already running.
-      // This is the definitive protection against concurrent animation loops that cause double sounds.
       if (isAnimatingMoveRef.current) {
-        globalLogger.log('SOCKET', 'Ignorando event_token_moved: animación en curso.')
+        // Re-queue if an animation is currently running
+        moveQueueRef.current.unshift(data)
         return
       }
 
       const moveSignature = `${data.playerId}-${data.tokenId}-${data.newPathIndex}`
       if (lastProcessedMoveRef.current === moveSignature) {
         globalLogger.log('SOCKET', 'Ignorando evento duplicado exacto (prevención de sonido doble).')
+        processNextQueuedMove()
         return
       }
       lastProcessedMoveRef.current = moveSignature
 
       const serverPlayerIdx = gameData.players.findIndex((p) => p.playerId === data.playerId)
-      if (serverPlayerIdx < 0) return
+      if (serverPlayerIdx < 0) {
+        processNextQueuedMove()
+        return
+      }
 
       const tokenIndex = data.tokenId
       const currentToken = tokensRef.current.find(
         (t) => t.playerId === serverPlayerIdx && t.id === tokenIndex
       )
-      const startStep = currentToken ? currentToken.step : -1
+      let startStep = currentToken ? currentToken.step : -1
       const targetStep = data.newPathIndex
 
       // Intercept Penalty return to base (-1)
@@ -780,6 +815,7 @@ export function OnlineGameEngine({
         if (isMyTurnRef.current) {
           emitEndTurnIfNeeded([])
         }
+        setTimeout(processNextQueuedMove, 100)
         return
       }
 
@@ -796,8 +832,26 @@ export function OnlineGameEngine({
         consumedVal = 5
         animSteps = 1 // Direct 1 step from Base (-1) to First Cell (0 or 1)
       } else {
-        consumedVal = targetStep - startStep
-        animSteps = targetStep - startStep
+        const diff = targetStep - startStep
+        if (diff > 25) {
+          // Desync Guard: token was lagging behind due to skipped events.
+          // Instantly snap token to expected start position (targetStep - 25 or expected) before animating.
+          const syncedStartStep = Math.max(0, targetStep - 25)
+          globalLogger.log('TOKENS', `Desfase detectado (${startStep} -> ${targetStep}). Sincronizando posición base instantáneamente a step ${syncedStartStep}.`)
+          
+          tokensRef.current = tokensRef.current.map((t) =>
+            t.playerId === serverPlayerIdx && t.id === tokenIndex
+              ? { ...t, step: syncedStartStep }
+              : t
+          )
+          setTokens(tokensRef.current)
+          startStep = syncedStartStep
+          consumedVal = targetStep - syncedStartStep
+          animSteps = consumedVal
+        } else {
+          consumedVal = diff
+          animSteps = diff
+        }
       }
 
       if (consumedVal <= 0 || animSteps <= 0) {
@@ -816,6 +870,7 @@ export function OnlineGameEngine({
             }
           }, 300)
         }
+        setTimeout(processNextQueuedMove, 50)
         return
       }
 
@@ -938,6 +993,8 @@ export function OnlineGameEngine({
           setTokens(finalTokens)
           setRemainingMoves(updatedMoves)
           setIsAnimatingMove(false)
+          isAnimatingMoveRef.current = false
+          setTimeout(processNextQueuedMove, 80)
 
           // Check for Player Win / Completion
           if (targetStep === goalStep) {
@@ -953,11 +1010,18 @@ export function OnlineGameEngine({
               const finishedCount = finishedPlayerIndicesRef.current.length
 
               const isGameOver =
-                (totalPlayers <= 3 && finishedCount >= 1) ||
-                (totalPlayers >= 4 && finishedCount >= 3) ||
-                (finishedCount >= totalPlayers - 1)
+                (totalPlayers === 2 && finishedCount >= 1) ||
+                (totalPlayers === 3 && finishedCount >= 2) ||
+                (totalPlayers >= 4 && (finishedCount >= 3 || finishedCount >= totalPlayers - 1))
 
               if (isGameOver) {
+                const finalRankings = buildFinalRankings(
+                  finishedPlayerIndicesRef.current,
+                  formattedPlayersRef.current,
+                  finalTokens,
+                  goalStep
+                )
+                setRankings(finalRankings)
                 setWinnerPlayer(finishedPlayer)
                 globalLogger.log('GAME-FLOW', `¡Partida finalizada! Ganadores: ${finishedPlayer.name}`)
                 return
@@ -1027,6 +1091,14 @@ export function OnlineGameEngine({
     const handleGameOverAbandonment = (data: { winnerId: string }) => {
       const winnerIdx = gameData.players.findIndex((p) => p.playerId === data.winnerId)
       const wPlayer = formattedPlayersRef.current[winnerIdx >= 0 ? winnerIdx : 0]
+      const winIdx = winnerIdx >= 0 ? winnerIdx : 0
+      const finalRankings = buildFinalRankings(
+        [winIdx],
+        formattedPlayersRef.current,
+        tokensRef.current,
+        getGoalStep(gameData.players.length)
+      )
+      setRankings(finalRankings)
       setWinnerPlayer(wPlayer)
       showToast(`🏆 ¡Partida finalizada! Ganador: ${wPlayer.name}`)
     }
@@ -1461,6 +1533,60 @@ export function OnlineGameEngine({
           </div>
         )
       })()}
+
+      {/* Winner Celebration Modal (Universal Online Podium) */}
+      {winnerPlayer !== null && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[oklch(0.7_0.27_350/0.3)] backdrop-blur-xl p-4 cyber-game-panel">
+          <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] max-w-md w-full rounded-3xl p-8 border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_60px_oklch(0.7_0.27_350/0.15)] flex flex-col items-center text-center gap-6 animate-in zoom-in duration-300">
+            <Trophy className="text-[var(--candy-green,oklch(0.78_0.2_150))] animate-bounce drop-shadow-[0_0_15px_var(--candy-green,oklch(0.78_0.2_150))]" size={64} />
+            <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[var(--candy-magenta,oklch(0.7_0.27_350))] to-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_oklch(0.7_0.27_350/0.5)] uppercase tracking-wider font-display">
+              ¡Partida Finalizada!
+            </h2>
+            
+            <div className="w-full flex flex-col gap-3 mt-2 mb-2">
+              {(() => {
+                const listToDisplay = rankings.length >= formattedPlayers.length
+                  ? rankings
+                  : buildFinalRankings(
+                      finishedPlayerIndicesRef.current,
+                      formattedPlayers,
+                      tokens,
+                      getGoalStep(gameData.players.length)
+                    );
+                return listToDisplay.map((p, idx) => (
+                  <div key={p.id} className="flex items-center justify-between bg-[var(--panel-border,oklch(0.7_0.27_350/0.1))] p-3 rounded-xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.2))]">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl drop-shadow-md">
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🎖️'}
+                      </span>
+                      <span className="font-bold text-white/90 text-sm uppercase tracking-wide">
+                        {idx + 1}.º LUGAR
+                      </span>
+                    </div>
+                    <span 
+                      className="font-black text-lg drop-shadow-md capitalize" 
+                      style={{ color: p.color === 'yellow' ? '#facc15' : p.color === 'red' ? '#f43f5e' : p.color === 'green' ? '#4ade80' : p.color === 'blue' ? '#60a5fa' : '#fff' }}
+                    >
+                      {p.name}
+                    </span>
+                  </div>
+                ));
+              })()}
+            </div>
+            <div className="flex flex-col gap-3 w-full mt-2">
+              <button
+                onClick={() => {
+                  if (socket) socket.emit('intent_leave_room', { roomId: gameData.roomId })
+                  onExit()
+                }}
+                className="w-full py-4 bg-[linear-gradient(145deg,oklch(0.78_0.2_150),color-mix(in_oklch,oklch(0.78_0.2_150),black_12%))] text-[oklch(0.18_0.03_285)] font-black rounded-2xl text-lg hover:brightness-110 active:scale-95 shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.5_0.14_155),0_10px_20px_color-mix(in_oklch,oklch(0.5_0.14_155),transparent_55%)] transition-all cursor-pointer uppercase tracking-wider font-display"
+              >
+                Volver al Menú
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
