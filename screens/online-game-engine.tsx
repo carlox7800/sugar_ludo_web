@@ -1332,31 +1332,27 @@ export function OnlineGameEngine({
         {/* Corners with PlayerCorners */}
         {(() => {
           const activePlayers = formattedPlayers;
-          const humanIdx = activePlayers.findIndex(p => p.type === 'human');
+          const baseIdx = myPlayerIndex >= 0 ? myPlayerIndex : 0;
 
           return activePlayers.map((p, index) => {
+            const offset = (index - baseIdx + activePlayers.length) % activePlayers.length;
             let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
 
-            if (p.type === 'human') {
-              pos = 'bottom-left';
-            } else {
-              const baseIdx = humanIdx >= 0 ? humanIdx : 0;
-              const offset = (index - baseIdx + activePlayers.length) % activePlayers.length;
-
-              if (activePlayers.length === 6) {
-                const positions: any[] = ['bottom-left', 'bottom-right', 'mid-right', 'top-right', 'top-left', 'mid-left'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 5) {
-                const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left', 'mid-left'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 4) {
-                const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 3) {
-                pos = offset === 1 ? 'bottom-right' : 'top-left';
-              } else if (activePlayers.length === 2) {
-                pos = offset === 1 ? 'top-right' : 'bottom-left';
-              }
+            if (activePlayers.length === 6) {
+              const positions: any[] = ['bottom-left', 'bottom-right', 'mid-right', 'top-right', 'top-left', 'mid-left'];
+              pos = positions[offset];
+            } else if (activePlayers.length === 5) {
+              const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left', 'mid-left'];
+              pos = positions[offset];
+            } else if (activePlayers.length === 4) {
+              const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
+              pos = positions[offset];
+            } else if (activePlayers.length === 3) {
+              const positions: any[] = ['bottom-left', 'bottom-right', 'top-left'];
+              pos = positions[offset];
+            } else if (activePlayers.length === 2) {
+              const positions: any[] = ['bottom-left', 'top-right'];
+              pos = positions[offset];
             }
 
             const isActiveTurn = activePlayerIndex === p.id;
