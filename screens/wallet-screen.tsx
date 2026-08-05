@@ -1,11 +1,20 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info } from 'lucide-react'
-import { usePlayer } from '@/lib/player-context'
+import { useAuth } from '@/lib/auth-context'
+import { fetchWalletTransactions, recordWalletTransaction, WalletTransaction } from '@/lib/wallet-service'
 
 export function WalletScreen({ onBack }: { onBack: () => void }) {
-  const { coins, setCoins } = usePlayer()
+  const { user } = useAuth()
+  const coins = user ? Number(user.coins || 0) : 0
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([])
+  
+  useEffect(() => {
+    if (user?.uid) {
+      fetchWalletTransactions(user.uid).then(setTransactions)
+    }
+  }, [user?.uid])
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit')
@@ -36,25 +45,35 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
     setTimeout(() => setNotification(null), 3000)
   }
 
-  const handleDepositSubmit = (e: React.FormEvent) => {
+  const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!user?.uid) return
+
     const amount = parseInt(depositAmount, 10)
     if (isNaN(amount) || amount <= 0) {
       setNotification({ message: 'Ingrese un monto válido', type: 'info' })
       return
     }
     
-    // Simulate instant deposit (1 USDT = 100 Sugar Coins)
     const coinsToAdd = amount * 100
-    setCoins(coins + coinsToAdd)
+    await recordWalletTransaction(user.uid, {
+      type: 'deposit',
+      amount: coinsToAdd,
+      description: 'Depósito simulado USDT',
+    })
     
     setDepositAmount('')
     setTxId('')
-    showNotification(`Depósito simulado acreditado con éxito (+${coinsToAdd} Coins)`)
+    showNotification(`Depósito acreditado con éxito (+${coinsToAdd} Coins)`)
+    
+    // Refresh local UI data
+    fetchWalletTransactions(user.uid).then(setTransactions)
   }
 
-  const handleWithdrawSubmit = (e: React.FormEvent) => {
+  const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!user?.uid) return
+
     const amount = parseInt(withdrawAmount, 10)
     if (isNaN(amount) || amount <= 0) {
       setNotification({ message: 'Ingrese un monto válido', type: 'info' })
@@ -68,12 +87,18 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
       return
     }
 
-    // Simulate instant withdrawal
-    setCoins(coins - coinsToDeduct)
+    await recordWalletTransaction(user.uid, {
+      type: 'withdraw',
+      amount: -coinsToDeduct,
+      description: isVipWithdraw ? 'Retiro VIP' : 'Retiro Estándar',
+    })
 
     setWithdrawAmount('')
     setWithdrawAddress('')
-    showNotification(`Retiro simulado procesado con éxito (-${coinsToDeduct} Coins)`)
+    showNotification(`Retiro procesado con éxito (-${coinsToDeduct} Coins)`)
+    
+    // Refresh local UI data
+    fetchWalletTransactions(user.uid).then(setTransactions)
   }
 
   return (
@@ -272,54 +297,23 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
           </div>
           
           <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar max-h-[550px] flex flex-col gap-3">
-            <TransactionItem 
-              type="deposit" 
-              title="Recompensa Diaria" 
-              date="Hoy, 10:42 AM" 
-              amount="+50" 
-              usdtEquivalent="0.50"
-              color="var(--candy-cyan)"
-            />
-            <TransactionItem 
-              type="withdrawal" 
-              title="Entrada Torneo" 
-              date="Ayer, 18:30 PM" 
-              amount="-250" 
-              usdtEquivalent="2.50"
-              color="var(--candy-magenta)"
-            />
-            <TransactionItem 
-              type="deposit" 
-              title="Ganancia Mesa VIP" 
-              date="21 Jul, 14:15 PM" 
-              amount="+1,200" 
-              usdtEquivalent="12.00"
-              color="var(--candy-gold)"
-            />
-            <TransactionItem 
-              type="deposit" 
-              title="Recarga USDT" 
-              date="19 Jul, 09:20 AM" 
-              amount="+5,000" 
-              usdtEquivalent="50.00"
-              color="var(--candy-cyan)"
-            />
-            <TransactionItem 
-              type="withdrawal" 
-              title="Retiro a Billetera" 
-              date="15 Jul, 16:45 PM" 
-              amount="-10,000" 
-              usdtEquivalent="100.00"
-              color="var(--candy-magenta)"
-            />
-            <TransactionItem 
-              type="deposit" 
-              title="Bono Semanal" 
-              date="14 Jul, 10:00 AM" 
-              amount="+200" 
-              usdtEquivalent="2.00"
-              color="var(--candy-gold)"
-            />
+            {transactions.length === 0 ? (
+              <div className="text-center text-muted-foreground p-8 font-display text-sm">
+                No hay movimientos recientes
+              </div>
+            ) : (
+              transactions.map(tx => (
+                <TransactionItem 
+                  key={tx.id}
+                  type={tx.amount > 0 ? 'deposit' : 'withdrawal'}
+                  title={tx.description}
+                  date={tx.dateStr || 'Reciente'}
+                  amount={`${tx.amount > 0 ? '+' : ''}${tx.amount}`}
+                  usdtEquivalent={Math.abs(tx.amount / 100).toFixed(2)}
+                  color={tx.amount > 0 ? (tx.type === 'match_prize' ? 'var(--candy-gold)' : 'var(--candy-cyan)') : 'var(--candy-magenta)'}
+                />
+              ))
+            )}
           </div>
         </div>
       </div>

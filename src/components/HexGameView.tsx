@@ -481,18 +481,6 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           });
           globalLogger.log('GAME-FLOW', `🎉 ¡${activePlayer.name} ha finalizado en la posición #${newRank}!`, { playerColor: activePlayer.color });
 
-          if (activePlayer.type === 'human' && user?.uid) {
-            const botOpponents = prev.players.filter(p => p.id !== activePlayer.id).map(p => p.name);
-            recordMatchResult(user.uid, {
-              mode: `Entrenamiento IA Hexagonal (${prev.players.filter(p => p.isActive).length}J)`,
-              rank: newRank,
-              totalPlayers: prev.players.filter(p => p.isActive).length,
-              opponents: botOpponents,
-              durationSeconds: 150,
-              xpGained: newRank === 1 ? 150 : 40,
-              coinsEarned: newRank === 1 ? 100 : 20,
-            }).catch(e => console.warn('Match record error:', e));
-          }
 
           const activeCount = prev.players.filter(p => p.isActive).length;
           let requiredFinishers = 1;

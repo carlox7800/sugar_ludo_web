@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil } from 'lucide-react'
+import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil, Check } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { AvatarSelectorModal, PRESET_AVATARS } from './avatar-selector-modal'
 import { HistoryModal } from './history-modal'

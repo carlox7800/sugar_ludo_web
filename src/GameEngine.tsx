@@ -726,18 +726,6 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         setPlayers(prev => prev.map(p => p.id === pId ? { ...p, hasFinished: true, rank: newRank } : p));
         addLog(`🎉 ¡${activePlayer.name} ha finalizado en la posición #${newRank}!`, 'system', activePlayer.color);
 
-        if (activePlayer.type === 'human' && user?.uid) {
-          const botOpponents = players.filter(p => p.id !== pId).map(p => p.name);
-          recordMatchResult(user.uid, {
-            mode: `Entrenamiento IA (${players.filter(p => p.isActive).length}J)`,
-            rank: newRank,
-            totalPlayers: players.filter(p => p.isActive).length,
-            opponents: botOpponents,
-            durationSeconds: 120,
-            xpGained: newRank === 1 ? 150 : 40,
-            coinsEarned: newRank === 1 ? 100 : 20,
-          }).catch(e => console.warn('Match record error:', e));
-        }
 
         const activePlayersCount = players.filter(p => p.isActive).length;
         if (newRank >= activePlayersCount - 1) {

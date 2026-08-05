@@ -11,6 +11,7 @@ import { PlayerCorner } from '@/src/components/PlayerCorner'
 import { Token, Player, PlayerColor } from '@/src/types'
 import { globalLogger } from '@/lib/logger'
 import { audio } from '@/src/audio'
+import { ECONOMY_MATRIX } from '@/components/competitive-training'
 
 import { HexagonalLudoBoardView } from '@/src/components/HexagonalLudoBoardView'
 import { HEX_COLORS_ORDER, STAR_CELLS } from '@/src/HexBoardConstants'
@@ -241,6 +242,40 @@ export function OnlineGameEngine({
   const mutedRef = useRef<boolean>(muted)
   mutedRef.current = muted
   const [rankings, setRankings] = useState<Player[]>([])
+  const recordedMatchRef = useRef<boolean>(false)
+
+  const recordOnlineMatchResult = (finalRankings: Player[]) => {
+    if (!user?.uid || recordedMatchRef.current) return
+    recordedMatchRef.current = true
+
+    const myIndexInRankings = finalRankings.findIndex((p) => p.id === myPlayerIndex)
+    const myRank = myIndexInRankings !== -1 ? myIndexInRankings + 1 : finalRankings.length
+    const totalPlayers = gameData.players.length
+    const isCompetitive = modeType === 'competitive'
+    const modeName = isCompetitive ? `Competitivo (${totalPlayers}J)` : `Entrenamiento Online (${totalPlayers}J)`
+
+    let coinsEarned = 0
+    if (isCompetitive) {
+      const prizes = ECONOMY_MATRIX[totalPlayers]?.prizes || []
+      coinsEarned = prizes[myRank - 1] || 0
+    }
+
+    const opponents = formattedPlayersRef.current
+      .filter((p) => p.id !== myPlayerIndex)
+      .map((p) => p.name.replace(' (Tú)', ''))
+
+    const xpGained = myRank === 1 ? 200 : myRank === 2 ? 100 : 50
+
+    recordMatchResult(user.uid, {
+      mode: modeName,
+      rank: myRank,
+      totalPlayers,
+      opponents,
+      durationSeconds: 180,
+      xpGained,
+      coinsEarned,
+    }).catch((e) => console.warn('Match record error:', e))
+  }
 
   const updateBarrierLifetimes = (currentTokens: Token[] = tokensRef.current, endingPlayerIdx?: number) => {
     const nextLifetimes: Record<number, number> = { ...barrierLifetimesRef.current }
@@ -1023,6 +1058,7 @@ export function OnlineGameEngine({
                 )
                 setRankings(finalRankings)
                 setWinnerPlayer(finishedPlayer)
+                recordOnlineMatchResult(finalRankings)
                 globalLogger.log('GAME-FLOW', `¡Partida finalizada! Ganadores: ${finishedPlayer.name}`)
                 return
               }
@@ -1100,6 +1136,7 @@ export function OnlineGameEngine({
       )
       setRankings(finalRankings)
       setWinnerPlayer(wPlayer)
+      recordOnlineMatchResult(finalRankings)
       showToast(`🏆 ¡Partida finalizada! Ganador: ${wPlayer.name}`)
     }
 
@@ -1553,24 +1590,36 @@ export function OnlineGameEngine({
                       tokens,
                       getGoalStep(gameData.players.length)
                     );
-                return listToDisplay.map((p, idx) => (
-                  <div key={p.id} className="flex items-center justify-between bg-[var(--panel-border,oklch(0.7_0.27_350/0.1))] p-3 rounded-xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.2))]">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl drop-shadow-md">
-                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🎖️'}
-                      </span>
-                      <span className="font-bold text-white/90 text-sm uppercase tracking-wide">
-                        {idx + 1}.º LUGAR
-                      </span>
+                const pCount = gameData.players.length
+                const prizeList = ECONOMY_MATRIX[pCount]?.prizes || []
+                return listToDisplay.map((p, idx) => {
+                  const prize = modeType === 'competitive' ? (prizeList[idx] || 0) : 0
+                  return (
+                    <div key={p.id} className="flex items-center justify-between bg-[var(--panel-border,oklch(0.7_0.27_350/0.1))] p-3 rounded-xl border border-[var(--panel-border,oklch(0.7_0.27_350/0.2))]">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl drop-shadow-md">
+                          {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🎖️'}
+                        </span>
+                        <span className="font-bold text-white/90 text-sm uppercase tracking-wide">
+                          {idx + 1}.º LUGAR
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span 
+                          className="font-black text-lg drop-shadow-md capitalize" 
+                          style={{ color: p.color === 'yellow' ? '#facc15' : p.color === 'red' ? '#f43f5e' : p.color === 'green' ? '#4ade80' : p.color === 'blue' ? '#60a5fa' : '#fff' }}
+                        >
+                          {p.name}
+                        </span>
+                        {prize > 0 && (
+                          <span className="flex items-center gap-1 font-display text-sm font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30 drop-shadow-[0_0_8px_rgba(52,211,153,0.3)] ml-1">
+                            +{prize} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <span 
-                      className="font-black text-lg drop-shadow-md capitalize" 
-                      style={{ color: p.color === 'yellow' ? '#facc15' : p.color === 'red' ? '#f43f5e' : p.color === 'green' ? '#4ade80' : p.color === 'blue' ? '#60a5fa' : '#fff' }}
-                    >
-                      {p.name}
-                    </span>
-                  </div>
-                ));
+                  )
+                });
               })()}
             </div>
             <div className="flex flex-col gap-3 w-full mt-2">

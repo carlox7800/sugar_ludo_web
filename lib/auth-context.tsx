@@ -13,9 +13,11 @@ import {
   setDoc, 
   updateDoc, 
   onSnapshot, 
-  serverTimestamp 
+  serverTimestamp,
+  increment 
 } from 'firebase/firestore'
 import { auth, db, googleProvider } from './firebase'
+import { recordWalletTransaction } from './wallet-service'
 
 export interface User {
   uid: string
@@ -243,6 +245,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await updateDoc(userRef, {
           coins: (user.coins ?? 200) - amount
         })
+        
+        await recordWalletTransaction(user.uid, {
+          type: 'match_fee',
+          amount: -amount,
+          description: 'Entrada Mesa Competitiva'
+        }, true) // skipCoinUpdate = true
+
         return true
       } catch (error) {
         console.error('Error al debitar monedas:', error)

@@ -187,13 +187,13 @@ export function GameGuideModal({ isOpen, onClose }: GameGuideModalProps) {
                     <td className="py-2 pr-2 font-bold text-foreground">5 Jug</td>
                     <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-200 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
                     <td className="py-2 px-2 font-bold text-foreground">-1000 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
-                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+450</span>, <span className="text-emerald-400/80 font-bold">+220</span>, <span className="text-emerald-400/60 font-bold">+110</span></td>
+                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+400</span>, <span className="text-emerald-400/80 font-bold">+200</span>, <span className="text-emerald-400/60 font-bold">+100</span></td>
                   </tr>
                   <tr>
                     <td className="py-2 pr-2 font-bold text-foreground">6 Jug</td>
                     <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-300 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
                     <td className="py-2 px-2 font-bold text-foreground">-1800 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
-                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+800</span>, <span className="text-emerald-400/80 font-bold">+400</span>, <span className="text-emerald-400/60 font-bold">+200</span></td>
+                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+500</span>, <span className="text-emerald-400/80 font-bold">+250</span>, <span className="text-emerald-400/60 font-bold">+100</span></td>
                   </tr>
                 </tbody>
               </table>
