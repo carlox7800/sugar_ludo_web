@@ -482,7 +482,10 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
         <circle cx={375} cy={375} r={5} fill="#0284c7" />
 
 
-        {/* --- TOKENS (Fichas) --- */}
+      </svg>
+
+      {/* --- HTML GPU OVERLAY (Fichas Aceleradas por Hardware a 60 FPS) --- */}
+      <div className="absolute inset-2 pointer-events-none overflow-hidden">
         {tokens.map((token) => {
           const { x, y } = getTokenVisualCoord(token);
           const isSelectable = playableTokenIds.includes(token.playerId * 4 + token.id);
@@ -492,93 +495,103 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           const pulseColor = COLOR_HEX[token.color];
           const isCurrentTurnToken = token.playerId === currentTurn;
 
+          // Pure GPU Hardware Translation using percentage of 48px token size on 750px viewBox board
+          const tx = ((x / 48) * 100) - 50;
+          const ty = ((y / 48) * 100) - 50;
+
           return (
-            <g
+            <div
               key={`token-${token.color}-${token.id}`}
-              className={`${isSelectable ? 'cursor-pointer' : 'pointer-events-none'}`}
+              className={`absolute top-0 left-0 ${isSelectable ? 'cursor-pointer pointer-events-auto' : 'pointer-events-none'}`}
               style={{
-                transform: `translate(${x}px, ${y}px)`,
+                width: `${(48 / 750) * 100}%`,
+                height: `${(48 / 750) * 100}%`,
+                transform: `translate3d(${tx}%, ${ty}%, 0)`,
                 transition: 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                willChange: 'transform',
+                zIndex: isSelectable ? 30 : 10,
               }}
               onClick={() => isSelectable && onTokenClick(token.playerId * 4 + token.id)}
             >
-              <g className={isSelectable ? 'breathing-token' : ''}>
-                {appTheme === 'sugar' ? (
-                  <>
-                    <path d="M -15 0 L -24 -10 L -24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
-                    <path d="M 15 0 L 24 -10 L 24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
-                    <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
-                    <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
-                    <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
-                  </>
-                ) : (
-                  <>
-                    <circle cx={0} cy={0} r={16} fill={`url(#token-${token.color}-grad)`} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
-                    <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                    <circle cx={0} cy={0} r={5} fill={`url(#token-${token.color}-grad)`} />
-                    <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
-                  </>
-                )}
+              <div className={`w-full h-full flex items-center justify-center ${isSelectable ? 'breathing-token' : ''}`}>
+                <svg viewBox="-25 -25 50 50" className="w-full h-full overflow-visible">
+                  {appTheme === 'sugar' ? (
+                    <>
+                      <path d="M -15 0 L -24 -10 L -24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
+                      <path d="M 15 0 L 24 -10 L 24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
+                      <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
+                      <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
+                      <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
+                    </>
+                  ) : (
+                    <>
+                      <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
+                      <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                      <circle cx={0} cy={0} r={5} fill={COLOR_HEX[token.color]} />
+                      <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                    </>
+                  )}
 
-                {/* Number centered to differentiate same-color tokens */}
-                <text
-                  x={0}
-                  y={0.5}
-                  fill="#FFFFFF"
-                  fontSize="11"
-                  fontWeight="bold"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  opacity="0.9"
-                >
-                  {token.id + 1}
-                </text>
-              </g>
-            </g>
+                  {/* Number centered to differentiate same-color tokens */}
+                  <text
+                    x={0}
+                    y={0.5}
+                    fill="#FFFFFF"
+                    fontSize="11"
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    opacity="0.9"
+                  >
+                    {token.id + 1}
+                  </text>
+                </svg>
+              </div>
+            </div>
           );
         })}
-        {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales Gigantes) --- */}
+
+        {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales GPU) --- */}
         {explosionData && explosionData.cellIndex >= 1 && explosionData.cellIndex <= 52 && (() => {
           const cell = PERIMETER_CELLS[explosionData.cellIndex - 1];
           const x = cell.col * cellSize;
           const y = cell.row * cellSize;
           
           return (
-            <g className="fireworks-overlay" style={{ transformOrigin: `${x + 25}px ${y + 25}px` }}>
-              {/* Inner Burst Gigante */}
-              <circle cx={x + 25} cy={y + 25} r={15} fill="none" stroke={COLOR_MAP[explosionData.color]} style={{ animation: 'fireworkRing 0.8s ease-out forwards', transformOrigin: `${x + 25}px ${y + 25}px` }} />
-              
-              {/* Partículas Masivas con Gravedad */}
-              {Array.from({ length: 16 }).map((_, i) => {
-                const angle = (i * 360) / 16;
-                const rad = angle * Math.PI / 180;
-                const distance = 100 + (i % 2 === 0 ? 60 : 0); // 100 a 160 px de radio
-                const dx = Math.cos(rad) * distance;
-                const dy = Math.sin(rad) * distance + 60; // Mayor efecto de gravedad
-                
-                // Deterministic pseudorandom for animationDelay (based on index) to avoid Math.random() in render
-                const randomDelay = (i * 17 % 100) / 1000 * 1.5; // 0 to 0.15s
-                
-                return (
-                  <circle 
-                    key={i} 
-                    cx={x + 25} cy={y + 25} r={5 + (i % 4)} 
-                    fill={COLOR_MAP[explosionData.color]} 
-                    style={{
-                      animation: `fireworkParticle 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
-                      animationDelay: `${randomDelay}s`,
-                      '--dx': `${dx}px`,
-                      '--dy': `${dy}px`,
-                      transformOrigin: `${x + 25}px ${y + 25}px`
-                    } as any} 
-                  />
-                );
-              })}
-            </g>
+            <svg 
+              className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-50"
+              viewBox="0 0 750 750"
+            >
+              <g className="fireworks-overlay" style={{ transformOrigin: `${x + 25}px ${y + 25}px` }}>
+                <circle cx={x + 25} cy={y + 25} r={15} fill="none" stroke={COLOR_MAP[explosionData.color]} style={{ animation: 'fireworkRing 0.8s ease-out forwards', transformOrigin: `${x + 25}px ${y + 25}px` }} />
+                {Array.from({ length: 16 }).map((_, i) => {
+                  const angle = (i * 360) / 16;
+                  const rad = angle * Math.PI / 180;
+                  const distance = 100 + (i % 2 === 0 ? 60 : 0);
+                  const dx = Math.cos(rad) * distance;
+                  const dy = Math.sin(rad) * distance + 60;
+                  const randomDelay = (i * 17 % 100) / 1000 * 1.5;
+                  
+                  return (
+                    <circle 
+                      key={i} 
+                      cx={x + 25} cy={y + 25} r={5 + (i % 4)} 
+                      fill={COLOR_MAP[explosionData.color]} 
+                      style={{
+                        animation: `fireworkParticle 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
+                        animationDelay: `${randomDelay}s`,
+                        '--dx': `${dx}px`,
+                        '--dy': `${dy}px`,
+                        transformOrigin: `${x + 25}px ${y + 25}px`
+                      } as any} 
+                    />
+                  );
+                })}
+              </g>
+            </svg>
           );
         })()}
-
-      </svg>
+      </div>
     </div>
   );
 });

@@ -471,49 +471,52 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
       >
           <HexBoardStaticSVG />
 
-          {/* Tokens Layer */}
-          {tokens.map((token) => {
-            const pos = getTokenCoordinates(token, tokens);
-            const globalId = token.playerId * 4 + token.id;
-            const isPlayable = (playableTokenIds.includes(token.id) || playableTokenIds.includes(globalId)) && activePlayer?.color === token.color;
-            const tokenInfo = HEX_COLOR_INFO[token.color];
-            const isBase = token.step <= 0;
+      </svg>
 
-            return (
-              <g
-                key={`hex-token-${token.color}-${token.id}`}
-                onClick={() => {
-                  if (isPlayable) {
-                    onTokenClick(token.id);
-                  }
-                }}
-                className={`${isPlayable ? 'cursor-pointer' : 'pointer-events-none'}`}
-                style={{
-                  transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
-                  willChange: 'transform',
-                  transition: 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
-              >
-                <g className={`${isPlayable && activePlayer?.type === 'human' ? 'breathing-token-hex' : ''}`}>
+      {/* --- HTML GPU OVERLAY (Fichas Hexágono Aceleradas por GPU a 60 FPS) --- */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {tokens.map((token) => {
+          const pos = getTokenCoordinates(token, tokens);
+          const globalId = token.playerId * 4 + token.id;
+          const isPlayable = (playableTokenIds.includes(token.id) || playableTokenIds.includes(globalId)) && activePlayer?.color === token.color;
+          const tokenInfo = HEX_COLOR_INFO[token.color];
+          const isBase = token.step <= 0;
+
+          // Pure GPU Hardware Translation using percentage of 48px token size on 722x688 viewBox board
+          const tx = (((pos.x - 139) / 48) * 100) - 50;
+          const ty = (((pos.y - 156) / 48) * 100) - 50;
+
+          return (
+            <div
+              key={`hex-token-${token.color}-${token.id}`}
+              className={`absolute top-0 left-0 ${isPlayable ? 'cursor-pointer pointer-events-auto' : 'pointer-events-none'}`}
+              style={{
+                width: `${(48 / 722) * 100}%`,
+                height: `${(48 / 688) * 100}%`,
+                transform: `translate3d(${tx}%, ${ty}%, 0)`,
+                transition: 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                willChange: 'transform',
+                zIndex: isPlayable ? 30 : 10,
+              }}
+              onClick={() => isPlayable && onTokenClick(token.id)}
+            >
+              <div className={`w-full h-full flex items-center justify-center ${isPlayable && activePlayer?.type === 'human' ? 'breathing-token-hex' : ''}`}>
+                <svg viewBox="-24 -24 48 48" className="w-full h-full overflow-visible">
                   {appTheme === 'sugar' ? (
-                    <>
-                      <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-                        <path d="M -15 0 L -24 -10 L -24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
-                        <path d="M 15 0 L 24 -10 L 24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
-                        <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
-                        <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
-                        <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
-                      </g>
-                    </>
+                    <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
+                      <path d="M -15 0 L -24 -10 L -24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
+                      <path d="M 15 0 L 24 -10 L 24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
+                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
+                      <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
+                      <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
+                    </g>
                   ) : (
-                    <>
-                      <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-                        <circle cx={0} cy={0} r={16} fill={`url(#token-${token.color}-grad)`} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
-                        <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                        <circle cx={0} cy={0} r={5} fill={`url(#token-${token.color}-grad)`} />
-                        <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
-                      </g>
-                    </>
+                    <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
+                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
+                      <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                      <circle cx={0} cy={0} r={5} fill={tokenInfo.hexCode} />
+                      <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                    </g>
                   )}
 
                   {/* Token Number */}
@@ -529,25 +532,27 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
                   >
                     {token.id + 1}
                   </text>
-                </g>
-              </g>
-            );
-          })}
+                </svg>
+              </div>
+            </div>
+          );
+        })}
 
-          {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales Hexagonal) --- */}
-          {explosionData && typeof explosionData.cellIndex === 'number' && (() => {
-            const loc = getCellLocation(explosionData.cellIndex);
-            const pos = getArmCellPos(loc.s, loc.r, loc.c);
-            const x = pos.x;
-            const y = pos.y;
-            const colorHex = HEX_COLOR_INFO[explosionData.color]?.hexCode || '#ff0055';
-            
-            return (
+        {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales Hexagonal GPU) --- */}
+        {explosionData && typeof explosionData.cellIndex === 'number' && (() => {
+          const loc = getCellLocation(explosionData.cellIndex);
+          const pos = getArmCellPos(loc.s, loc.r, loc.c);
+          const x = pos.x;
+          const y = pos.y;
+          const colorHex = HEX_COLOR_INFO[explosionData.color]?.hexCode || '#ff0055';
+          
+          return (
+            <svg 
+              className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-50"
+              viewBox="139 156 722 688"
+            >
               <g className="fireworks-overlay" style={{ transformOrigin: `${x}px ${y}px` }}>
-                {/* Ring Expansivo */}
                 <circle cx={x} cy={y} r={15} fill="none" stroke={colorHex} style={{ animation: 'fireworkRingHex 0.8s ease-out forwards', transformOrigin: `${x}px ${y}px` }} />
-                
-                {/* Partículas Masivas */}
                 {Array.from({ length: 16 }).map((_, i) => {
                   const angle = (i * 360) / 16;
                   const rad = angle * Math.PI / 180;
@@ -562,7 +567,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
                       fill={colorHex} 
                       style={{
                         animation: `fireworkParticleHex 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
-                        animationDelay: `${Math.random() * 0.15}s`,
+                        animationDelay: `${(i * 17 % 100) / 1000 * 1.5}s`,
                         '--dx': `${dx}px`,
                         '--dy': `${dy}px`,
                         transformOrigin: `${x}px ${y}px`
@@ -571,9 +576,10 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
                   );
                 })}
               </g>
-            );
-          })()}
-        </svg>
+            </svg>
+          );
+        })()}
+      </div>
     </div>
   );
 };
