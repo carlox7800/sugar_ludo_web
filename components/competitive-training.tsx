@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Volume2, VolumeX, Zap, Key, Check, Sparkles, Loader2, Wifi, WifiOff, BookOpen, Trophy } from 'lucide-react'
+import { ArrowLeft, Volume2, VolumeX, Zap, Key, Check, Sparkles, Loader2, Wifi, WifiOff, BookOpen, Trophy, PlusCircle, LogIn, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSocket } from '@/lib/useSocket'
 import { useAuth } from '@/lib/auth-context'
@@ -37,6 +37,9 @@ export function CompetitiveTraining({
     quickPlayersRef.current = quickPlayers
   }, [quickPlayers])
 
+  // Sub-tabs for Batalla Amigos
+  const [friendsSubTab, setFriendsSubTab] = useState<'create' | 'join'>('create')
+
   // UI state
   const [muted, setMuted] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
@@ -44,8 +47,62 @@ export function CompetitiveTraining({
   const [isGuideOpen, setIsGuideOpen] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
+  // Join/Create Room State
+  const [roomCode, setRoomCode] = useState('')
+  const [createPlayers, setCreatePlayers] = useState(4)
+  const createPlayersRef = useRef(createPlayers)
+  useEffect(() => {
+    createPlayersRef.current = createPlayers
+  }, [createPlayers])
+  
+  const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null)
+  const [copiedCode, setCopiedCode] = useState(false)
+
+  const [joinConfirmation, setJoinConfirmation] = useState<{
+    isOpen: boolean;
+    cost: number;
+    baseCode: string;
+    capacity: number;
+    rawCode: string;
+  } | null>(null)
+
+  // Private Match State
+  const isPrivateMatchRef = useRef(false)
+
   // Dev Sandbox State (Only keeping the ref since competitive shouldn't really have sandbox, but for parity)
   const isDevSandboxRef = useRef(false)
+
+  const [lobbyData, setLobbyData] = useState<{ roomId: string; players: any[]; targetPlayers: number } | null>(null)
+  const entryCostRef = useRef(0)
+  const targetPlayersRef = useRef(4)
+  const [lobbyTimer, setLobbyTimer] = useState(60)
+
+  // Lobby Timer Effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (isSearching || lobbyData) {
+      interval = setInterval(() => {
+        setLobbyTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval)
+            const socket = getSocketInstance()
+            const playerId = user?.uid || socket.id
+            socket.emit('leave_matchmaking', { playerId })
+            setIsSearching(false)
+            setLobbyData(null)
+            setCreatedRoomCode(null)
+            entryCostRef.current = 0
+            showToast('⏳ Tiempo de espera agotado.')
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    } else {
+      setLobbyTimer(60)
+    }
+    return () => clearInterval(interval)
+  }, [isSearching, lobbyData, getSocketInstance, user])
 
   // Auto-connect socket when opening
   useEffect(() => {
@@ -55,18 +112,39 @@ export function CompetitiveTraining({
     const playerId = user?.uid || `guest_${Math.floor(Math.random() * 100000)}`
     socket.emit('register_identity', { playerId })
 
+    const handlePrivateRoomCreated = (data: { roomCode?: string; id?: string }) => {
+      const baseCode = data.roomCode || data.id || ''
+      const code = `${baseCode}-${createPlayersRef.current}`
+      setCreatedRoomCode(code)
+      setLobbyData({ roomId: code, players: [{ playerId, playerName: user?.photoURL ? `${user?.nickname || 'Jugador'}|||${user?.photoURL}` : (user?.nickname || 'Jugador') }], targetPlayers: createPlayersRef.current })
+      showToast(`¡Sala ${code} creada con éxito!`)
+    }
+
     const handleRoomUpdated = (data: { id?: string; players?: any[] }) => {
       if (data.players) {
+        setLobbyData((prev) => ({
+          roomId: prev?.roomId && prev.roomId !== 'Buscando...' && prev.roomId !== 'Creando...' ? prev.roomId : (data.id || 'Buscando...'),
+          players: data.players,
+          targetPlayers: targetPlayersRef.current
+        }))
         showToast(`Jugadores en sala: ${data.players.length}`)
       }
     }
 
     const handleMatchFound = (gameData: any) => {
       const receivedCount = gameData.players?.length ?? 0
-      if (receivedCount < quickPlayersRef.current && !isDevSandboxRef.current) {
+      if (!isPrivateMatchRef.current && receivedCount < quickPlayersRef.current && !isDevSandboxRef.current) {
         return // Ignore match if it doesn't meet our requested player count
       }
       setIsSearching(false)
+      setLobbyTimer(60)
+      
+      // REALIZAR COBRO DE SUGAR COINS AQUÍ (Diferido)
+      if (entryCostRef.current > 0 && deductCoins) {
+        deductCoins(entryCostRef.current)
+        entryCostRef.current = 0
+      }
+
       showToast('¡Partida encontrada! Entrando a la mesa...')
       
       const finalPlayers = [...(gameData.players || [])]
@@ -85,14 +163,20 @@ export function CompetitiveTraining({
 
     const handleRoomError = (data: { message: string }) => {
       setIsSearching(false)
+      setLobbyData(null)
+      setCreatedRoomCode(null)
+      setLobbyTimer(60)
+      entryCostRef.current = 0
       setErrorMsg(`⚠️ ${data.message || 'Error en la sala'}`)
     }
 
+    socket.on('private_room_created', handlePrivateRoomCreated)
     socket.on('room_updated', handleRoomUpdated)
     socket.on('match_found', handleMatchFound)
     socket.on('room_error', handleRoomError)
 
     return () => {
+      socket.off('private_room_created', handlePrivateRoomCreated)
       socket.off('room_updated', handleRoomUpdated)
       socket.off('match_found', handleMatchFound)
       socket.off('room_error', handleRoomError)
@@ -106,18 +190,16 @@ export function CompetitiveTraining({
   }
 
   const handleStartQuickMatch = async () => {
+    isPrivateMatchRef.current = false
     const entryFee = ECONOMY_MATRIX[quickPlayers].entry
     if ((user?.coins ?? 200) < entryFee) {
       setErrorMsg(`¡Saldo insuficiente! Necesitas ${entryFee} Sugar Coins para entrar a esta partida.`)
       return
     }
     
-    // Deduct coins as it is competitive
-    const success = await deductCoins(entryFee)
-    if (!success) {
-      setErrorMsg(`¡Error al procesar el cobro de la entrada!`)
-      return
-    }
+    // Defer coin deduction
+    entryCostRef.current = entryFee
+    targetPlayersRef.current = quickPlayers
 
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
@@ -125,7 +207,8 @@ export function CompetitiveTraining({
 
     setIsSearching(true)
     setErrorMsg(null)
-    showToast(`Cobro exitoso (-${entryFee} Sugar Coins). Buscando partida para ${quickPlayers} jugadores...`)
+    setLobbyData({ roomId: 'Buscando...', players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: quickPlayers })
+    showToast(`Buscando partida para ${quickPlayers} jugadores... (Costo: ${entryFee} SC)`)
 
     socket.emit('join_matchmaking', {
       playerId,
@@ -139,10 +222,102 @@ export function CompetitiveTraining({
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id
     setIsSearching(false)
+    setLobbyData(null)
+    setCreatedRoomCode(null)
+    setLobbyTimer(60)
+    entryCostRef.current = 0
     socket.emit('leave_matchmaking', { playerId })
-    // No automatic refund here, depends on server logic if matchmaking is cancelled, 
-    // but for this MVP, we assume they lose it or server refunds.
     showToast('Búsqueda cancelada.')
+  }
+
+  const handleCreateRoom = () => {
+    const eco = ECONOMY_MATRIX[createPlayers]
+    if (user && (user.coins ?? 0) < eco.entry) {
+      setErrorMsg(`No tienes suficientes Sugar Coins. Necesitas ${eco.entry} SC.`)
+      setTimeout(() => setErrorMsg(null), 3000)
+      return
+    }
+
+    // Defer coin deduction
+    entryCostRef.current = eco.entry
+    targetPlayersRef.current = createPlayers
+
+    isPrivateMatchRef.current = true
+    const socket = getSocketInstance()
+    const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
+    const playerName = user?.nickname || user?.displayName || 'Jugador'
+
+    showToast('Creando sala privada competitiva...')
+    setLobbyData({ roomId: 'Creando...', players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: createPlayers })
+    socket.emit('create_private_room', {
+      playerId,
+      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
+      targetPlayers: createPlayers,
+    })
+  }
+
+  const handleCopyCode = () => {
+    if (createdRoomCode) {
+      navigator.clipboard.writeText(createdRoomCode)
+      setCopiedCode(true)
+      setTimeout(() => setCopiedCode(false), 2000)
+    }
+  }
+
+  const handleJoinRoom = (e: React.FormEvent) => {
+    e.preventDefault()
+    const rawCode = roomCode.trim()
+    if (!rawCode) return
+
+    const parts = rawCode.split('-')
+    const baseCode = parts[0]
+    const capacityStr = parts[1]
+    
+    const capacity = parseInt(capacityStr, 10) || 4 
+    const eco = ECONOMY_MATRIX[capacity] || ECONOMY_MATRIX[4]
+    const cost = eco.entry
+
+    setJoinConfirmation({
+      isOpen: true,
+      cost,
+      baseCode,
+      capacity,
+      rawCode
+    })
+  }
+
+  const confirmJoin = () => {
+    if (!joinConfirmation) return
+    const { cost, baseCode, capacity, rawCode } = joinConfirmation
+    
+    if (user && (user.coins ?? 0) < cost) {
+       setErrorMsg(`No tienes suficientes Sugar Coins. Necesitas ${cost} SC.`)
+       setJoinConfirmation(null)
+       return
+    }
+    
+    // Defer coin deduction
+    entryCostRef.current = cost
+    targetPlayersRef.current = capacity
+
+    isPrivateMatchRef.current = true
+    const socket = getSocketInstance()
+    const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
+    const playerName = user?.nickname || user?.displayName || 'Jugador'
+
+    setIsSearching(true)
+    setErrorMsg(null)
+    setJoinConfirmation(null)
+    showToast(`Uniéndose a la sala ${rawCode}...`)
+    
+    setLobbyData({ roomId: rawCode, players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: capacity })
+    socket.emit('join_private_room', {
+      playerId,
+      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
+      targetPlayers: capacity,
+      roomCode: baseCode,
+      code: baseCode,
+    })
   }
 
   const currentEconomy = ECONOMY_MATRIX[quickPlayers]
@@ -243,14 +418,17 @@ export function CompetitiveTraining({
             </button>
             
             <button
-              disabled
-              className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3 font-display text-sm sm:text-base font-extrabold transition-all text-muted-foreground/50 opacity-60 relative overflow-hidden"
+              onClick={() => {
+                setMainTab('friends')
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 font-display text-sm sm:text-base font-extrabold transition-all ${
+                mainTab === 'friends'
+                  ? 'bg-[linear-gradient(145deg,var(--candy-gold),oklch(0.7_0.18_55))] text-[oklch(0.18_0.03_285)] shadow-[0_4px_12px_oklch(0.78_0.18_55/0.4)]'
+                  : 'text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground'
+              }`}
             >
               <Key className="size-5" />
               Batalla Amigos 🔑
-              <span className="absolute right-2 top-2 rounded bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 text-[10px] uppercase font-black tracking-wider shadow-[0_0_8px_red]">
-                PRÓX.
-              </span>
             </button>
           </div>
 
@@ -328,6 +506,166 @@ export function CompetitiveTraining({
             </div>
           )}
 
+          {/* TAB 2: BATALLA AMIGOS 🔑 */}
+          {mainTab === 'friends' && (
+            <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
+              {/* Sub-tabs selector: Crear Sala | Unirse */}
+              <div className="flex rounded-xl bg-[oklch(0_0_0/0.2)] p-1 border border-border/40 w-full sm:w-80 mx-auto">
+                <button
+                  onClick={() => {
+                    setFriendsSubTab('create')
+                    setCreatedRoomCode(null)
+                  }}
+                  className={`flex-1 py-2 rounded-lg font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    friendsSubTab === 'create'
+                      ? 'bg-[var(--candy-orange)] text-white shadow-md'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <PlusCircle className="size-4" />
+                  Crear Sala 🏆
+                </button>
+                <button
+                  onClick={() => {
+                    setFriendsSubTab('join')
+                    setCreatedRoomCode(null)
+                  }}
+                  className={`flex-1 py-2 rounded-lg font-display text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    friendsSubTab === 'join'
+                      ? 'bg-[var(--candy-gold)] text-[oklch(0.25_0.08_60)] shadow-md'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <LogIn className="size-4" />
+                  Unirse 🔑
+                </button>
+              </div>
+
+              {/* Sub-tab A: CREAR SALA 🏆 */}
+              {friendsSubTab === 'create' && (
+                <div className="flex flex-col gap-6 animate-in fade-in">
+                  {!createdRoomCode ? (
+                    <>
+                      <fieldset className="flex flex-col gap-3">
+                        <legend className="mb-1 flex items-center gap-2 font-display text-sm font-extrabold uppercase tracking-wide text-foreground">
+                          <span className="h-5 w-1.5 rounded-full bg-[var(--candy-orange)] shadow-[0_0_12px_var(--candy-orange)]" />
+                          Capacidad de la Sala Privada
+                        </legend>
+                        
+                        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                          {PLAYER_OPTIONS.map((count) => (
+                            <PillButton
+                              key={count}
+                              selected={createPlayers === count}
+                              onClick={() => setCreatePlayers(count)}
+                              accent="var(--candy-orange)"
+                              shadow="oklch(0.55 0.16 50)"
+                            >
+                              {count} Jug
+                            </PillButton>
+                          ))}
+                        </div>
+                      </fieldset>
+
+                      {/* Economy Info Panel */}
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 bg-[oklch(0_0_0/0.2)] border border-[var(--candy-gold)]/30 rounded-2xl p-3">
+                        <div className="flex flex-col gap-1 items-center justify-center p-2 rounded-xl bg-[oklch(1_0_0/0.05)]">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Entrada</span>
+                          <span className="font-display text-lg font-black text-red-400 drop-shadow-[0_0_8px_red] flex items-center gap-1">-{ECONOMY_MATRIX[createPlayers].entry} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" /></span>
+                        </div>
+                        <div className="flex flex-col gap-1 items-center justify-center p-2 rounded-xl bg-[oklch(1_0_0/0.05)]">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Pozo Total</span>
+                          <span className="font-display text-lg font-black text-[var(--candy-gold)] flex items-center gap-1">{ECONOMY_MATRIX[createPlayers].pot} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" /></span>
+                        </div>
+                        <div className="flex flex-col gap-1 items-center justify-center p-2 rounded-xl bg-[oklch(1_0_0/0.05)] col-span-2 sm:col-span-2">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Premios</span>
+                          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+                            {ECONOMY_MATRIX[createPlayers].prizes.filter(prize => prize > 0).map((prize, idx) => (
+                              <span key={idx} className={cn("font-display text-sm font-black flex items-center gap-1", idx === 0 ? 'text-emerald-400' : 'text-emerald-400/70')}>
+                                {idx + 1}º: +{prize} <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" />
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleCreateRoom}
+                        className="btn-3d flex w-full items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(145deg,oklch(0.7_0.25_40),oklch(0.6_0.20_35))] py-4 font-display text-lg font-extrabold uppercase tracking-wide text-white shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.45_0.2_35),0_14px_26px_oklch(0.45_0.2_35/0.55)]"
+                      >
+                        <PlusCircle className="size-6" />
+                        CREAR SALA COMPETITIVA 🏆
+                      </button>
+                    </>
+                  ) : (
+                    /* Display generated room code */
+                    <div className="glass flex flex-col items-center gap-4 rounded-2xl p-6 border border-[var(--candy-orange)]/30 text-center animate-in zoom-in-95">
+                      <span className="font-display text-xs font-extrabold uppercase tracking-widest text-muted-foreground">
+                        Código de tu Sala Privada
+                      </span>
+                      
+                      <div className="flex items-center gap-3 rounded-xl bg-[oklch(0_0_0/0.4)] px-6 py-3 border border-[var(--candy-orange)]">
+                        <span className="font-mono text-3xl font-extrabold tracking-widest text-[var(--candy-gold)]">
+                          {createdRoomCode}
+                        </span>
+                        <button
+                          onClick={handleCopyCode}
+                          className="flex size-10 items-center justify-center rounded-lg bg-[oklch(1_0_0/0.1)] hover:bg-[oklch(1_0_0/0.2)] transition-colors text-white"
+                          title="Copiar código"
+                        >
+                          {copiedCode ? <Check className="size-5 text-[var(--candy-gold)]" /> : <Copy className="size-5" />}
+                        </button>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground">
+                        Comparte este código con tus amigos para que ingresen desde el botón "Unirse 🔑".
+                      </p>
+
+                      <button
+                        onClick={() => setCreatedRoomCode(null)}
+                        className="text-xs text-[var(--candy-gold)] hover:underline font-bold mt-2"
+                      >
+                        ← Crear otra sala
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-tab B: UNIRSE A SALA 🔑 */}
+              {friendsSubTab === 'join' && (
+                <form onSubmit={handleJoinRoom} className="flex flex-col gap-5 animate-in fade-in">
+                  <div className="flex flex-col gap-2">
+                    <label className="font-display text-xs font-extrabold uppercase tracking-wider text-muted-foreground text-center">
+                      Ingresa el Código de la Sala
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={roomCode}
+                      onChange={(e) => setRoomCode(e.target.value)}
+                      placeholder="Ej. 123456-4"
+                      className="w-full rounded-2xl border-2 border-[var(--candy-gold)]/40 bg-[oklch(0_0_0/0.3)] px-6 py-4 font-mono text-2xl font-extrabold text-center tracking-widest text-[var(--candy-gold)] outline-none transition-colors focus:border-[var(--candy-gold)] focus:bg-[oklch(0_0_0/0.5)] placeholder:text-muted-foreground/30 uppercase"
+                    />
+                  </div>
+
+                  {/* Economy Note para Join */}
+                  <div className="text-center text-xs text-muted-foreground">
+                    <p>Nota: Al unirte, el servidor verificará el cobro de Sugar Coins según la configuración del anfitrión.</p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn-3d flex w-full items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(145deg,oklch(0.85_0.16_90),oklch(0.78_0.18_55))] py-4 font-display text-lg font-extrabold uppercase tracking-wide text-[oklch(0.25_0.08_60)] shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.6_0.15_50),0_14px_26px_oklch(0.6_0.15_50/0.55)]"
+                  >
+                    <LogIn className="size-6" />
+                    ENTRAR A LA SALA 🚀
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
           <div className="-mt-2">
             <button 
               onClick={() => setIsGuideOpen(true)}
@@ -342,6 +680,136 @@ export function CompetitiveTraining({
       </article>
 
       <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+
+      {/* Join Confirmation Modal */}
+      {joinConfirmation?.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="glass flex flex-col gap-5 rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[var(--candy-gold)]/30 shadow-[0_0_40px_var(--candy-gold)]/20 animate-in zoom-in-95">
+            <header className="text-center">
+              <h3 className="font-display text-2xl font-extrabold text-[var(--candy-gold)] drop-shadow-md">
+                Confirmar Ingreso
+              </h3>
+            </header>
+            
+            <p className="text-center font-display text-sm sm:text-base text-foreground">
+              Esta partida tiene un costo de entrada de <strong className="text-red-400">{joinConfirmation.cost} Sugar Coins</strong>.
+              ¿Deseas confirmar tu participación y unirte a la sala?
+            </p>
+
+            <div className="flex gap-3 mt-2">
+              <button
+                onClick={() => setJoinConfirmation(null)}
+                className="flex-1 rounded-2xl border-2 border-[var(--candy-gold)]/30 py-3 font-display font-bold text-foreground hover:bg-[oklch(1_0_0/0.05)] transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmJoin}
+                className="btn-3d flex-1 rounded-2xl bg-[linear-gradient(145deg,oklch(0.85_0.16_90),oklch(0.78_0.18_55))] py-3 font-display font-extrabold text-[oklch(0.25_0.08_60)] shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.6_0.15_50),0_14px_26px_oklch(0.6_0.15_50/0.55)]"
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING LOBBY MODAL */}
+      {(isSearching || lobbyData) && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-[oklch(0.08_0.02_280)] animate-in fade-in zoom-in-95">
+          <div className="glass w-full max-w-lg rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-gold)]/40 shadow-[0_0_50px_var(--candy-gold)]/20 flex flex-col items-center gap-6">
+            <header className="text-center w-full">
+              <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase text-[var(--candy-gold)] tracking-wider drop-shadow-md">
+                {isPrivateMatchRef.current ? `Batalla de Amigos` : `Partida Rápida`}
+              </h2>
+              <p className="mt-1 font-display text-xs font-bold uppercase tracking-[0.2em] text-[var(--candy-orange)]">
+                {lobbyData?.targetPlayers || targetPlayersRef.current} Jugadores
+              </p>
+            </header>
+
+            {/* Room Code Card (Only for Private Rooms) */}
+            {isPrivateMatchRef.current && lobbyData?.roomId && lobbyData.roomId !== 'Buscando...' && lobbyData.roomId !== 'Creando...' && (
+              <div className="w-full bg-[oklch(0_0_0/0.4)] rounded-2xl border border-[var(--candy-gold)]/30 p-4 flex flex-col items-center gap-2 relative overflow-hidden">
+                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[var(--candy-gold)] to-transparent opacity-50" />
+                <span className="text-[10px] sm:text-xs font-bold uppercase text-muted-foreground tracking-widest">
+                  Código de Invitación
+                </span>
+                <div className="flex items-center gap-4">
+                  <span className="font-mono text-3xl sm:text-4xl font-extrabold tracking-widest text-[var(--candy-gold)]">
+                    {lobbyData.roomId}
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(lobbyData.roomId)
+                      setCopiedCode(true)
+                      setTimeout(() => setCopiedCode(false), 2000)
+                    }}
+                    className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[oklch(1_0_0/0.1)] hover:bg-[var(--candy-gold)] hover:text-black transition-all text-white shadow-md active:scale-95"
+                    title="Copiar código"
+                  >
+                    {copiedCode ? <Check className="size-5" /> : <Copy className="size-5" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Avatars Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8 w-full mt-2 justify-items-center">
+              {Array.from({ length: lobbyData?.targetPlayers || targetPlayersRef.current || 4 }).map((_, i) => {
+                  const player = lobbyData?.players?.[i]
+                  let name = player?.playerName || ''
+                  let photo = '/avatars/default.png'
+                  if (name.includes('|||')) {
+                    const parts = name.split('|||')
+                    name = parts[0]
+                    photo = parts[1] || photo
+                  } else if (player?.photoURL) {
+                     photo = player.photoURL
+                  }
+
+                  return (
+                    <div key={i} className="flex flex-col items-center gap-3 w-full">
+                      <div className={cn(
+                        "size-20 sm:size-24 rounded-full border-4 flex items-center justify-center overflow-hidden bg-black/40 transition-all shadow-xl",
+                        player ? "border-[var(--candy-gold)] shadow-[0_0_20px_var(--candy-gold)]/50 scale-105" : "border-dashed border-white/20"
+                      )}>
+                        {player ? (
+                          <img src={photo} alt={name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Loader2 className="size-8 text-white/30 animate-spin" />
+                        )}
+                      </div>
+                      <span className={cn(
+                        "font-display text-sm font-bold text-center w-full truncate px-2",
+                        player ? "text-white" : "text-muted-foreground"
+                      )}>
+                        {player ? name : 'Esperando...'}
+                      </span>
+                    </div>
+                  )
+              })}
+            </div>
+
+            {/* Timer */}
+            <div className="mt-4 flex flex-col items-center gap-1">
+              <span className="font-mono text-4xl font-extrabold text-white tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
+                00:{lobbyTimer.toString().padStart(2, '0')}
+              </span>
+              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">
+                Tiempo Restante
+              </span>
+            </div>
+
+            {/* Cancel Button */}
+            <button
+              onClick={handleCancelQuickMatch}
+              className="mt-4 w-full max-w-[240px] btn-3d rounded-xl border border-red-500/50 bg-red-500/10 py-3 font-display text-sm font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors shadow-lg active:scale-95"
+            >
+              Cancelar y Salir
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

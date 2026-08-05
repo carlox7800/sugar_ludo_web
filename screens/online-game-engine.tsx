@@ -325,14 +325,31 @@ export function OnlineGameEngine({
     barrierLifetimesRef.current = nextLifetimes
   }
 
-  const getNextActiveSlot = (currentSlot: number, totalPlayers: number): number => {
-    let next = (currentSlot - 1 + totalPlayers) % totalPlayers
+  const getNextActiveColorId = (currentColorId: number, totalPlayers: number): number => {
+    // Si es tablero de 6 (Hex), conservamos la lógica actual que usa SLOT_TO_COLOR_ID
+    if (totalPlayers > 4) {
+      const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
+      const currentSlot = parseInt(Object.keys(SLOT_TO_COLOR_ID).find(k => SLOT_TO_COLOR_ID[parseInt(k)] === currentColorId) ?? '0')
+      let nextSlot = (currentSlot - 1 + totalPlayers) % totalPlayers
+      let attempts = 0
+      while (finishedPlayerIndicesRef.current.includes(SLOT_TO_COLOR_ID[nextSlot]) && attempts < totalPlayers) {
+        nextSlot = (nextSlot - 1 + totalPlayers) % totalPlayers
+        attempts++
+      }
+      return SLOT_TO_COLOR_ID[nextSlot] ?? 0
+    }
+
+    // Para 4 esquinas (2, 3 o 4 jugadores), rotación antihoraria por color: 0 -> 3 -> 2 -> 1 -> 0
+    const activeColorIds = gameData.players.map(p => p.colorId)
+    let nextColor = (currentColorId - 1 + 4) % 4
     let attempts = 0
-    while (finishedPlayerIndicesRef.current.includes(next) && attempts < totalPlayers) {
-      next = (next - 1 + totalPlayers) % totalPlayers
+    
+    // Buscar el siguiente color que esté en la partida y que no haya terminado
+    while ((!activeColorIds.includes(nextColor) || finishedPlayerIndicesRef.current.includes(nextColor)) && attempts < 4) {
+      nextColor = (nextColor - 1 + 4) % 4
       attempts++
     }
-    return next
+    return nextColor
   }
 
   const showToast = (msg: string) => {
@@ -574,21 +591,18 @@ export function OnlineGameEngine({
     const playables = getPlayableTokenIds(activeIdx, nextMoves, currentTokens)
 
     if (nextMoves.length === 0 || playables.length === 0) {
-      const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-      let nextSlot = getNextActiveSlot(activeIdx, gameData.players.length)
+      let nextColorId = getNextActiveColorId(activeIdx, gameData.players.length)
 
       if (pendingExtraTurnsRef.current > 0 && !finishedPlayerIndicesRef.current.includes(activeIdx)) {
         pendingExtraTurnsRef.current -= 1
-        nextSlot = activeIdx
-        globalLogger.log('GAME-FLOW', `¡Turno extra! Manteniendo el turno en slot: ${nextSlot}`)
+        nextColorId = activeIdx
+        globalLogger.log('GAME-FLOW', `¡Turno extra! Manteniendo el turno en color: ${nextColorId}`)
       } else {
         updateBarrierLifetimes(currentTokens, activeIdx)
       }
 
-      const nextColorId = SLOT_TO_COLOR_ID[nextSlot] ?? 0
-
       isProcessingTimeoutRef.current = false
-      globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> nextSlot: ${nextSlot}`)
+      globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> nextColorId: ${nextColorId}`)
       socket.emit('intent_end_turn', {
         roomId: gameData.roomId,
         nextPlayerId: nextColorId,
@@ -1368,10 +1382,10 @@ export function OnlineGameEngine({
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col font-sans cyber-bg text-foreground relative overflow-hidden items-center">
+    <div className="h-[100dvh] md:h-auto md:min-h-screen w-full flex flex-col font-sans cyber-bg text-foreground relative overflow-hidden items-center">
       
       {/* Upper Navigation & Sound controls */}
-      <header className="w-full bg-root/80 backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-4 py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-[0_4px_30px_oklch(0.82_0.15_200/0.05)] shrink-0">
+      <header className="w-full bg-root/80 backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-[0_4px_30px_oklch(0.82_0.15_200/0.05)] shrink-0">
         <div className="flex items-center gap-2">
           <button 
             onClick={() => setIsExitModalOpen(true)}
@@ -1441,14 +1455,17 @@ export function OnlineGameEngine({
       </header>
 
       {/* Main Game Stage */}
-      <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[600px] z-10">
+      <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-0 md:min-h-[600px] z-10 overflow-hidden">
         
         {/* Center Game Board */}
         <div 
-          className="z-10 w-full mx-auto flex items-center justify-center"
-          style={{ maxWidth: 'min(700px, calc((100vh - 220px) * 1.05))' }}
+          className={cn(
+            "z-10 mx-auto flex items-center justify-center",
+            isHexGame ? "w-[95%] max-w-full md:w-full" : "w-full max-w-[100vw] px-1 md:px-0 md:max-w-[var(--board-max)]"
+          )}
+          style={{ '--board-max': 'min(700px, calc((100dvh - 180px) * 1.05))' } as React.CSSProperties}
         >
-          <div className="relative mx-auto w-full">
+          <div className="relative mx-auto w-full flex items-center justify-center">
             {isHexGame ? (
               <HexagonalLudoBoardView
                 players={formattedPlayers as any}

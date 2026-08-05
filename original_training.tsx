@@ -44,36 +44,6 @@ export function OnlineTraining({
   const [notification, setNotification] = useState<string | null>(null)
   const [isGuideOpen, setIsGuideOpen] = useState(false)
 
-  const [lobbyData, setLobbyData] = useState<{ roomId: string; players: any[]; targetPlayers: number } | null>(null)
-  const targetPlayersRef = useRef(4)
-  const [lobbyTimer, setLobbyTimer] = useState(60)
-
-  // Lobby Timer Effect
-  useEffect(() => {
-    let interval: NodeJS.Timeout
-    if (isSearching || lobbyData) {
-      interval = setInterval(() => {
-        setLobbyTimer((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval)
-            const socket = getSocketInstance()
-            const playerId = user?.uid || socket.id
-            socket.emit('leave_matchmaking', { playerId })
-            setIsSearching(false)
-            setLobbyData(null)
-            setCreatedRoomCode(null)
-            showToast('⏳ Tiempo de espera agotado.')
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-    } else {
-      setLobbyTimer(60)
-    }
-    return () => clearInterval(interval)
-  }, [isSearching, lobbyData, getSocketInstance, user])
-
   // Dev Sandbox State
   const [isDevSandbox, setIsDevSandbox] = useState(false)
   const isDevSandboxRef = useRef(false)
@@ -81,9 +51,6 @@ export function OnlineTraining({
     isDevSandboxRef.current = isDevSandbox
   }, [isDevSandbox])
 
-
-  // Private Match State
-  const isPrivateMatchRef = useRef(false)
 
   // Auto-connect socket when opening Online Training
   useEffect(() => {
@@ -94,31 +61,23 @@ export function OnlineTraining({
     socket.emit('register_identity', { playerId })
 
     const handlePrivateRoomCreated = (data: { roomCode?: string; id?: string }) => {
-      const baseCode = data.roomCode || data.id || ''
-      const code = `${baseCode}-${createPlayers}`
+      const code = data.roomCode || data.id || ''
       setCreatedRoomCode(code)
-      setLobbyData({ roomId: code, players: [{ playerId, playerName: user?.photoURL ? `${user?.nickname || 'Jugador'}|||${user?.photoURL}` : (user?.nickname || 'Jugador') }], targetPlayers: createPlayers })
       showToast(`¡Sala ${code} creada con éxito!`)
     }
 
     const handleRoomUpdated = (data: { id?: string; players?: any[] }) => {
       if (data.players) {
-        setLobbyData((prev) => ({
-          roomId: prev?.roomId && prev.roomId !== 'Buscando...' && prev.roomId !== 'Creando...' ? prev.roomId : (data.id || 'Buscando...'),
-          players: data.players,
-          targetPlayers: targetPlayersRef.current
-        }))
         showToast(`Jugadores en sala: ${data.players.length}`)
       }
     }
 
     const handleMatchFound = (gameData: any) => {
       const receivedCount = gameData.players?.length ?? 0
-      if (!isPrivateMatchRef.current && receivedCount < quickPlayersRef.current && !isDevSandboxRef.current) {
+      if (receivedCount < quickPlayersRef.current && !isDevSandboxRef.current) {
         return // Ignore match if it doesn't meet our requested player count
       }
       setIsSearching(false)
-      setLobbyTimer(60)
       showToast('¡Partida encontrada! Entrando a la mesa...')
       
       let finalPlayers = [...(gameData.players || [])]
@@ -151,9 +110,6 @@ export function OnlineTraining({
 
     const handleRoomError = (data: { message: string }) => {
       setIsSearching(false)
-      setLobbyData(null)
-      setCreatedRoomCode(null)
-      setLobbyTimer(60)
       showToast(`⚠️ ${data.message || 'Error en la sala'}`)
     }
 
@@ -176,19 +132,16 @@ export function OnlineTraining({
   }
 
   const handleStartQuickMatch = () => {
-    isPrivateMatchRef.current = false
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
     const playerName = user?.nickname || user?.displayName || 'Jugador'
 
-    targetPlayersRef.current = quickPlayers
     setIsSearching(true)
-    setLobbyData({ roomId: 'Buscando...', players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: quickPlayers })
     showToast(`Buscando partida rápida para ${quickPlayers} jugadores...`)
 
     socket.emit('join_matchmaking', {
       playerId,
-      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
+      playerName,
       targetPlayers: quickPlayers,
       mode: 'online_training',
     })
@@ -198,25 +151,19 @@ export function OnlineTraining({
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id
     setIsSearching(false)
-    setLobbyData(null)
-    setCreatedRoomCode(null)
-    setLobbyTimer(60)
     socket.emit('leave_matchmaking', { playerId })
     showToast('Búsqueda cancelada.')
   }
 
   const handleCreateRoom = () => {
-    isPrivateMatchRef.current = true
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
     const playerName = user?.nickname || user?.displayName || 'Jugador'
 
-    targetPlayersRef.current = isDevSandbox ? 2 : createPlayers
     showToast(isDevSandbox ? 'Creando sala Dev Sandbox...' : 'Creando sala privada en el servidor...')
-    setLobbyData({ roomId: 'Creando...', players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: isDevSandbox ? 2 : createPlayers })
     socket.emit('create_private_room', {
       playerId,
-      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
+      playerName,
       targetPlayers: isDevSandbox ? 2 : createPlayers, // Force 2 real players for sandbox
     })
   }
@@ -233,28 +180,20 @@ export function OnlineTraining({
     e.preventDefault()
     if (!roomCode.trim()) return
 
-    isPrivateMatchRef.current = true
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
     const playerName = user?.nickname || user?.displayName || 'Jugador'
     const code = roomCode.trim()
     
-    // Extract capacity if exists
-    const parts = code.split('-')
-    const capacity = parts.length > 1 ? parseInt(parts[1], 10) || createPlayers : createPlayers
-    const baseCode = parts[0]
-    
     isDevSandboxRef.current = isDevSandbox
-    targetPlayersRef.current = isDevSandbox ? 2 : capacity
 
     showToast(`Uniéndose a la sala ${code}...`)
-    setLobbyData({ roomId: code, players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: targetPlayersRef.current })
     socket.emit('join_private_room', {
       playerId,
-      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
-      targetPlayers: isDevSandbox ? 2 : capacity,
-      roomCode: baseCode,
-      code: baseCode,
+      playerName,
+      targetPlayers: isDevSandbox ? 2 : createPlayers,
+      roomCode: code,
+      code: code,
     })
   }
 
@@ -611,7 +550,7 @@ export function OnlineTraining({
             </div>
           )}
 
-          <div className="mt-2">
+          <div className="-mt-2">
             <button 
               onClick={() => setIsGuideOpen(true)}
               className="btn-3d flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-[oklch(1_0_0/0.06)] py-2.5 font-display text-base font-bold text-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.15)] hover:bg-[oklch(1_0_0/0.1)] active:scale-[0.98] transition-all duration-200 cursor-pointer"
@@ -625,102 +564,6 @@ export function OnlineTraining({
       </article>
 
       <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
-      {/* FLOATING LOBBY MODAL */}
-      {(isSearching || lobbyData) && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-[oklch(0.08_0.02_280)] animate-in fade-in zoom-in-95">
-          <div className="glass w-full max-w-lg rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-cyan)]/40 shadow-[0_0_50px_var(--candy-cyan)]/20 flex flex-col items-center gap-6">
-            <header className="text-center w-full">
-              <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase text-[var(--candy-cyan)] tracking-wider drop-shadow-md">
-                {isPrivateMatchRef.current ? `Batalla de Amigos` : `Partida Rápida`}
-              </h2>
-              <p className="mt-1 font-display text-xs font-bold uppercase tracking-[0.2em] text-[var(--candy-magenta)]">
-                {lobbyData?.targetPlayers || targetPlayersRef.current} Jugadores
-              </p>
-            </header>
-
-            {/* Room Code Card (Only for Private Rooms) */}
-            {isPrivateMatchRef.current && lobbyData?.roomId && lobbyData.roomId !== 'Buscando...' && lobbyData.roomId !== 'Creando...' && (
-              <div className="w-full bg-[oklch(0_0_0/0.4)] rounded-2xl border border-[var(--candy-cyan)]/30 p-4 flex flex-col items-center gap-2 relative overflow-hidden">
-                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[var(--candy-cyan)] to-transparent opacity-50" />
-                <span className="text-[10px] sm:text-xs font-bold uppercase text-muted-foreground tracking-widest">
-                  Código de Invitación
-                </span>
-                <div className="flex items-center gap-4">
-                  <span className="font-mono text-3xl sm:text-4xl font-extrabold tracking-widest text-[var(--candy-cyan)]">
-                    {lobbyData.roomId}
-                  </span>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(lobbyData.roomId)
-                      setCopiedCode(true)
-                      setTimeout(() => setCopiedCode(false), 2000)
-                    }}
-                    className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[oklch(1_0_0/0.1)] hover:bg-[var(--candy-cyan)] hover:text-black transition-all text-white shadow-md active:scale-95"
-                    title="Copiar código"
-                  >
-                    {copiedCode ? <Check className="size-5" /> : <Copy className="size-5" />}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Avatars Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8 w-full mt-2 justify-items-center">
-              {Array.from({ length: lobbyData?.targetPlayers || targetPlayersRef.current || 4 }).map((_, i) => {
-                  const player = lobbyData?.players?.[i]
-                  let name = player?.playerName || ''
-                  let photo = '/avatars/default.png'
-                  if (name.includes('|||')) {
-                    const parts = name.split('|||')
-                    name = parts[0]
-                    photo = parts[1] || photo
-                  } else if (player?.photoURL) {
-                     photo = player.photoURL
-                  }
-
-                  return (
-                    <div key={i} className="flex flex-col items-center gap-3 w-full">
-                      <div className={cn(
-                        "size-20 sm:size-24 rounded-full border-4 flex items-center justify-center overflow-hidden bg-black/40 transition-all shadow-xl",
-                        player ? "border-[var(--candy-cyan)] shadow-[0_0_20px_var(--candy-cyan)]/50 scale-105" : "border-dashed border-white/20"
-                      )}>
-                        {player ? (
-                          <img src={photo} alt={name} className="w-full h-full object-cover" />
-                        ) : (
-                          <Loader2 className="size-8 text-white/30 animate-spin" />
-                        )}
-                      </div>
-                      <span className={cn(
-                        "font-display text-sm font-bold text-center w-full truncate px-2",
-                        player ? "text-white" : "text-muted-foreground"
-                      )}>
-                        {player ? name : 'Esperando...'}
-                      </span>
-                    </div>
-                  )
-              })}
-            </div>
-
-            {/* Timer */}
-            <div className="mt-4 flex flex-col items-center gap-1">
-              <span className="font-mono text-4xl font-extrabold text-white tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
-                00:{lobbyTimer.toString().padStart(2, '0')}
-              </span>
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">
-                Tiempo Restante
-              </span>
-            </div>
-
-            {/* Cancel Button */}
-            <button
-              onClick={handleCancelQuickMatch}
-              className="mt-4 w-full max-w-[240px] btn-3d rounded-xl border border-red-500/50 bg-red-500/10 py-3 font-display text-sm font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors shadow-lg active:scale-95"
-            >
-              Cancelar y Salir
-            </button>
-          </div>
-        </div>
-      )}
     </section>
   )
 }
