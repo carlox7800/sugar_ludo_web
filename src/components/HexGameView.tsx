@@ -998,6 +998,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                  position={pos}
                  isActiveTurn={currentTurn === p.id}
                  isHumanTurnToRoll={currentTurn === p.id && p.type === 'human' && !gameState.hasRolled && !gameState.isRolling && !gameState.isAnimating}
+                 isLocalUser={p.type === 'human'}
                  isRolling={gameState.isRolling}
                  hasRolled={gameState.hasRolled}
                  diceValues={diceValues}
@@ -1080,8 +1081,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         }
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[210] flex items-center justify-center p-4">
-            <div className="bg-[oklch(0.16_0.03_285)] border border-[#06b6d4]/40 p-4 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_20px_#06b6d440] flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 bg-black/80 sm:backdrop-blur-sm z-[210] flex items-center justify-center p-4 transition-opacity" style={{ willChange: 'opacity' }}>
+            <div className="bg-[oklch(0.16_0.03_285)] border border-[#06b6d4]/40 p-4 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_20px_#06b6d440] flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200" style={{ willChange: 'transform, opacity' }}>
               <div className="flex flex-col items-center gap-1">
                 <h3 className="text-white font-extrabold text-sm text-center font-display uppercase tracking-wider drop-shadow-[0_0_8px_rgba(0,242,255,0.4)]">Mover Ficha</h3>
                 <p className="text-xs text-slate-400 font-medium">Elige el dado:</p>
@@ -1112,9 +1113,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       })()}
 
       {/* Winner Celebration Modal */}
-      {gameState.winner && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[oklch(0.7_0.27_350/0.3)] backdrop-blur-xl p-4 cyber-game-panel">
-          <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] max-w-md w-full rounded-3xl p-8 border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_60px_oklch(0.7_0.27_350/0.15)] flex flex-col items-center text-center gap-6 animate-in zoom-in duration-300">
+      {gameState.winner !== null && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 sm:backdrop-blur-md p-4 transition-opacity" style={{ willChange: 'opacity' }}>
+          <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] max-w-md w-full rounded-3xl p-8 border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_60px_oklch(0.7_0.27_350/0.15)] flex flex-col items-center text-center gap-6 animate-in zoom-in duration-300" style={{ willChange: 'transform, opacity' }}>
             <Trophy className="text-[var(--candy-green,oklch(0.78_0.2_150))] animate-bounce drop-shadow-[0_0_15px_var(--candy-green,oklch(0.78_0.2_150))]" size={64} />
             <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[var(--candy-magenta,oklch(0.7_0.27_350))] to-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_oklch(0.7_0.27_350/0.5)]">
               ¡PARTIDA FINALIZADA!

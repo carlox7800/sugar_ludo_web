@@ -16,6 +16,7 @@ interface PlayerCornerProps {
   timer: number;
   onSendReaction?: (message: string) => void;
   reactionMessage?: string | null;
+  isLocalUser?: boolean;
 }
 
 export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
@@ -31,6 +32,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   timer,
   onSendReaction,
   reactionMessage,
+  isLocalUser = false,
 }) => {
   const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
@@ -41,13 +43,19 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   const { user } = useAuth();
   
   const getActiveAvatar = () => {
-    if (!user) return PRESET_AVATARS[0];
-    return PRESET_AVATARS.find(a => a.id === user.photoURL) || PRESET_AVATARS[0];
+    if (isLocalUser && user) {
+      return PRESET_AVATARS.find(a => a.id === user.photoURL) || PRESET_AVATARS[0];
+    }
+    if (player.photoURL && !player.photoURL.startsWith('http') && !player.photoURL.startsWith('data:')) {
+      return PRESET_AVATARS.find(a => a.id === player.photoURL) || PRESET_AVATARS[player.id % PRESET_AVATARS.length];
+    }
+    // Para oponentes sin avatar definido o bots, asignamos un avatar por defecto basado en su ID
+    return PRESET_AVATARS[player.id % PRESET_AVATARS.length];
   };
   const activeAvatar = getActiveAvatar();
   
   const isHuman = player.type === 'human';
-  const displayName = isHuman ? (user?.nickname || 'Tú') : player.name;
+  const displayName = isLocalUser ? (user?.nickname || 'Tú') : player.name;
 
   useEffect(() => {
     if (localMessage && reactionMessage === undefined) {
@@ -155,7 +163,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
         )}
 
         {/* Action Buttons for Human Player */}
-        {player.type === 'human' && (
+        {isLocalUser && player.type === 'human' && (
           <div className="relative flex gap-2 mb-2">
              <button 
                onClick={() => setActiveMenu(activeMenu === 'emoji' ? null : 'emoji')}
@@ -240,8 +248,10 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
                className="w-full h-full rounded-full flex items-center justify-center text-3xl md:text-4xl overflow-hidden"
                style={{ backgroundColor: `${activeAvatar.color}33`, color: activeAvatar.color }}
              >
-               {user?.photoURL?.startsWith('http') || user?.photoURL?.startsWith('data:') ? (
+               {isLocalUser && (user?.photoURL?.startsWith('http') || user?.photoURL?.startsWith('data:')) ? (
                  <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover rounded-full" />
+               ) : player.photoURL && (player.photoURL.startsWith('http') || player.photoURL.startsWith('data:')) ? (
+                 <img src={player.photoURL} alt="Avatar" className="w-full h-full object-cover rounded-full" />
                ) : (
                  activeAvatar.emoji
                )}

@@ -71,6 +71,8 @@ export interface OnlineGameData {
     isConnected?: boolean
     isBot?: boolean
     slotIndex?: number
+    photoURL?: string
+    photoUrl?: string
   }>
   myPlayerId: string
 }
@@ -103,12 +105,25 @@ export function OnlineGameEngine({
   const formattedPlayers: Player[] = useMemo(() => {
     return dynamicPlayers.map((p, idx) => {
       const isMe = p.playerId === myPlayerId || p.socketId === socket.id
+      
+      let rawName = p.playerName || p.name || ''
+      let photo = p.photoURL || p.photoUrl
+      
+      if (rawName.includes('|||')) {
+        const parts = rawName.split('|||')
+        rawName = parts[0]
+        photo = parts[1] || photo
+      }
+      
+      const displayName = rawName || `Jugador ${idx + 1}`
+
       return {
         id: idx,
-        name: isMe ? `${p.playerName || p.name || 'Tú'} (Tú)` : (p.playerName || p.name || `Jugador ${idx + 1}`),
+        name: isMe ? `${displayName} (Tú)` : displayName,
         color: currentColorsOrder[idx] || 'yellow',
         type: p.isBot ? 'bot' : 'human',
         isActive: p.isConnected !== false,
+        photoURL: photo,
       }
     })
   }, [dynamicPlayers, myPlayerId, socket.id, currentColorsOrder])
@@ -311,10 +326,10 @@ export function OnlineGameEngine({
   }
 
   const getNextActiveSlot = (currentSlot: number, totalPlayers: number): number => {
-    let next = (currentSlot + 1) % totalPlayers
+    let next = (currentSlot - 1 + totalPlayers) % totalPlayers
     let attempts = 0
     while (finishedPlayerIndicesRef.current.includes(next) && attempts < totalPlayers) {
-      next = (next + 1) % totalPlayers
+      next = (next - 1 + totalPlayers) % totalPlayers
       attempts++
     }
     return next
@@ -990,7 +1005,23 @@ export function OnlineGameEngine({
               const isStartCell = [1, 14, 27, 40, 53, 66].includes(pIndex)
               const isGoldStar = [8, 21, 34, 47, 60, 73].includes(pIndex)
 
-              if (!isStartCell && !isGoldStar) {
+              if (targetStep === 1) {
+                const cellTokens = tokensRef.current.filter((t) => {
+                  if (t.step < 0 || t.step >= trackSteps) return false
+                  const oppPIndex = (getStartOffset(t.color, pCount) + t.step) % perimeter
+                  return oppPIndex === pIndex
+                })
+                const myTokens = cellTokens.filter((t) => t.color === currentToken.color)
+                const enemyTokens = cellTokens.filter((t) => t.color !== currentToken.color)
+
+                if (myTokens.length === 1 && enemyTokens.length === 1) {
+                  capturedOpponents = [{ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id }]
+                  showToast('💥 ¡Expulsión de salida! Ficha enemiga enviada a casa (+0 bonus)')
+                  if (!mutedRef.current) audio.playFireworks()
+                  setExplosionData({ cellIndex: pIndex + 1, color: enemyTokens[0].color })
+                  setTimeout(() => setExplosionData(null), 3500)
+                }
+              } else if (!isStartCell && !isGoldStar) {
                 const opponents = tokensRef.current.filter((t) => {
                   if (t.playerId === serverPlayerIdx || t.step === -1 || t.step === goalStep) return false
                   if (t.step < 0 || t.step >= trackSteps) return false
@@ -1094,7 +1125,9 @@ export function OnlineGameEngine({
         const idx = updated.findIndex(p => p.playerId === data.playerId)
         if (idx !== -1) {
           updated[idx] = { ...updated[idx], isConnected: false, isBot: true }
-          showToast(`🔴 ${updated[idx].playerName || updated[idx].name || 'Jugador'} desconectado. El servidor lo suplirá.`)
+          let rawName = updated[idx].playerName || updated[idx].name || 'Jugador'
+          if (rawName.includes('|||')) rawName = rawName.split('|||')[0]
+          showToast(`🔴 ${rawName} desconectado. El servidor lo suplirá.`)
         }
         return updated
       })
@@ -1106,7 +1139,9 @@ export function OnlineGameEngine({
         const idx = updated.findIndex(p => p.playerId === data.playerId)
         if (idx !== -1) {
           updated[idx] = { ...updated[idx], isConnected: true, isBot: false }
-          showToast(`🟢 ${updated[idx].playerName || updated[idx].name || 'Jugador'} se reconectó.`)
+          let rawName = updated[idx].playerName || updated[idx].name || 'Jugador'
+          if (rawName.includes('|||')) rawName = rawName.split('|||')[0]
+          showToast(`🟢 ${rawName} se reconectó.`)
         }
         return updated
       })
@@ -1118,7 +1153,9 @@ export function OnlineGameEngine({
         const idx = updated.findIndex(p => p.playerId === data.playerId)
         if (idx !== -1) {
           updated[idx] = { ...updated[idx], isConnected: false, isBot: true }
-          showToast(`💀 ${updated[idx].playerName || updated[idx].name || 'Jugador'} expulsado por inactividad.`)
+          let rawName = updated[idx].playerName || updated[idx].name || 'Jugador'
+          if (rawName.includes('|||')) rawName = rawName.split('|||')[0]
+          showToast(`💀 ${rawName} expulsado por inactividad.`)
         }
         return updated
       })
@@ -1344,7 +1381,7 @@ export function OnlineGameEngine({
             <ArrowLeft size={22} />
           </button>
           <Sparkles className="text-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse shrink-0 drop-shadow-[0_0_8px_var(--candy-magenta,oklch(0.7_0.27_350))]" size={20} />
-          <span className="font-extrabold text-lg text-t-primary tracking-widest font-mono uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">Entrenamiento Online</span>
+          <span className="font-extrabold text-lg text-t-primary tracking-widest font-mono uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{modeType === 'competitive' ? 'Modo Competitivo' : 'Entrenamiento Online'}</span>
         </div>
 
         <div className="flex items-center gap-3 relative">
@@ -1466,6 +1503,7 @@ export function OnlineGameEngine({
 
             const isActiveTurn = activePlayerIndex === p.id;
             const isHumanTurnToRoll = isActiveTurn && isMyTurn && !hasRolled && !isRolling && !isAnimatingMove;
+            const isLocalUser = p.id === (myPlayerIndex >= 0 ? myPlayerIndex : 0);
 
             return (
               <PlayerCorner
@@ -1480,8 +1518,9 @@ export function OnlineGameEngine({
                 remainingMoves={isActiveTurn ? remainingMoves : []}
                 onRollDice={handleRollDice}
                 timer={isActiveTurn ? turnTimer : 0}
-                onSendReaction={p.id === (myPlayerIndex >= 0 ? myPlayerIndex : 0) ? handleSendReaction : undefined}
+                onSendReaction={isLocalUser ? handleSendReaction : undefined}
                 reactionMessage={playerReactions[p.id]}
+                isLocalUser={isLocalUser}
               />
             );
           });

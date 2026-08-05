@@ -9,6 +9,7 @@ export interface Player {
   isActive: boolean; // active in current game
   hasFinished?: boolean;
   rank?: number;
+  photoURL?: string;
 }
 
 export interface Token {

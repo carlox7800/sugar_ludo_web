@@ -11,17 +11,17 @@ const breathingAnimation = `
   }
   .breathing-token {
     animation: breathe 1.5s ease-in-out infinite;
-    transform-origin: 0px 0px;
+    transform-origin: 50% 50%;
   }
   
-  @keyframes fireworkRing {
-    0% { transform: scale(0); opacity: 1; stroke-width: 12px; }
-    100% { transform: scale(8); opacity: 0; stroke-width: 0px; }
+  @keyframes fireworkRingHTML {
+    0% { transform: scale(0); opacity: 1; border-width: 6px; }
+    100% { transform: scale(8); opacity: 0; border-width: 0px; }
   }
-  @keyframes fireworkParticle {
-    0% { transform: translate(0, 0) scale(1); opacity: 1; }
+  @keyframes fireworkParticleHTML {
+    0% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
     50% { opacity: 1; }
-    100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+    100% { transform: translate3d(var(--dx), var(--dy), 0) scale(0); opacity: 0; }
   }
 `;
 
@@ -285,13 +285,14 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
   };
 
   return (
-    <div id="ludo_board_container" className="relative w-full max-w-[550px] mx-auto bg-white rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border-4 border-[#cbd5e1] p-2 overflow-hidden select-none">
+    <div id="ludo_board_container" className="relative w-full max-w-[550px] mx-auto bg-white rounded-xl sm:rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] border-2 sm:border-4 border-[#cbd5e1] p-1 sm:p-2 overflow-hidden select-none">
       <style>{breathingAnimation}</style>
-      <svg
-        viewBox="0 0 750 750"
-        className="w-full h-auto rounded-lg bg-white"
-        style={{ touchAction: 'none' }}
-      >
+      <div className="relative w-full h-full leading-none flex items-center justify-center">
+        <svg
+          viewBox="0 0 750 750"
+          className="w-full h-auto block rounded-lg bg-white"
+          style={{ touchAction: 'none' }}
+        >
         {/* Definition of shadows and gradients */}
         <defs>
           <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
@@ -485,7 +486,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
       </svg>
 
       {/* --- HTML GPU OVERLAY (Fichas Aceleradas por Hardware a 60 FPS) --- */}
-      <div className="absolute inset-2 pointer-events-none overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none overflow-visible">
         {tokens.map((token) => {
           const { x, y } = getTokenVisualCoord(token);
           const isSelectable = playableTokenIds.includes(token.playerId * 4 + token.id);
@@ -550,20 +551,35 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
             </div>
           );
         })}
-
-        {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales GPU) --- */}
+        {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales GPU HTML) --- */}
         {explosionData && explosionData.cellIndex >= 1 && explosionData.cellIndex <= 52 && (() => {
           const cell = PERIMETER_CELLS[explosionData.cellIndex - 1];
-          const x = cell.col * cellSize;
-          const y = cell.row * cellSize;
+          const x = cell.col * cellSize + 25;
+          const y = cell.row * cellSize + 25;
           
           return (
-            <svg 
-              className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-50"
-              viewBox="0 0 750 750"
-            >
-              <g className="fireworks-overlay" style={{ transformOrigin: `${x + 25}px ${y + 25}px` }}>
-                <circle cx={x + 25} cy={y + 25} r={15} fill="none" stroke={COLOR_MAP[explosionData.color]} style={{ animation: 'fireworkRing 0.8s ease-out forwards', transformOrigin: `${x + 25}px ${y + 25}px` }} />
+            <div className="absolute inset-0 pointer-events-none z-[100] overflow-visible">
+              <div 
+                className="absolute"
+                style={{
+                  left: `${(x / 750) * 100}%`,
+                  top: `${(y / 750) * 100}%`,
+                }}
+              >
+                {/* Ring */}
+                <div 
+                  className="absolute rounded-full border-solid"
+                  style={{
+                    borderColor: COLOR_HEX[explosionData.color],
+                    borderWidth: '6px',
+                    width: '30px',
+                    height: '30px',
+                    left: '-15px',
+                    top: '-15px',
+                    animation: 'fireworkRingHTML 0.8s ease-out forwards'
+                  }}
+                />
+                {/* Particles */}
                 {Array.from({ length: 16 }).map((_, i) => {
                   const angle = (i * 360) / 16;
                   const rad = angle * Math.PI / 180;
@@ -571,26 +587,31 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
                   const dx = Math.cos(rad) * distance;
                   const dy = Math.sin(rad) * distance + 60;
                   const randomDelay = (i * 17 % 100) / 1000 * 1.5;
+                  const size = 10 + (i % 4) * 2;
                   
                   return (
-                    <circle 
-                      key={i} 
-                      cx={x + 25} cy={y + 25} r={5 + (i % 4)} 
-                      fill={COLOR_MAP[explosionData.color]} 
+                    <div 
+                      key={`spark-${i}`}
+                      className="absolute rounded-full"
                       style={{
-                        animation: `fireworkParticle 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
+                        backgroundColor: COLOR_HEX[explosionData.color],
+                        width: `${size}px`,
+                        height: `${size}px`,
+                        left: `${-size / 2}px`,
+                        top: `${-size / 2}px`,
+                        animation: `fireworkParticleHTML 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
                         animationDelay: `${randomDelay}s`,
                         '--dx': `${dx}px`,
                         '--dy': `${dy}px`,
-                        transformOrigin: `${x + 25}px ${y + 25}px`
-                      } as any} 
+                      } as any}
                     />
                   );
                 })}
-              </g>
-            </svg>
+              </div>
+            </div>
           );
         })()}
+      </div>
       </div>
     </div>
   );

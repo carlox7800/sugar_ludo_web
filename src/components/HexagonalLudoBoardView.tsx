@@ -203,11 +203,11 @@ const HexBoardStaticSVG = React.memo(() => {
               .breathing-token-hex {
                 animation: breatheHex 1.4s ease-in-out infinite;
               }
-              @keyframes fireworkRingHex {
-                0% { transform: scale(0); opacity: 1; stroke-width: 12px; }
-                100% { transform: scale(8); opacity: 0; stroke-width: 0px; }
+              @keyframes fireworkRingHexHTML {
+                0% { transform: scale(0); opacity: 1; border-width: 6px; }
+                100% { transform: scale(8); opacity: 0; border-width: 0px; }
               }
-              @keyframes fireworkParticleHex {
+              @keyframes fireworkParticleHexHTML {
                 0% { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
                 50% { opacity: 1; }
                 100% { transform: translate3d(var(--dx), var(--dy), 0) scale(0); opacity: 0; }
@@ -466,7 +466,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
     <div className="relative w-full mx-auto select-none flex items-center justify-center p-0">
       <svg
         viewBox="139 156 722 688"
-        className="w-full h-auto drop-shadow-[0_12px_24px_rgba(0,0,0,0.5)]"
+        className="w-full h-auto block drop-shadow-[0_12px_24px_rgba(0,0,0,0.5)]"
         style={{ touchAction: 'none' }}
       >
           <HexBoardStaticSVG />
@@ -537,46 +537,66 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
             </div>
           );
         })}
-
-        {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales Hexagonal GPU) --- */}
+        {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales GPU HTML) --- */}
         {explosionData && typeof explosionData.cellIndex === 'number' && (() => {
           const loc = getCellLocation(explosionData.cellIndex);
           const pos = getArmCellPos(loc.s, loc.r, loc.c);
           const x = pos.x;
           const y = pos.y;
           const colorHex = HEX_COLOR_INFO[explosionData.color]?.hexCode || '#ff0055';
-          
+
           return (
-            <svg 
-              className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-50"
-              viewBox="139 156 722 688"
-            >
-              <g className="fireworks-overlay" style={{ transformOrigin: `${x}px ${y}px` }}>
-                <circle cx={x} cy={y} r={15} fill="none" stroke={colorHex} style={{ animation: 'fireworkRingHex 0.8s ease-out forwards', transformOrigin: `${x}px ${y}px` }} />
+            <div className="absolute inset-0 pointer-events-none z-[100] overflow-visible">
+              <div 
+                className="absolute"
+                style={{
+                  left: `${((x - 139) / 722) * 100}%`,
+                  top: `${((y - 156) / 688) * 100}%`,
+                }}
+              >
+                {/* Ring */}
+                <div 
+                  className="absolute rounded-full border-solid"
+                  style={{
+                    borderColor: colorHex,
+                    borderWidth: '6px',
+                    width: '30px',
+                    height: '30px',
+                    left: '-15px',
+                    top: '-15px',
+                    animation: 'fireworkRingHexHTML 0.8s ease-out forwards'
+                  }}
+                />
+                {/* Particles */}
                 {Array.from({ length: 16 }).map((_, i) => {
                   const angle = (i * 360) / 16;
                   const rad = angle * Math.PI / 180;
                   const distance = 100 + (i % 2 === 0 ? 60 : 0);
                   const dx = Math.cos(rad) * distance;
                   const dy = Math.sin(rad) * distance + 60;
+                  const randomDelay = (i * 17 % 100) / 1000 * 1.5;
+                  const size = 10 + (i % 4) * 2;
                   
                   return (
-                    <circle 
-                      key={i} 
-                      cx={x} cy={y} r={5 + (i % 4)} 
-                      fill={colorHex} 
+                    <div 
+                      key={`spark-${i}`}
+                      className="absolute rounded-full"
                       style={{
-                        animation: `fireworkParticleHex 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
-                        animationDelay: `${(i * 17 % 100) / 1000 * 1.5}s`,
+                        backgroundColor: colorHex,
+                        width: `${size}px`,
+                        height: `${size}px`,
+                        left: `${-size / 2}px`,
+                        top: `${-size / 2}px`,
+                        animation: `fireworkParticleHexHTML 3.5s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
+                        animationDelay: `${randomDelay}s`,
                         '--dx': `${dx}px`,
                         '--dy': `${dy}px`,
-                        transformOrigin: `${x}px ${y}px`
-                      } as any} 
+                      } as any}
                     />
                   );
                 })}
-              </g>
-            </svg>
+              </div>
+            </div>
           );
         })()}
       </div>

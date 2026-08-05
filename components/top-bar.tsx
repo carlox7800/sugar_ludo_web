@@ -7,11 +7,17 @@ export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => 
   const { coins, gems, level, xp, xpMax } = usePlayer()
   const xpPercent = Math.min(100, Math.max(0, (xp / xpMax) * 100))
 
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (num >= 10000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return num.toLocaleString('es');
+  };
+
   return (
     <header className="glass flex w-full items-center justify-between rounded-[2rem] border border-border/30 bg-[oklch(1_0_0/0.03)] p-2 pl-4 pr-3 shadow-[inset_0_1px_5px_oklch(1_0_0/0.05)]">
       
       {/* LEFT: Level & XP */}
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 shrink">
         {/* Nivel */}
         <div className="relative flex size-12 shrink-0 items-center justify-center rounded-full bg-background shadow-[0_0_15px_var(--candy-magenta)] border-[3px] border-[var(--candy-magenta)]">
           <div className="flex flex-col items-center justify-center leading-none mt-0.5">
@@ -21,10 +27,10 @@ export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => 
         </div>
         
         {/* XP Bar */}
-        <div className="flex flex-col gap-1.5 w-20 xs:w-24 sm:w-32 md:w-48">
+        <div className="flex flex-col gap-1.5 w-16 xs:w-24 sm:w-32 md:w-48 shrink">
           <div className="flex justify-between items-center px-1">
             <span className="font-display text-[11px] font-bold text-white">XP</span>
-            <span className="font-display text-[11px] font-semibold text-white/80">{xp.toLocaleString('es')} / {xpMax.toLocaleString('es')}</span>
+            <span className="font-display text-[10px] sm:text-[11px] font-semibold text-white/80 shrink truncate ml-1">{formatNumber(xp)} / {formatNumber(xpMax)}</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full border border-[oklch(1_1_1/0.1)] bg-[oklch(0_0_0/0.5)]">
             <div
@@ -36,31 +42,31 @@ export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => 
       </div>
 
       {/* RIGHT: Currencies & Settings */}
-      <div className="flex items-center gap-1.5 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
         
         {/* Coins Pill */}
-        <div className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/50 bg-[oklch(0_0_0/0.3)] p-1 pr-2 sm:pr-3 shadow-inner">
-          <img src="/sugar-coin.png" alt="Sugar Coin" className="size-6 sm:size-7 object-contain drop-shadow-[0_2px_8px_rgba(255,215,0,0.4)]" />
-          <span className="font-display text-xs sm:text-sm font-extrabold tracking-wide text-foreground">
-            {coins.toLocaleString('es')}
+        <div className="flex items-center gap-1 sm:gap-2 rounded-full border border-border/50 bg-[oklch(0_0_0/0.3)] p-1 pr-1.5 sm:pr-3 shadow-inner min-w-[4.5rem] justify-between">
+          <img src="/sugar-coin.png" alt="Sugar Coin" className="size-5 sm:size-7 shrink-0 object-contain drop-shadow-[0_2px_8px_rgba(255,215,0,0.4)]" />
+          <span className="font-display text-[10px] sm:text-sm font-extrabold tracking-wide text-foreground truncate">
+            {formatNumber(coins)}
           </span>
-          <button onClick={onStoreOpen} className="flex ml-1 sm:ml-1.5 size-5 sm:size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a5b4fc,#6366f1)] text-white shadow-[0_2px_5px_rgba(99,102,241,0.5)] transition-transform hover:scale-110">
-            <Plus className="size-3.5 sm:size-4" strokeWidth={3} />
+          <button onClick={onStoreOpen} className="flex shrink-0 ml-0.5 sm:ml-1.5 size-4 sm:size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a5b4fc,#6366f1)] text-white shadow-[0_2px_5px_rgba(99,102,241,0.5)] transition-transform hover:scale-110">
+            <Plus className="size-3 sm:size-4" strokeWidth={3} />
           </button>
         </div>
 
         {/* Diamonds Pill */}
-        <div className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/50 bg-[oklch(0_0_0/0.3)] p-1 pr-2 sm:pr-3 shadow-inner">
-          <div className="flex size-6 sm:size-7 items-center justify-center rounded-full bg-[linear-gradient(145deg,#d946ef,#9333ea)] shadow-[0_2px_8px_rgba(147,51,234,0.4)]">
-            <svg viewBox="0 0 24 24" className="size-3.5 sm:size-4 fill-white" xmlns="http://www.w3.org/2000/svg">
+        <div className="flex items-center gap-1 sm:gap-2 rounded-full border border-border/50 bg-[oklch(0_0_0/0.3)] p-1 pr-1.5 sm:pr-3 shadow-inner min-w-[4.5rem] justify-between">
+          <div className="flex size-5 sm:size-7 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(145deg,#d946ef,#9333ea)] shadow-[0_2px_8px_rgba(147,51,234,0.4)]">
+            <svg viewBox="0 0 24 24" className="size-3 sm:size-4 fill-white" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 2L2 12L12 22L22 12L12 2Z" />
             </svg>
           </div>
-          <span className="font-display text-xs sm:text-sm font-extrabold tracking-wide text-foreground">
-            {gems.toLocaleString('es')}
+          <span className="font-display text-[10px] sm:text-sm font-extrabold tracking-wide text-foreground truncate">
+            {formatNumber(gems)}
           </span>
-          <button onClick={onStoreOpen} className="flex ml-1 sm:ml-1.5 size-5 sm:size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a5b4fc,#6366f1)] text-white shadow-[0_2px_5px_rgba(99,102,241,0.5)] transition-transform hover:scale-110">
-            <Plus className="size-3.5 sm:size-4" strokeWidth={3} />
+          <button onClick={onStoreOpen} className="flex shrink-0 ml-0.5 sm:ml-1.5 size-4 sm:size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#a5b4fc,#6366f1)] text-white shadow-[0_2px_5px_rgba(99,102,241,0.5)] transition-transform hover:scale-110">
+            <Plus className="size-3 sm:size-4" strokeWidth={3} />
           </button>
         </div>
 

@@ -938,7 +938,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   // Find next active player
   const moveToNextPlayer = (currentTokens: Token[] = tokens) => {
-    let nextTurn = (currentTurn + 1) % players.length;
+    let nextTurn = (currentTurn - 1 + players.length) % players.length;
     
     const isPlayerFinished = (pId: number) => {
        if (players[pId]?.hasFinished) return true;
@@ -947,7 +947,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
     };
 
     while (!players[nextTurn]?.isActive || isPlayerFinished(nextTurn)) {
-      nextTurn = (nextTurn + 1) % players.length;
+      nextTurn = (nextTurn - 1 + players.length) % players.length;
     }
     setCurrentTurn(nextTurn);
     addLog(`Es el turno de ${players[nextTurn].name} (${PLAYER_NAMES[players[nextTurn].color]}).`, 'system', players[nextTurn].color);
@@ -1235,6 +1235,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                        position={pos}
                        isActiveTurn={currentTurn === p.id}
                        isHumanTurnToRoll={currentTurn === p.id && p.type === 'human' && !hasRolled && !isRolling && !isAnimatingMove}
+                       isLocalUser={p.type === 'human'}
                        isRolling={isRolling}
                        hasRolled={hasRolled}
                        diceValues={diceValues}

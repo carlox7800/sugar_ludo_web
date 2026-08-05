@@ -129,7 +129,7 @@ export function CompetitiveTraining({
 
     socket.emit('join_matchmaking', {
       playerId,
-      playerName,
+      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
       targetPlayers: quickPlayers,
       mode: 'competitive',
     })

@@ -141,7 +141,7 @@ export function OnlineTraining({
 
     socket.emit('join_matchmaking', {
       playerId,
-      playerName,
+      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
       targetPlayers: quickPlayers,
       mode: 'online_training',
     })
@@ -163,7 +163,7 @@ export function OnlineTraining({
     showToast(isDevSandbox ? 'Creando sala Dev Sandbox...' : 'Creando sala privada en el servidor...')
     socket.emit('create_private_room', {
       playerId,
-      playerName,
+      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
       targetPlayers: isDevSandbox ? 2 : createPlayers, // Force 2 real players for sandbox
     })
   }
@@ -190,7 +190,7 @@ export function OnlineTraining({
     showToast(`Uniéndose a la sala ${code}...`)
     socket.emit('join_private_room', {
       playerId,
-      playerName,
+      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
       targetPlayers: isDevSandbox ? 2 : createPlayers,
       roomCode: code,
       code: code,
