@@ -167,13 +167,13 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
           <div className="relative flex gap-2 mb-2">
              <button 
                onClick={() => setActiveMenu(activeMenu === 'emoji' ? null : 'emoji')}
-               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase cursor-pointer"
+               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold sm:backdrop-blur-md transition-all active:scale-95 uppercase cursor-pointer"
              >
                Emoji
              </button>
              <button 
                onClick={() => setActiveMenu(activeMenu === 'chat' ? null : 'chat')}
-               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold backdrop-blur-md transition-all active:scale-95 uppercase cursor-pointer"
+               className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold sm:backdrop-blur-md transition-all active:scale-95 uppercase cursor-pointer"
              >
                Chat
              </button>
@@ -182,7 +182,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
              {activeMenu && (
                <>
                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setActiveMenu(null)} />
-                 <div className={`absolute z-50 duration-200 bg-[#0f172a]/95 backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px] ${
+                 <div className={`absolute z-50 duration-200 bg-[#0f172a]/95 sm:backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px] ${
                    isTopPosition 
                      ? 'top-[100%] mt-2 animate-in fade-in zoom-in slide-in-from-top-2' 
                      : 'bottom-[100%] mb-2 animate-in fade-in zoom-in slide-in-from-bottom-2'
@@ -242,7 +242,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
           </div>
         )}
         
-        <div className={`w-14 h-14 md:w-20 md:h-20 rounded-full flex items-center justify-center bg-[oklch(0.12_0.02_285/0.8)] backdrop-blur-md border border-[var(--panel-border,oklch(0.7_0.27_350/0.3))] shadow-lg transition-all duration-300 ${isActiveTurn ? `ring-4 ring-offset-2 ring-offset-[oklch(0.08_0.02_285)] ${ringColors[player.color] || ringColors['blue']} animate-pulse scale-110` : 'opacity-70 grayscale-[0.3]'}`}>
+        <div className={`w-14 h-14 md:w-20 md:h-20 rounded-full flex items-center justify-center bg-[oklch(0.12_0.02_285/0.95)] sm:bg-[oklch(0.12_0.02_285/0.8)] sm:backdrop-blur-md border border-[var(--panel-border,oklch(0.7_0.27_350/0.3))] shadow-lg transition-all duration-300 ${isActiveTurn ? `ring-4 ring-offset-2 ring-offset-[oklch(0.08_0.02_285)] ${ringColors[player.color] || ringColors['blue']} animate-pulse scale-110` : 'opacity-70 grayscale-[0.3]'}`}>
            {isHuman ? (
              <div 
                className="w-full h-full rounded-full flex items-center justify-center text-3xl md:text-4xl overflow-hidden"

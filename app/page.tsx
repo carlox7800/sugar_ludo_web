@@ -13,6 +13,7 @@ import { SettingsModal } from '@/components/settings-modal'
 import GameEngine from '@/src/GameEngine'
 import { GameConfig } from '@/src/types'
 import { OnlineGameEngine, OnlineGameData } from '@/screens/online-game-engine'
+import { Maximize, Minimize } from 'lucide-react'
 
 // Screens
 import { WalletScreen } from '@/screens/wallet-screen'
@@ -60,6 +61,27 @@ function PageContent() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
 
   // Auth routing logic
   useEffect(() => {
@@ -212,6 +234,15 @@ function PageContent() {
 
         {/* Bottom navigation (mobile) */}
         <MobileNav currentScreen={screen} onNavigate={(s) => setScreen(s as Screen)} />
+
+        {/* Floating Fullscreen Button (Mobile Only) */}
+        <button
+          onClick={toggleFullscreen}
+          className="md:hidden fixed bottom-[90px] right-4 z-50 flex size-12 items-center justify-center rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white/70 shadow-lg transition-all hover:bg-black/60 hover:text-white"
+          aria-label="Pantalla Completa"
+        >
+          {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+        </button>
 
         {/* Modals */}
         <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />

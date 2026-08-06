@@ -287,7 +287,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
   };
 
   return (
-    <div id="ludo_board_container" className="relative w-full max-w-full md:max-w-[550px] mx-auto bg-white sm:rounded-2xl shadow-none md:shadow-[0_8px_32px_rgba(0,0,0,0.12)] border-0 md:border-4 border-[#cbd5e1] p-0 md:p-2 overflow-hidden select-none">
+    <div id="ludo_board_container" className="relative w-full max-w-full md:max-w-[550px] mx-auto bg-white rounded-xl md:rounded-2xl shadow-sm md:shadow-[0_8px_32px_rgba(0,0,0,0.12)] border-[3px] md:border-4 border-[#cbd5e1] p-1 md:p-2 overflow-hidden select-none">
       <style>{breathingAnimation}</style>
       <div className="relative w-full h-full leading-none flex items-center justify-center">
         <svg

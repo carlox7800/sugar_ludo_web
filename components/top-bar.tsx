@@ -14,7 +14,7 @@ export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => 
   };
 
   return (
-    <header className="glass flex w-full items-center justify-between rounded-[2rem] border border-border/30 bg-[oklch(1_0_0/0.03)] p-2 pl-4 pr-3 shadow-[inset_0_1px_5px_oklch(1_0_0/0.05)]">
+    <header className="sticky top-4 z-50 glass flex w-full items-center justify-between rounded-[2rem] border border-border/30 bg-[oklch(1_0_0/0.03)] p-2 pl-4 pr-3 shadow-[inset_0_1px_5px_oklch(1_0_0/0.05)]">
       
       {/* LEFT: Level & XP */}
       <div className="flex items-center gap-2 sm:gap-4 shrink">

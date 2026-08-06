@@ -199,11 +199,13 @@ const HexBoardStaticSVG = React.memo(({ rotationOffset }: { rotationOffset: numb
             <style>{`
               @keyframes breatheHex {
                 0% { transform: scale(1); }
-                50% { transform: scale(1.28); }
+                50% { transform: scale(1.22); }
                 100% { transform: scale(1); }
               }
               .breathing-token-hex {
                 animation: breatheHex 1.4s ease-in-out infinite;
+                will-change: transform;
+                transform-origin: center center;
               }
               @keyframes fireworkRingHexHTML {
                 0% { transform: scale(0); opacity: 1; border-width: 6px; }
@@ -215,27 +217,6 @@ const HexBoardStaticSVG = React.memo(({ rotationOffset }: { rotationOffset: numb
                 100% { transform: translate3d(var(--dx), var(--dy), 0) scale(0); opacity: 0; }
               }
             `}</style>
-            <filter id="tokenShadow" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="2" dy="4" stdDeviation="4" floodOpacity="0.5" />
-            </filter>
-            <filter id="textOutline" x="-30%" y="-30%" width="160%" height="160%">
-              <feMorphology in="SourceAlpha" operator="dilate" radius="1.5" result="DILATED" />
-              <feFlood floodColor="#000000" floodOpacity="0.6" result="OUTLINE_COLOR" />
-              <feComposite in="OUTLINE_COLOR" in2="DILATED" operator="in" result="OUTLINE" />
-              <feMerge>
-                <feMergeNode in="OUTLINE" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="houseShadow" x="-15%" y="-15%" width="130%" height="130%">
-              <feDropShadow dx="0" dy="8" stdDeviation="8" floodOpacity="0.15" />
-            </filter>
-            <filter id="baseShadow" x="-10%" y="-10%" width="120%" height="120%">
-              <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.6" floodColor="#000000" />
-            </filter>
-            <filter id="innerBaseShadow" x="-10%" y="-10%" width="120%" height="120%">
-              <feDropShadow dx="1" dy="2" stdDeviation="2" floodOpacity="0.4" floodColor="#000000" />
-            </filter>
             {/* Gradients for tokens matching the 4-player classic style */}
             <radialGradient id="token-purple-grad" cx="30%" cy="30%" r="70%">
               <stop offset="0%" stopColor="#a78bfa" />
@@ -413,7 +394,7 @@ const HexBoardStaticSVG = React.memo(({ rotationOffset }: { rotationOffset: numb
             const vRight = getPolarPos(366.5, houseAngle + 20.1);
 
             return (
-              <g key={`house-${colorKey}`} filter="url(#baseShadow)">
+              <g key={`house-${colorKey}`}>
                 {/* House Triangle Background outer */}
                 <polygon
                   points={`${vTip.x},${vTip.y} ${vLeft.x},${vLeft.y} ${vRight.x},${vRight.y}`}
@@ -430,7 +411,6 @@ const HexBoardStaticSVG = React.memo(({ rotationOffset }: { rotationOffset: numb
                   strokeWidth="2.5"
                   strokeLinejoin="round"
                   strokeDasharray="4"
-                  filter="url(#innerBaseShadow)"
                 />
                 {/* 3 Token Base Slots in Triangular Formation */}
                 {[0, 1, 2].map((slotIdx) => {
@@ -515,13 +495,17 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
                     <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
                       <path d="M -15 0 L -24 -10 L -24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
                       <path d="M 15 0 L 24 -10 L 24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
-                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
+                      {/* Fast vector shadow */}
+                      <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
+                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="rgba(255,255,255,0.9)" strokeWidth="3" />
                       <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
                       <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
                     </g>
                   ) : (
                     <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
+                      {/* Fast vector shadow */}
+                      <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
+                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" />
                       <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
                       <circle cx={0} cy={0} r={5} fill={tokenInfo.hexCode} />
                       <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Player, PlayerColor, GameConfig } from '../types';
-import { Play, RotateCcw, Volume2, ShieldCheck, Award, Zap, HelpCircle } from 'lucide-react';
+import { Play, RotateCcw, Volume2, ShieldCheck, Award, Zap, HelpCircle, Maximize, Minimize } from 'lucide-react';
 import { COLOR_HEX } from './GameBoard';
 
 import { AppTheme } from '../types';
@@ -125,7 +125,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
   };
 
   return (
-    <div className="w-full max-w-[550px] mx-auto rounded-3xl p-5 shadow-[0_0_40px_rgba(0,242,255,0.05)] border flex flex-col gap-4 select-none cyber-game-panel bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] backdrop-blur-xl border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
+    <div className="w-full max-w-[550px] mx-auto rounded-3xl p-5 shadow-[0_0_40px_rgba(0,242,255,0.05)] border flex flex-col gap-4 select-none cyber-game-panel bg-[var(--panel-bg,oklch(0.12_0.02_285/0.95))] sm:bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] sm:backdrop-blur-xl border-[var(--panel-border,oklch(0.7_0.27_350/0.15))]">
       
 
       {/* 2. Live Game Information Header */}

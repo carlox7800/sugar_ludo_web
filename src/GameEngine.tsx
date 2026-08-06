@@ -6,7 +6,7 @@ import { PlayerCorner } from './components/PlayerCorner';
 import { ConsoleLogs } from './components/ConsoleLogs';
 import { audio } from './audio';
 import { globalLogger } from '@/lib/logger';
-import { Volume2, VolumeX, BookOpen, Sparkles, Trophy, ArrowLeft, Settings, X, Palette, Music, Terminal } from 'lucide-react';
+import { Volume2, VolumeX, BookOpen, Sparkles, Trophy, ArrowLeft, Settings, X, Palette, Music, Terminal, Maximize, Minimize } from 'lucide-react';
 import { HexGameView } from './components/HexGameView';
 import { useAuth } from '@/lib/auth-context';
 import { recordMatchResult } from '@/lib/stats-service';
@@ -89,7 +89,8 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   // Audio settings
   const [audioSettings, setAudioSettings] = useState({ musicVolume: 0.25, sfxVolume: 1.0, isMuted: false });
-  const [isAudioMenuOpen, setIsAudioMenuOpen] = useState<boolean>(false);
+  const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false);
+
   const isMuted = audioSettings.isMuted;
 
   // Logs state
@@ -1089,7 +1090,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   return (
     <div className={`min-h-screen w-full flex flex-col font-sans cyber-bg ${appTheme === 'sugar' ? 'theme-sugar' : ''}`}>
       {/* Upper Navigation & Sound controls */}
-      <header className="w-full bg-root/80 backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-4 py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-[0_4px_30px_oklch(0.82_0.15_200/0.05)]">
+      <header className="w-full bg-root/95 sm:bg-root/80 sm:backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-4 py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-sm">
         <div className="flex items-center gap-2">
           <button 
             onClick={() => {
@@ -1166,7 +1167,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
       {/* Toast Banner (Floating Overlay - Zero Layout Shift) */}
       {notification && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/90 backdrop-blur-md px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-extrabold shadow-[0_8px_32px_rgba(0,0,0,0.6)] pointer-events-none">
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/50 bg-[#0f172a]/95 sm:backdrop-blur-md px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-extrabold shadow-lg pointer-events-none">
           <Sparkles className="size-4 text-[var(--candy-cyan)]" />
           <span>{notification}</span>
         </div>
@@ -1208,7 +1209,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                   <>
                     {/* Center GameBoard with CSS Rotation */}
                     <div 
-                      className="z-10 scale-[0.85] md:scale-100 max-w-[650px] w-full mx-auto aspect-square flex items-center justify-center transition-transform duration-1000 ease-in-out" 
+                      className="z-10 w-[94vw] md:w-full max-w-[650px] mx-auto aspect-square flex items-center justify-center transition-transform duration-1000 ease-in-out" 
                       style={{ transform: `rotate(${rotationOffset}deg)`, transformOrigin: 'center center' }}
                     >
                       <GameBoard
@@ -1269,7 +1270,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
       {/* Exit Confirmation Modal */}
       {isExitModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md cyber-game-panel">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 sm:backdrop-blur-md cyber-game-panel">
           <div className="w-full max-w-sm rounded-3xl p-6 shadow-[0_10px_40px_rgba(0,0,0,0.5)] border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] relative animate-in zoom-in duration-200 text-center flex flex-col gap-4 bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))]">
             <h2 className="text-xl font-black text-t-primary drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">¿Estás seguro de que deseas salir?</h2>
             <p className="text-sm text-t-muted">Si abandonas la partida actual, perderás todo tu progreso.</p>
@@ -1298,7 +1299,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
       {/* Logs Modal */}
       {isLogsModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 sm:backdrop-blur-sm">
           <div className="w-full max-w-lg animate-in zoom-in duration-200">
             <ConsoleLogs
               logs={logs}
@@ -1385,7 +1386,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
         }
 
         return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/80 sm:backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-[oklch(0.16_0.03_285)] border border-[#06b6d4]/40 p-4 rounded-3xl shadow-2xl flex flex-col gap-3 max-w-[200px] w-full animate-in fade-in zoom-in-95 duration-200">
               <div className="flex flex-col items-center gap-1">
                 <h3 className="text-white font-extrabold text-sm text-center font-display uppercase tracking-wider">Mover Ficha</h3>
@@ -1418,7 +1419,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
       {/* Winner Celebration Modal (Universal Offline Podium) */}
       {winner !== null && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[oklch(0.7_0.27_350/0.3)] backdrop-blur-xl p-4 cyber-game-panel">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 sm:bg-[oklch(0.7_0.27_350/0.3)] sm:backdrop-blur-xl p-4 cyber-game-panel">
           <div className="bg-[var(--panel-bg,oklch(0.12_0.02_285/0.85))] max-w-md w-full rounded-3xl p-8 border border-[var(--panel-border,oklch(0.7_0.27_350/0.15))] shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_0_60px_oklch(0.7_0.27_350/0.15)] flex flex-col items-center text-center gap-6 animate-in zoom-in duration-300">
             <Trophy className="text-[var(--candy-green,oklch(0.78_0.2_150))] animate-bounce drop-shadow-[0_0_15px_var(--candy-green,oklch(0.78_0.2_150))]" size={64} />
             <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[var(--candy-magenta,oklch(0.7_0.27_350))] to-[var(--candy-cyan,oklch(0.82_0.15_200))] drop-shadow-[0_0_8px_oklch(0.7_0.27_350/0.5)] uppercase tracking-wider font-display">
