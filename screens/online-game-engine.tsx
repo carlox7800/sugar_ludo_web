@@ -5,6 +5,7 @@ import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle, Trophy } from 'lu
 import { recordMatchResult } from '@/lib/stats-service'
 import confetti from 'canvas-confetti'
 import { getSocket } from '@/lib/socket'
+import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { GameBoard } from '@/src/components/GameBoard'
 import { PlayerCorner } from '@/src/components/PlayerCorner'
@@ -196,10 +197,13 @@ export function OnlineGameEngine({
   const muted = audioSettings.isMuted
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
 
-  // Derived state
   const activePlayerIndex = Math.max(
     0,
-    gameData.players.findIndex((p) => p.playerId === currentTurnPlayerId)
+    gameData.players.findIndex((p, idx) => 
+      p.playerId === currentTurnPlayerId || 
+      String(idx) === String(currentTurnPlayerId) || 
+      (p as any).colorId !== undefined && String((p as any).colorId) === String(currentTurnPlayerId)
+    )
   )
 
   const currentTurnPlayer: Player = formattedPlayers[activePlayerIndex] || formattedPlayers[0] || defaultPlayer
@@ -210,7 +214,7 @@ export function OnlineGameEngine({
   }
 
   const isBotTurn = currentTurnPlayer.type === 'bot'
-  const isMyTurn = currentTurnPlayerId === myPlayerId || (isBotTurn && isActingHost())
+  const isMyTurn = activePlayerIndex === myPlayerIndex || (isBotTurn && isActingHost())
 
   // Refs to prevent closure staleness and duplicate timer triggers
   const tokensRef = useRef(tokens)
@@ -325,31 +329,16 @@ export function OnlineGameEngine({
     barrierLifetimesRef.current = nextLifetimes
   }
 
-  const getNextActiveColorId = (currentColorId: number, totalPlayers: number): number => {
-    // Si es tablero de 6 (Hex), conservamos la lógica actual que usa SLOT_TO_COLOR_ID
-    if (totalPlayers > 4) {
-      const SLOT_TO_COLOR_ID: Record<number, number> = { 0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5 }
-      const currentSlot = parseInt(Object.keys(SLOT_TO_COLOR_ID).find(k => SLOT_TO_COLOR_ID[parseInt(k)] === currentColorId) ?? '0')
-      let nextSlot = (currentSlot - 1 + totalPlayers) % totalPlayers
-      let attempts = 0
-      while (finishedPlayerIndicesRef.current.includes(SLOT_TO_COLOR_ID[nextSlot]) && attempts < totalPlayers) {
-        nextSlot = (nextSlot - 1 + totalPlayers) % totalPlayers
-        attempts++
-      }
-      return SLOT_TO_COLOR_ID[nextSlot] ?? 0
-    }
-
-    // Para 4 esquinas (2, 3 o 4 jugadores), rotación antihoraria por color: 0 -> 3 -> 2 -> 1 -> 0
-    const activeColorIds = gameData.players.map(p => p.colorId)
-    let nextColor = (currentColorId - 1 + 4) % 4
+  const getNextActivePlayerIndex = (currentIndex: number, totalPlayers: number): number => {
+    let nextIndex = (currentIndex - 1 + totalPlayers) % totalPlayers
     let attempts = 0
     
-    // Buscar el siguiente color que esté en la partida y que no haya terminado
-    while ((!activeColorIds.includes(nextColor) || finishedPlayerIndicesRef.current.includes(nextColor)) && attempts < 4) {
-      nextColor = (nextColor - 1 + 4) % 4
+    // Buscar el siguiente jugador que esté activo (no terminado)
+    while (finishedPlayerIndicesRef.current.includes(nextIndex) && attempts < totalPlayers) {
+      nextIndex = (nextIndex - 1 + totalPlayers) % totalPlayers
       attempts++
     }
-    return nextColor
+    return nextIndex
   }
 
   const showToast = (msg: string) => {
@@ -591,22 +580,23 @@ export function OnlineGameEngine({
     const playables = getPlayableTokenIds(activeIdx, nextMoves, currentTokens)
 
     if (nextMoves.length === 0 || playables.length === 0) {
-      let nextColorId = getNextActiveColorId(activeIdx, gameData.players.length)
+      let nextPlayerIndex = getNextActivePlayerIndex(activeIdx, gameData.players.length)
 
       if (pendingExtraTurnsRef.current > 0 && !finishedPlayerIndicesRef.current.includes(activeIdx)) {
         pendingExtraTurnsRef.current -= 1
-        nextColorId = activeIdx
-        globalLogger.log('GAME-FLOW', `¡Turno extra! Manteniendo el turno en color: ${nextColorId}`)
+        nextPlayerIndex = activeIdx
+        globalLogger.log('GAME-FLOW', `¡Turno extra! Manteniendo el turno en el mismo jugador.`)
       } else {
         updateBarrierLifetimes(currentTokens, activeIdx)
       }
 
       isProcessingTimeoutRef.current = false
-      globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> nextColorId: ${nextColorId}`)
+      
+      globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> nextColorId/Index: ${nextPlayerIndex}`)
       socket.emit('intent_end_turn', {
         roomId: gameData.roomId,
-        nextPlayerId: nextColorId,
-        nextTurnId: nextColorId,
+        nextPlayerId: nextPlayerIndex, // Emitimos el index como hacía la v7.9.1 (nextColorId)
+        nextTurnId: nextPlayerIndex,
       })
     }
   }
@@ -1373,11 +1363,19 @@ export function OnlineGameEngine({
 
   const handleConfirmExit = () => {
     audio.stopAll()
-    socket.emit('intent_end_turn', {
-      roomId: gameData.roomId,
-      nextPlayerId: 0,
-      nextTurnId: 0,
-    })
+    
+    // Si era nuestro turno al salir, intentamos pasar el turno limpiamente
+    if (isMyTurnRef.current) {
+      const activeIdx = activePlayerIndexRef.current
+      const nextPlayerIndex = getNextActivePlayerIndex(activeIdx, gameData.players.length)
+      
+      socket.emit('intent_end_turn', {
+        roomId: gameData.roomId,
+        nextPlayerId: nextPlayerIndex,
+        nextTurnId: nextPlayerIndex,
+      })
+    }
+    
     onExit()
   }
 
