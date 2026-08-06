@@ -928,6 +928,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     setTimer(10);
   };
 
+  const humanPlayer = gameState.players.find(p => p.type === 'human');
+  const hColor = humanPlayer ? humanPlayer.color : undefined;
+  const humanSectorInfo = hColor ? HEX_COLOR_INFO[hColor] : null;
+  const rotationOffset = humanSectorInfo ? -humanSectorInfo.sectorIndex * 60 : 0;
+
   return (
     <div className="w-full flex-1 flex flex-col items-center text-white relative overflow-hidden">
       {/* Toast Banner (Floating Overlay - Zero Layout Shift) */}
@@ -946,7 +951,10 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           className="z-10 w-full mx-auto flex items-center justify-center"
           style={{ maxWidth: 'min(700px, calc((100vh - 220px) * 1.05))' }}
         >
-          <div className="relative mx-auto w-full">
+          <div 
+            className="relative mx-auto w-full aspect-square flex items-center justify-center transition-transform duration-1000 ease-in-out"
+            style={{ transform: `rotate(${rotationOffset}deg)`, transformOrigin: 'center center' }}
+          >
             <HexagonalLudoBoardView
               appTheme={appTheme}
               tokens={gameState.tokens}
@@ -956,6 +964,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               onTokenClick={handleTokenClick}
               humanPlayerId={gameState.players.findIndex(p => p.type === 'human')}
               explosionData={explosionData}
+              rotationOffset={rotationOffset}
             />
           </div>
         </div>

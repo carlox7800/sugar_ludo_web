@@ -18,8 +18,9 @@ interface HexagonalLudoBoardViewProps {
   playableTokenIds: number[];
   onTokenClick: (tokenId: number) => void;
   humanPlayerId: number;
-  appTheme: 'classic' | 'sugar';
-  explosionData?: { cellIndex: number | string; color: HexPlayerColor } | null;
+  appTheme?: 'classic' | 'sugar';
+  explosionData?: { cellIndex: number | string, color: HexPlayerColor } | null;
+  rotationOffset?: number;
 }
 
 const CX = 500;
@@ -190,7 +191,8 @@ export function getTokenCoordinates(token: HexToken, allTokens?: HexToken[]): { 
 // Esto renderiza el 100% de la geometría, estrellas, casas y pasillos 1 sola vez.
 // Elimina el 95% de la carga de reconciliación DOM en GPU móvil durante las partidas.
 // -------------------------------------------------------------------------------------------------
-const HexBoardStaticSVG = React.memo(() => {
+// -------------------------------------------------------------------------------------------------
+const HexBoardStaticSVG = React.memo(({ rotationOffset }: { rotationOffset: number }) => {
   return (
     <g id="hex-static-layer">
           <defs>
@@ -313,6 +315,7 @@ const HexBoardStaticSVG = React.memo(() => {
                         fontSize="13"
                         fontWeight="900"
                         textAnchor="middle"
+                        transform={`rotate(${-rotationOffset} ${pos.x} ${pos.y + 1.5})`}
                       >
                         H{hNum}
                       </text>
@@ -365,6 +368,7 @@ const HexBoardStaticSVG = React.memo(() => {
                   fontSize="13"
                   fontWeight="800"
                   textAnchor="middle"
+                  transform={`rotate(${-rotationOffset} ${pos.x} ${pos.y + 1.5})`}
                 >
                   {cellIdx}
                 </text>
@@ -459,6 +463,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
   onTokenClick,
   appTheme,
   explosionData,
+  rotationOffset,
 }) => {
   const activePlayer = players[currentTurnIndex];
 
@@ -469,7 +474,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
         className="w-full h-auto block drop-shadow-[0_12px_24px_rgba(0,0,0,0.5)]"
         style={{ touchAction: 'none' }}
       >
-          <HexBoardStaticSVG />
+          <HexBoardStaticSVG rotationOffset={rotationOffset || 0} />
 
       </svg>
 
@@ -501,7 +506,11 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
               onClick={() => isPlayable && onTokenClick(token.id)}
             >
               <div className={`w-full h-full flex items-center justify-center ${isPlayable && activePlayer?.type === 'human' ? 'breathing-token-hex' : ''}`}>
-                <svg viewBox="-24 -24 48 48" className="w-full h-full overflow-visible">
+                <svg 
+                  viewBox="-24 -24 48 48" 
+                  className="w-full h-full overflow-visible"
+                  style={{ transform: `rotate(${-(rotationOffset || 0)}deg)` }}
+                >
                   {appTheme === 'sugar' ? (
                     <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
                       <path d="M -15 0 L -24 -10 L -24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
