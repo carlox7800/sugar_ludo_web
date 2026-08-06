@@ -324,7 +324,7 @@ export function OnlineTraining({
 
           {/* Toast Notification */}
           {notification && (
-            <div className="animate-in fade-in slide-in-from-top-2 flex items-center justify-center gap-2 rounded-2xl border border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/15 p-3.5 text-[var(--candy-cyan)] font-display text-sm font-bold shadow-lg">
+            <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in slide-in-from-top-4 flex items-center justify-center gap-2 rounded-full border border-[var(--candy-cyan)]/40 bg-[oklch(0.1_0.05_250)] px-6 py-3 text-[var(--candy-cyan)] font-display text-sm font-bold shadow-2xl shadow-[var(--candy-cyan)]/20 whitespace-nowrap">
               <Sparkles className="size-4" />
               <span>{notification}</span>
             </div>
@@ -627,8 +627,8 @@ export function OnlineTraining({
       <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
       {/* FLOATING LOBBY MODAL */}
       {(isSearching || lobbyData) && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-[oklch(0.08_0.02_280)] animate-in fade-in zoom-in-95">
-          <div className="glass w-full max-w-lg rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-cyan)]/40 shadow-[0_0_50px_var(--candy-cyan)]/20 flex flex-col items-center gap-6">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in zoom-in-95">
+          <div className="bg-panel w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-cyan)]/30 shadow-2xl flex flex-col items-center gap-6">
             <header className="text-center w-full">
               <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase text-[var(--candy-cyan)] tracking-wider drop-shadow-md">
                 {isPrivateMatchRef.current ? `Batalla de Amigos` : `Partida Rápida`}
@@ -664,38 +664,38 @@ export function OnlineTraining({
               </div>
             )}
 
-            {/* Avatars Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8 w-full mt-2 justify-items-center">
+            {/* Avatars List */}
+            <div className="flex flex-col gap-3 w-full mt-2">
               {Array.from({ length: lobbyData?.targetPlayers || targetPlayersRef.current || 4 }).map((_, i) => {
                   const player = lobbyData?.players?.[i]
                   let name = player?.playerName || ''
-                  let photo = '/avatars/default.png'
                   if (name.includes('|||')) {
                     const parts = name.split('|||')
                     name = parts[0]
-                    photo = parts[1] || photo
-                  } else if (player?.photoURL) {
-                     photo = player.photoURL
                   }
 
                   return (
-                    <div key={i} className="flex flex-col items-center gap-3 w-full">
-                      <div className={cn(
-                        "size-20 sm:size-24 rounded-full border-4 flex items-center justify-center overflow-hidden bg-black/40 transition-all shadow-xl",
-                        player ? "border-[var(--candy-cyan)] shadow-[0_0_20px_var(--candy-cyan)]/50 scale-105" : "border-dashed border-white/20"
-                      )}>
+                    <div key={i} className={cn(
+                      "flex items-center w-full rounded-xl px-4 py-3 border transition-colors",
+                      player ? "border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/10" : "border-dashed border-white/10 bg-white/5"
+                    )}>
+                      <div className="flex items-center gap-3 truncate w-full">
                         {player ? (
-                          <img src={photo} alt={name} className="w-full h-full object-cover" />
+                           <>
+                             <div className="size-2 shrink-0 rounded-full bg-[var(--candy-cyan)] shadow-[0_0_8px_var(--candy-cyan)]" />
+                             <span className="font-display text-sm font-bold text-white truncate">
+                               {name} <span className="text-muted-foreground ml-1">• NVL. 2</span>
+                             </span>
+                           </>
                         ) : (
-                          <Loader2 className="size-8 text-white/30 animate-spin" />
+                           <>
+                             <Loader2 className="size-4 text-white/30 animate-spin shrink-0" />
+                             <span className="font-display text-sm font-bold text-muted-foreground truncate">
+                               Esperando jugador...
+                             </span>
+                           </>
                         )}
                       </div>
-                      <span className={cn(
-                        "font-display text-sm font-bold text-center w-full truncate px-2",
-                        player ? "text-white" : "text-muted-foreground"
-                      )}>
-                        {player ? name : 'Esperando...'}
-                      </span>
                     </div>
                   )
               })}
