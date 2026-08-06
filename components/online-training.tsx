@@ -31,7 +31,11 @@ export function OnlineTraining({
   useEffect(() => {
     quickPlayersRef.current = quickPlayers
   }, [quickPlayers])
-  const [createPlayers, setCreatePlayers] = useState(4)
+  const [createPlayers, setCreatePlayers] = useState<number>(4)
+  const createPlayersRef = useRef(createPlayers)
+  useEffect(() => {
+    createPlayersRef.current = createPlayers
+  }, [createPlayers])
 
   // Join Room State
   const [roomCode, setRoomCode] = useState('')
@@ -84,6 +88,7 @@ export function OnlineTraining({
 
   // Private Match State
   const isPrivateMatchRef = useRef(false)
+  const hasLobbyIntentRef = useRef(false)
 
   // Auto-connect socket when opening Online Training
   useEffect(() => {
@@ -94,14 +99,17 @@ export function OnlineTraining({
     socket.emit('register_identity', { playerId })
 
     const handlePrivateRoomCreated = (data: { roomCode?: string; id?: string }) => {
+      if (!hasLobbyIntentRef.current) return
       const baseCode = data.roomCode || data.id || ''
-      const code = `${baseCode}-${createPlayers}`
+      const code = `${baseCode}-${createPlayersRef.current}`
+      
       setCreatedRoomCode(code)
-      setLobbyData({ roomId: code, players: [{ playerId, playerName: user?.photoURL ? `${user?.nickname || 'Jugador'}|||${user?.photoURL}` : (user?.nickname || 'Jugador') }], targetPlayers: createPlayers })
+      setLobbyData({ roomId: code, players: [{ playerId, playerName: user?.photoURL ? `${user?.nickname || 'Jugador'}|||${user?.photoURL}` : (user?.nickname || 'Jugador') }], targetPlayers: createPlayersRef.current })
       showToast(`¡Sala ${code} creada con éxito!`)
     }
 
     const handleRoomUpdated = (data: { id?: string; players?: any[] }) => {
+      if (!hasLobbyIntentRef.current) return
       if (data.players) {
         setLobbyData((prev) => ({
           roomId: prev?.roomId && prev.roomId !== 'Buscando...' && prev.roomId !== 'Creando...' ? prev.roomId : (data.id || 'Buscando...'),
@@ -113,6 +121,7 @@ export function OnlineTraining({
     }
 
     const handleMatchFound = (gameData: any) => {
+      if (!hasLobbyIntentRef.current) return
       const receivedCount = gameData.players?.length ?? 0
       if (!isPrivateMatchRef.current && receivedCount < quickPlayersRef.current && !isDevSandboxRef.current) {
         return // Ignore match if it doesn't meet our requested player count
@@ -150,6 +159,7 @@ export function OnlineTraining({
     }
 
     const handleRoomError = (data: { message: string }) => {
+      hasLobbyIntentRef.current = false
       setIsSearching(false)
       setLobbyData(null)
       setCreatedRoomCode(null)
@@ -182,6 +192,7 @@ export function OnlineTraining({
     const playerName = user?.nickname || user?.displayName || 'Jugador'
 
     targetPlayersRef.current = quickPlayers
+    hasLobbyIntentRef.current = true
     setIsSearching(true)
     setLobbyData({ roomId: 'Buscando...', players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: quickPlayers })
     showToast(`Buscando partida rápida para ${quickPlayers} jugadores...`)
@@ -197,6 +208,7 @@ export function OnlineTraining({
   const handleCancelQuickMatch = () => {
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id
+    hasLobbyIntentRef.current = false
     setIsSearching(false)
     setLobbyData(null)
     setCreatedRoomCode(null)
@@ -212,6 +224,7 @@ export function OnlineTraining({
     const playerName = user?.nickname || user?.displayName || 'Jugador'
 
     targetPlayersRef.current = isDevSandbox ? 2 : createPlayers
+    hasLobbyIntentRef.current = true
     showToast(isDevSandbox ? 'Creando sala Dev Sandbox...' : 'Creando sala privada en el servidor...')
     setLobbyData({ roomId: 'Creando...', players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: isDevSandbox ? 2 : createPlayers })
     socket.emit('create_private_room', {
@@ -246,6 +259,7 @@ export function OnlineTraining({
     
     isDevSandboxRef.current = isDevSandbox
     targetPlayersRef.current = isDevSandbox ? 2 : capacity
+    hasLobbyIntentRef.current = true
 
     showToast(`Uniéndose a la sala ${code}...`)
     setLobbyData({ roomId: code, players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: targetPlayersRef.current })

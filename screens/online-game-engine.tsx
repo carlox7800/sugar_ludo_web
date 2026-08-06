@@ -782,7 +782,7 @@ export function OnlineGameEngine({
         }
 
         if (isPenalty) {
-          if (isMyTurnRef.current) {
+          if (isMyTurnRef.current && data.playerId === myPlayerId) {
             const lastTokenId = lastMovedTokenGlobalIdRef.current
             if (lastTokenId !== null) {
               const tkIndex = lastTokenId % 4
@@ -802,7 +802,7 @@ export function OnlineGameEngine({
         }
 
         // If timeout auto-roll was triggered, chain auto-move
-        if (isMyTurnRef.current && isProcessingTimeoutRef.current) {
+        if (isMyTurnRef.current && data.playerId === myPlayerId && isProcessingTimeoutRef.current) {
           setTimeout(() => {
             executeRandomValidMove([...vals], tokensRef.current)
           }, 500)
@@ -866,7 +866,7 @@ export function OnlineGameEngine({
               : t
           )
         )
-        if (isMyTurnRef.current) {
+        if (isMyTurnRef.current && serverPlayerIdx === myPlayerIndex) {
           emitEndTurnIfNeeded([])
         }
         setTimeout(processNextQueuedMove, 100)
@@ -1101,7 +1101,7 @@ export function OnlineGameEngine({
           }
 
           // Check if turn should advance or continue auto-play
-          if (isMyTurnRef.current) {
+          if (isMyTurnRef.current && serverPlayerIdx === myPlayerIndex) {
             const playables = getPlayableTokenIds(activePlayerIndexRef.current, updatedMoves, finalTokens)
             if (updatedMoves.length === 0 || playables.length === 0) {
               emitEndTurnIfNeeded(updatedMoves, finalTokens)
