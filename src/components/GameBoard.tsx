@@ -34,6 +34,7 @@ interface GameBoardProps {
   humanPlayerId: number;
   isZeroIndexed?: boolean;
   explosionData?: { cellIndex: number, color: PlayerColor } | null;
+  rotationOffset?: number;
 }
 
 const COLOR_MAP: Record<PlayerColor, string> = {
@@ -200,14 +201,15 @@ export function getBaseSlotCoord(color: PlayerColor, slotId: number): { x: numbe
 }
 
 export const GameBoard: React.FC<GameBoardProps> = memo(({
+  appTheme = 'classic',
   tokens,
   currentTurn,
   playableTokenIds,
   onTokenClick,
   humanPlayerId,
-  appTheme,
   isZeroIndexed = false,
   explosionData = null,
+  rotationOffset = 0,
 }) => {
   const cellSize = 50;
 
@@ -351,7 +353,13 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
               {!startColor && isSafe && renderStarPath(x + 25, y + 25, 22, '#f59e0b', '#b45309')}
 
               {/* Number for the cell (rendered on top) */}
-              <text x={x + 25} y={y + 26} fill={startColor ? "#ffffff" : isSafe ? "#ca8a04" : "#94a3b8"} fontSize="14" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" opacity={startColor ? 1 : isSafe ? 0.9 : 0.6}>
+              <text 
+                x={x + 25} y={y + 26} 
+                fill={startColor ? "#ffffff" : isSafe ? "#ca8a04" : "#94a3b8"} 
+                fontSize="14" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" 
+                opacity={startColor ? 1 : isSafe ? 0.9 : 0.6}
+                transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 26})`}
+              >
                 {idx + 1}
               </text>
             </g>
@@ -367,7 +375,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           return (
             <g key={`home-red-${i}`}>
               <rect x={x} y={y} width={cellSize} height={cellSize} fill="#ff0055" stroke="#ffffff" strokeWidth="1.5" />
-              <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">H{i+1}</text>
+              <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 22})`}>H{i+1}</text>
               <circle cx={x + 25} cy={y + 36} r="3" fill="#ffffff" opacity="0.8" />
             </g>
           );
@@ -381,7 +389,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           return (
             <g key={`home-green-${i}`}>
               <rect x={x} y={y} width={cellSize} height={cellSize} fill="#059669" stroke="#ffffff" strokeWidth="1.5" />
-              <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">H{i+1}</text>
+              <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 22})`}>H{i+1}</text>
               <circle cx={x + 25} cy={y + 36} r="3" fill="#ffffff" opacity="0.8" />
             </g>
           );
@@ -395,7 +403,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           return (
             <g key={`home-blue-${i}`}>
               <rect x={x} y={y} width={cellSize} height={cellSize} fill="#0284c7" stroke="#ffffff" strokeWidth="1.5" />
-              <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">H{i+1}</text>
+              <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 22})`}>H{i+1}</text>
               <circle cx={x + 25} cy={y + 36} r="3" fill="#ffffff" opacity="0.8" />
             </g>
           );
@@ -409,7 +417,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           return (
             <g key={`home-yellow-${i}`}>
               <rect x={x} y={y} width={cellSize} height={cellSize} fill="#ca8a04" stroke="#ffffff" strokeWidth="1.5" />
-              <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">H{i+1}</text>
+              <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 22})`}>H{i+1}</text>
               <circle cx={x + 25} cy={y + 36} r="3" fill="#ffffff" opacity="0.8" />
             </g>
           );
@@ -515,7 +523,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
               onClick={() => isSelectable && onTokenClick(token.playerId * 4 + token.id)}
             >
               <div className={`w-full h-full flex items-center justify-center ${isSelectable ? 'breathing-token' : ''}`}>
-                <svg viewBox="-25 -25 50 50" className="w-full h-full overflow-visible">
+                <svg viewBox="-25 -25 50 50" className="w-full h-full overflow-visible" style={{ transform: `rotate(${-rotationOffset}deg)` }}>
                   {appTheme === 'sugar' ? (
                     <>
                       <path d="M -15 0 L -24 -10 L -24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />

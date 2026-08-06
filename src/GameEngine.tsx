@@ -1189,62 +1189,69 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
             />
           ) : (
             <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[600px]">
-              {/* Center GameBoard */}
-              <div className="z-10 scale-[0.85] md:scale-100 max-w-[650px] w-full mx-auto">
-                <GameBoard
-                  appTheme={appTheme}
-                  tokens={tokens}
-                  currentTurn={currentTurn}
-                  playableTokenIds={playableTokenIds}
-                  onTokenClick={handleTokenClick}
-                  humanPlayerId={players.findIndex((p) => p.type === 'human')}
-                  explosionData={explosionData}
-                />
-              </div>
-
-              {/* Corners with PlayerCorners */}
               {(() => {
-                 const activePlayers = players.filter(p => p.isActive);
-                 const humanIdx = activePlayers.findIndex(p => p.type === 'human');
-                 
-                 return activePlayers.map((p, index) => {
-                   let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
-                   
-                   if (p.type === 'human') {
-                     pos = 'bottom-left';
-                   } else {
-                     // Determine relative position based on turn order distance from human
-                     // If no human, just use index as base
-                     const baseIdx = humanIdx >= 0 ? humanIdx : 0;
-                     const offset = (index - baseIdx + activePlayers.length) % activePlayers.length;
-                     
-                     if (activePlayers.length === 2) {
-                       pos = 'top-right';
-                     } else if (activePlayers.length === 3) {
-                       pos = offset === 1 ? 'bottom-right' : 'top-left';
-                     } else {
-                       const corners: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
-                       pos = corners[offset];
-                     }
-                   }
+                const humanPlayer = players.find(p => p.type === 'human');
+                let rotationOffset = 0;
+                if (humanPlayer) {
+                  switch (humanPlayer.color) {
+                    case 'red': rotationOffset = 0; break;
+                    case 'green': rotationOffset = -90; break;
+                    case 'blue': rotationOffset = 180; break;
+                    case 'yellow': rotationOffset = 90; break;
+                  }
+                }
+                const activePlayers = players.filter(p => p.isActive);
+                const VISUAL_CORNERS = ['bottom-left', 'top-left', 'top-right', 'bottom-right'] as const;
+                const PHYSICAL_COLORS = ['red', 'green', 'blue', 'yellow'];
 
-                   return (
-                     <PlayerCorner
-                       key={p.id}
-                       player={p}
-                       position={pos}
-                       isActiveTurn={currentTurn === p.id}
-                       isHumanTurnToRoll={currentTurn === p.id && p.type === 'human' && !hasRolled && !isRolling && !isAnimatingMove}
-                       isLocalUser={p.type === 'human'}
-                       isRolling={isRolling}
-                       hasRolled={hasRolled}
-                       diceValues={diceValues}
-                       remainingMoves={remainingMoves}
-                       onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
-                       timer={timer}
-                     />
-                   );
-                 });
+                return (
+                  <>
+                    {/* Center GameBoard with CSS Rotation */}
+                    <div 
+                      className="z-10 scale-[0.85] md:scale-100 max-w-[650px] w-full mx-auto aspect-square flex items-center justify-center transition-transform duration-1000 ease-in-out" 
+                      style={{ transform: `rotate(${rotationOffset}deg)`, transformOrigin: 'center center' }}
+                    >
+                      <GameBoard
+                        appTheme={appTheme}
+                        tokens={tokens}
+                        currentTurn={currentTurn}
+                        playableTokenIds={playableTokenIds}
+                        onTokenClick={handleTokenClick}
+                        humanPlayerId={players.findIndex((p) => p.type === 'human')}
+                        explosionData={explosionData}
+                        rotationOffset={rotationOffset}
+                      />
+                    </div>
+
+                    {/* Corners mapped relatively to the human player */}
+                    {activePlayers.map((p) => {
+                      let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
+                      const humanColorIndex = humanPlayer ? PHYSICAL_COLORS.indexOf(humanPlayer.color) : 0;
+                      const cIndex = PHYSICAL_COLORS.indexOf(p.color);
+                      
+                      // Calculate physical distance from human in clockwise order to map to visual corners
+                      const distance = (cIndex - humanColorIndex + 4) % 4;
+                      pos = VISUAL_CORNERS[distance];
+
+                      return (
+                        <PlayerCorner
+                          key={p.id}
+                          player={p}
+                          position={pos}
+                          isActiveTurn={currentTurn === p.id}
+                          isHumanTurnToRoll={currentTurn === p.id && p.type === 'human' && !hasRolled && !isRolling && !isAnimatingMove}
+                          isLocalUser={p.type === 'human'}
+                          isRolling={isRolling}
+                          hasRolled={hasRolled}
+                          diceValues={diceValues}
+                          remainingMoves={remainingMoves}
+                          onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
+                          timer={timer}
+                        />
+                      );
+                    })}
+                  </>
+                );
               })()}
 
               {/* Minimalist Log Ticker */}
