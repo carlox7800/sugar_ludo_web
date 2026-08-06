@@ -488,7 +488,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
               <div className={`w-full h-full flex items-center justify-center ${isPlayable && activePlayer?.type === 'human' ? 'breathing-token-hex' : ''}`}>
                 <svg 
                   viewBox="-24 -24 48 48" 
-                  className="w-full h-full overflow-visible"
+                  className="w-full h-full overflow-visible cursor-pointer"
                   style={{ transform: `rotate(${-(rotationOffset || 0)}deg)` }}
                 >
                   {appTheme === 'sugar' ? (
