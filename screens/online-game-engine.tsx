@@ -20,6 +20,22 @@ import { getCellIndexForToken, hasBarrierAtHex } from '@/src/HexGameEngine'
 
 const SQUARE_COLORS_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'orange']
 
+// --- NATIVE SWEETY LUDO ANDROID COLOR ID MAP ---
+// The server maps incoming IDs to slots like this:
+// 0: Red    -> Slot 0
+// 1: Yellow -> Slot 2
+// 2: Blue   -> Slot 1
+// 3: Green  -> Slot 3
+// We reverse map from target Slot Index back to the required Android Color ID
+const slotToAndroidColorId: Record<number, number> = {
+  0: 0,
+  1: 2,
+  2: 1,
+  3: 3,
+  4: 4,
+  5: 5
+}
+
 // --- NATIVE 0-INDEXED MULTI-BOARD MATH HELPERS ---
 const getTrackSteps = (pCount: number): number => pCount === 6 ? 77 : 51
 const getGoalStep = (pCount: number): number => pCount === 6 ? 82 : 56
@@ -91,9 +107,16 @@ export function OnlineGameEngine({
   const socket = getSocket()
 
   const myPlayerId = gameData.myPlayerId || user?.uid || socket.id
-
-  const [dynamicPlayers, setDynamicPlayers] = useState(gameData.players || [])
-
+  const [dynamicPlayers, setDynamicPlayers] = useState(() => {
+    const players = gameData.players || []
+    return [...players].sort((a, b) => {
+      const aVal = a.slotIndex !== undefined ? a.slotIndex : (a.colorId !== undefined ? a.colorId : a.playerId)
+      const bVal = b.slotIndex !== undefined ? b.slotIndex : (b.colorId !== undefined ? b.colorId : b.playerId)
+      if (aVal < bVal) return -1
+      if (aVal > bVal) return 1
+      return 0
+    })
+  })
   const myPlayerIndex = useMemo(() => {
     return dynamicPlayers.findIndex((p) => p.playerId === myPlayerId || p.socketId === socket.id)
   }, [dynamicPlayers, myPlayerId, socket.id])
@@ -199,7 +222,7 @@ export function OnlineGameEngine({
 
   const activePlayerIndex = Math.max(
     0,
-    gameData.players.findIndex((p, idx) => 
+    dynamicPlayers.findIndex((p, idx) => 
       p.playerId === currentTurnPlayerId || 
       String(idx) === String(currentTurnPlayerId) || 
       (p as any).colorId !== undefined && String((p as any).colorId) === String(currentTurnPlayerId)
@@ -208,13 +231,7 @@ export function OnlineGameEngine({
 
   const currentTurnPlayer: Player = formattedPlayers[activePlayerIndex] || formattedPlayers[0] || defaultPlayer
 
-  const isActingHost = () => {
-    const firstActiveHuman = formattedPlayersRef.current.find(p => p.type !== 'bot' && p.isActive)
-    return firstActiveHuman?.id === myPlayerIndex
-  }
-
-  const isBotTurn = currentTurnPlayer.type === 'bot'
-  const isMyTurn = activePlayerIndex === myPlayerIndex || (isBotTurn && isActingHost())
+  const isMyTurn = activePlayerIndex === myPlayerIndex
 
   // Refs to prevent closure staleness and duplicate timer triggers
   const tokensRef = useRef(tokens)
@@ -241,7 +258,6 @@ export function OnlineGameEngine({
   const lastMovedTokenGlobalIdRef = useRef<number | null>(null)
   const barrierLifetimesRef = useRef<Record<number, number>>({})
   const finishedPlayerIndicesRef = useRef<number[]>([])
-  const lastProcessedMoveRef = useRef<string>('')
   const moveQueueRef = useRef<{ playerId: string; tokenId: number; newPathIndex: number }[]>([])
   const pendingMoveRef = useRef<{ data: any; timeout: NodeJS.Timeout | null }>({ data: null, timeout: null })
   // Prevenir cierre accidental de pestaña (F5 / Cierre)
@@ -269,7 +285,7 @@ export function OnlineGameEngine({
 
     const myIndexInRankings = finalRankings.findIndex((p) => p.id === myPlayerIndex)
     const myRank = myIndexInRankings !== -1 ? myIndexInRankings + 1 : finalRankings.length
-    const totalPlayers = gameData.players.length
+    const totalPlayers = dynamicPlayers.length
     const isCompetitive = modeType === 'competitive'
     const modeName = isCompetitive ? `Competitivo (${totalPlayers}J)` : `Entrenamiento Online (${totalPlayers}J)`
 
@@ -299,7 +315,7 @@ export function OnlineGameEngine({
   const updateBarrierLifetimes = (currentTokens: Token[] = tokensRef.current, endingPlayerIdx?: number) => {
     const nextLifetimes: Record<number, number> = { ...barrierLifetimesRef.current }
     const cellCounts: Record<number, number> = {}
-    const pCount = gameData.players.length
+    const pCount = dynamicPlayers.length
     const trackSteps = getTrackSteps(pCount)
     const perimeter = getTotalPerimeter(pCount)
 
@@ -330,16 +346,62 @@ export function OnlineGameEngine({
   }
 
   const getNextActivePlayerIndex = (currentIndex: number, totalPlayers: number): number => {
+    const requiredTokens = isHexGame ? 3 : 4
+    const goalStep = isHexGame ? 45 : 56
+
+    if (!isHexGame && totalPlayers === 4) {
+      const visualSequence: PlayerColor[] = ['blue', 'green', 'red', 'yellow']
+      const currentColor = formattedPlayers[currentIndex]?.color || 'yellow'
+      const startSeqIndex = visualSequence.indexOf(currentColor)
+
+      if (startSeqIndex !== -1) {
+        for (let i = 1; i <= 4; i++) {
+          const checkSeqIdx = (startSeqIndex + i) % 4
+          const targetColor = visualSequence[checkSeqIdx]
+          const targetPlayer = formattedPlayers.find((p) => p.color === targetColor)
+
+          if (targetPlayer && targetPlayer.isActive !== false) {
+            const pGoalTokens = tokensRef.current.filter((t) => t.playerId === targetPlayer.id && t.step === goalStep)
+            const isActuallyFinished = pGoalTokens.length >= requiredTokens
+            if (!isActuallyFinished) {
+              return targetPlayer.id
+            }
+          }
+        }
+      }
+    }
+
     let nextIndex = (currentIndex - 1 + totalPlayers) % totalPlayers
     let attempts = 0
     
-    // Buscar el siguiente jugador que esté activo (no terminado)
-    while (finishedPlayerIndicesRef.current.includes(nextIndex) && attempts < totalPlayers) {
-      nextIndex = (nextIndex - 1 + totalPlayers) % totalPlayers
-      attempts++
+    while (attempts < totalPlayers) {
+      const pGoalTokens = tokensRef.current.filter(t => t.playerId === nextIndex && t.step === goalStep)
+      const isActuallyFinished = pGoalTokens.length >= requiredTokens
+      
+      if (isActuallyFinished) {
+        nextIndex = (nextIndex - 1 + totalPlayers) % totalPlayers
+        attempts++
+      } else {
+        break
+      }
     }
     return nextIndex
   }
+
+  // Sincronizar dinámicamente los jugadores terminados leyendo únicamente las fichas en meta en tiempo real
+  useEffect(() => {
+    const requiredTokens = isHexGame ? 3 : 4
+    const goalStep = isHexGame ? 45 : 56
+    const currentFinished: number[] = []
+    
+    for (let pIdx = 0; pIdx < formattedPlayers.length; pIdx++) {
+      const pGoalTokens = tokens.filter(t => t.playerId === pIdx && t.step === goalStep)
+      if (pGoalTokens.length >= requiredTokens) {
+        currentFinished.push(pIdx)
+      }
+    }
+    finishedPlayerIndicesRef.current = currentFinished
+  }, [tokens, isHexGame, formattedPlayers.length])
 
   const showToast = (msg: string) => {
     setNotification(msg)
@@ -352,7 +414,7 @@ export function OnlineGameEngine({
 
   // Check if a perimeter cell has 2 or more tokens (forming a barrier/bloqueo)
   const hasBarrierAt = (perimeterIndex: number, currentTokens: Token[] = tokensRef.current): boolean => {
-    const pCount = gameData.players.length
+    const pCount = dynamicPlayers.length
     const trackSteps = getTrackSteps(pCount)
     const perimeter = getTotalPerimeter(pCount)
 
@@ -371,7 +433,7 @@ export function OnlineGameEngine({
 
   // Validate if a move is legal for a specific token
   const checkMoveValid = (token: Token, moveVal: number, currentTokens: Token[] = tokensRef.current): boolean => {
-    const pCount = gameData.players.length
+    const pCount = dynamicPlayers.length
     const trackSteps = getTrackSteps(pCount)
     const goalStep = getGoalStep(pCount)
     const perimeter = getTotalPerimeter(pCount)
@@ -412,7 +474,7 @@ export function OnlineGameEngine({
     if (moves.length === 0) return []
     const playerTokens = currentTokens.filter((t) => t.playerId === playerIdx)
     const playableIds: number[] = []
-    const pCount = gameData.players.length
+    const pCount = dynamicPlayers.length
 
     if (isHexGame) {
       const hasFive = moves.includes(5)
@@ -577,10 +639,16 @@ export function OnlineGameEngine({
   // Helper to emit turn end when no valid moves remain
   const emitEndTurnIfNeeded = (nextMoves: number[], currentTokens: Token[] = tokensRef.current) => {
     const activeIdx = activePlayerIndexRef.current
+
+    if (activeIdx !== myPlayerIndex) {
+      globalLogger.log('GAME-FLOW', `Omite emitir intent_end_turn: no es mi turno (activeIdx: ${activeIdx}, myPlayerIndex: ${myPlayerIndex})`)
+      return
+    }
+
     const playables = getPlayableTokenIds(activeIdx, nextMoves, currentTokens)
 
     if (nextMoves.length === 0 || playables.length === 0) {
-      let nextPlayerIndex = getNextActivePlayerIndex(activeIdx, gameData.players.length)
+      let nextPlayerIndex = getNextActivePlayerIndex(activeIdx, dynamicPlayers.length)
 
       if (pendingExtraTurnsRef.current > 0 && !finishedPlayerIndicesRef.current.includes(activeIdx)) {
         pendingExtraTurnsRef.current -= 1
@@ -592,11 +660,18 @@ export function OnlineGameEngine({
 
       isProcessingTimeoutRef.current = false
       
-      globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> nextColorId/Index: ${nextPlayerIndex}`)
+      // Traducir nuestro índice local al ID nativo de Android esperado por el servidor
+      const targetSlot = dynamicPlayers[nextPlayerIndex]?.slotIndex ?? nextPlayerIndex
+      const androidColorId = slotToAndroidColorId[targetSlot] ?? targetSlot
+      
+      const targetPlayerId = dynamicPlayers[nextPlayerIndex]?.playerId || dynamicPlayers[nextPlayerIndex]?.id || nextPlayerIndex
+      
+      globalLogger.log('GAME-FLOW', `Fin de movimientos/fichas válidas. Emitiendo intent_end_turn -> UUID: ${targetPlayerId}, (Slot: ${targetSlot}, ColorID: ${androidColorId})`)
       socket.emit('intent_end_turn', {
         roomId: gameData.roomId,
-        nextPlayerId: nextPlayerIndex, // Emitimos el index como hacía la v7.9.1 (nextColorId)
-        nextTurnId: nextPlayerIndex,
+        nextPlayerId: androidColorId,
+        nextTurnId: androidColorId,
+        explicitNetworkId: targetPlayerId
       })
     }
   }
@@ -654,13 +729,11 @@ export function OnlineGameEngine({
 
     const interval = setInterval(() => {
       setTurnTimer((prev) => {
-        // Freeze timer during animations or while rolling dice
+        // Freeze timer during animations or rolling dice
         if (isAnimatingMoveRef.current || isRollingRef.current) return prev
 
         if (prev <= 1) {
-          const amIHost = isActingHost()
-          const currentIsBot = formattedPlayersRef.current[activePlayerIndexRef.current]?.type === 'bot'
-          const shouldIPlay = isMyTurnRef.current || (currentIsBot && amIHost)
+          const shouldIPlay = activePlayerIndexRef.current === myPlayerIndex
 
           if (shouldIPlay && !isProcessingTimeoutRef.current) {
             isProcessingTimeoutRef.current = true
@@ -723,7 +796,7 @@ export function OnlineGameEngine({
     const handleTurnStarted = (data: { playerId: string; activePlayerId?: string }) => {
       const activeId = data.playerId || data.activePlayerId || ''
       globalLogger.log('SOCKET', 'Recibido event_turn_started', { activeId })
-      
+
       if (activeId !== currentTurnPlayerId) {
         consecutiveDoublesCountRef.current = 0
         lastMovedTokenGlobalIdRef.current = null
@@ -834,15 +907,7 @@ export function OnlineGameEngine({
         return
       }
 
-      const moveSignature = `${data.playerId}-${data.tokenId}-${data.newPathIndex}`
-      if (lastProcessedMoveRef.current === moveSignature) {
-        globalLogger.log('SOCKET', 'Ignorando evento duplicado exacto (prevención de sonido doble).')
-        processNextQueuedMove()
-        return
-      }
-      lastProcessedMoveRef.current = moveSignature
-
-      const serverPlayerIdx = gameData.players.findIndex((p) => p.playerId === data.playerId)
+      const serverPlayerIdx = dynamicPlayers.findIndex((p) => p.playerId === data.playerId)
       if (serverPlayerIdx < 0) {
         processNextQueuedMove()
         return
@@ -873,7 +938,7 @@ export function OnlineGameEngine({
         return
       }
 
-      const pCount = gameData.players.length
+      const pCount = dynamicPlayers.length
       const trackSteps = getTrackSteps(pCount)
       const goalStep = getGoalStep(pCount)
       const perimeter = getTotalPerimeter(pCount)
@@ -1076,7 +1141,7 @@ export function OnlineGameEngine({
               setRankings((prev) => [...prev, finishedPlayer])
               showToast(`🏆 ¡${finishedPlayer.name} completó todas sus fichas!`)
 
-              const totalPlayers = gameData.players.length
+              const totalPlayers = dynamicPlayers.length
               const finishedCount = finishedPlayerIndicesRef.current.length
 
               const isGameOver =
@@ -1166,14 +1231,14 @@ export function OnlineGameEngine({
     }
 
     const handleGameOverAbandonment = (data: { winnerId: string }) => {
-      const winnerIdx = gameData.players.findIndex((p) => p.playerId === data.winnerId)
+      const winnerIdx = dynamicPlayers.findIndex((p) => p.playerId === data.winnerId)
       const wPlayer = formattedPlayersRef.current[winnerIdx >= 0 ? winnerIdx : 0]
       const winIdx = winnerIdx >= 0 ? winnerIdx : 0
       const finalRankings = buildFinalRankings(
         [winIdx],
         formattedPlayersRef.current,
         tokensRef.current,
-        getGoalStep(gameData.players.length)
+        getGoalStep(dynamicPlayers.length)
       )
       setRankings(finalRankings)
       setWinnerPlayer(wPlayer)
@@ -1195,7 +1260,7 @@ export function OnlineGameEngine({
       // Translate senderId (UUID/socketId/slotIndex) to seat index (0..5)
       let targetSeatIndex = -1
       if (senderId) {
-        targetSeatIndex = (gameData.players || []).findIndex(
+        targetSeatIndex = dynamicPlayers.findIndex(
           (p) => p.playerId === senderId || p.socketId === senderId || String(p.slotIndex) === String(senderId)
         )
       }
@@ -1290,7 +1355,7 @@ export function OnlineGameEngine({
 
     const startStep = token.step
     let targetStep = startStep + moveVal
-    const pCount = gameData.players.length
+    const pCount = dynamicPlayers.length
     const goalStep = getGoalStep(pCount)
 
     if (startStep < 0) {
@@ -1367,12 +1432,19 @@ export function OnlineGameEngine({
     // Si era nuestro turno al salir, intentamos pasar el turno limpiamente
     if (isMyTurnRef.current) {
       const activeIdx = activePlayerIndexRef.current
-      const nextPlayerIndex = getNextActivePlayerIndex(activeIdx, gameData.players.length)
-      
+      const nextPlayerIndex = getNextActivePlayerIndex(activeIdx, dynamicPlayers.length)
+
+      // Traducir nuestro índice local al ID nativo de Android
+      const targetSlot = dynamicPlayers[nextPlayerIndex]?.slotIndex ?? nextPlayerIndex
+      const androidColorId = slotToAndroidColorId[targetSlot] ?? targetSlot
+
+      const targetPlayerId = dynamicPlayers[nextPlayerIndex]?.playerId || dynamicPlayers[nextPlayerIndex]?.id || nextPlayerIndex
+
       socket.emit('intent_end_turn', {
         roomId: gameData.roomId,
-        nextPlayerId: nextPlayerIndex,
-        nextTurnId: nextPlayerIndex,
+        nextPlayerId: androidColorId,
+        nextTurnId: androidColorId,
+        explicitNetworkId: targetPlayerId
       })
     }
     
@@ -1456,39 +1528,59 @@ export function OnlineGameEngine({
       <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-0 md:min-h-[600px] z-10 overflow-hidden">
         
         {/* Center Game Board */}
-        <div 
-          className={cn(
-            "z-10 mx-auto flex items-center justify-center",
-            isHexGame ? "w-[95%] max-w-full md:w-full" : "w-full max-w-[100vw] px-1 md:px-0 md:max-w-[var(--board-max)]"
-          )}
-          style={{ '--board-max': 'min(700px, calc((100dvh - 180px) * 1.05))' } as React.CSSProperties}
-        >
-          <div className="relative mx-auto w-full flex items-center justify-center">
-            {isHexGame ? (
-              <HexagonalLudoBoardView
-                players={formattedPlayers as any}
-                tokens={tokens as any}
-                currentTurnIndex={activePlayerIndex}
-                playableTokenIds={playableTokenIds}
-                humanPlayerId={myPlayerIndex}
-                onTokenClick={handleTokenClick}
-                explosionData={explosionData}
-                appTheme="classic"
-              />
-            ) : (
-              <GameBoard
-                tokens={tokens}
-                currentTurn={activePlayerIndex}
-                playableTokenIds={playableTokenIds}
-                onTokenClick={handleTokenClick}
-                humanPlayerId={activePlayerIndex}
-                appTheme="classic"
-                isZeroIndexed={true}
-                explosionData={explosionData}
-              />
-            )}
-          </div>
-        </div>
+        {(() => {
+          const myColor = formattedPlayers[myPlayerIndex >= 0 ? myPlayerIndex : 0]?.color || 'yellow';
+          let rotationOffset = 0;
+          switch (myColor) {
+            case 'red': rotationOffset = 0; break;
+            case 'green': rotationOffset = -90; break;
+            case 'blue': rotationOffset = 180; break;
+            case 'yellow': rotationOffset = 90; break;
+          }
+
+          return (
+            <div 
+              className={cn(
+                "z-10 mx-auto flex items-center justify-center",
+                isHexGame ? "w-[95%] max-w-full md:w-full" : "w-full max-w-[100vw] px-1 md:px-0 md:max-w-[var(--board-max)]"
+              )}
+              style={{ '--board-max': 'min(700px, calc((100dvh - 180px) * 1.05))' } as React.CSSProperties}
+            >
+              <div 
+                className="relative mx-auto w-full flex items-center justify-center"
+                style={{
+                  transform: !isHexGame ? `rotate(${rotationOffset}deg)` : undefined,
+                  transformOrigin: 'center center',
+                }}
+              >
+                {isHexGame ? (
+                  <HexagonalLudoBoardView
+                    players={formattedPlayers as any}
+                    tokens={tokens as any}
+                    currentTurnIndex={activePlayerIndex}
+                    playableTokenIds={playableTokenIds}
+                    humanPlayerId={myPlayerIndex}
+                    onTokenClick={handleTokenClick}
+                    explosionData={explosionData}
+                    appTheme="classic"
+                  />
+                ) : (
+                  <GameBoard
+                    tokens={tokens}
+                    currentTurn={activePlayerIndex}
+                    playableTokenIds={playableTokenIds}
+                    onTokenClick={handleTokenClick}
+                    humanPlayerId={activePlayerIndex}
+                    appTheme="classic"
+                    isZeroIndexed={true}
+                    explosionData={explosionData}
+                    rotationOffset={rotationOffset}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Corners with PlayerCorners */}
         {(() => {
@@ -1499,21 +1591,38 @@ export function OnlineGameEngine({
             const offset = (index - baseIdx + activePlayers.length) % activePlayers.length;
             let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
 
-            if (activePlayers.length === 6) {
-              const positions: any[] = ['bottom-left', 'bottom-right', 'mid-right', 'top-right', 'top-left', 'mid-left'];
-              pos = positions[offset];
-            } else if (activePlayers.length === 5) {
-              const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left', 'mid-left'];
-              pos = positions[offset];
-            } else if (activePlayers.length === 4) {
-              const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
-              pos = positions[offset];
-            } else if (activePlayers.length === 3) {
-              const positions: any[] = ['bottom-left', 'bottom-right', 'top-left'];
-              pos = positions[offset];
-            } else if (activePlayers.length === 2) {
-              const positions: any[] = ['bottom-left', 'top-right'];
-              pos = positions[offset];
+            if (isHexGame) {
+              if (activePlayers.length === 6) {
+                const positions: any[] = ['bottom-left', 'bottom-right', 'mid-right', 'top-right', 'top-left', 'mid-left'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 5) {
+                const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left', 'mid-left'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 4) {
+                const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 3) {
+                const positions: any[] = ['bottom-left', 'bottom-right', 'top-left'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 2) {
+                const positions: any[] = ['bottom-left', 'top-right'];
+                pos = positions[offset];
+              }
+            } else {
+              // Tablero cuadrado online (perspectiva dinámica local: mi casa siempre abajo a la izquierda)
+              if (activePlayers.length === 4) {
+                const positions: any[] = ['bottom-left', 'top-left', 'top-right', 'bottom-right'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 3) {
+                const positions: any[] = ['bottom-left', 'top-left', 'bottom-right'];
+                pos = positions[offset];
+              } else if (activePlayers.length === 2) {
+                const positions: any[] = ['bottom-left', 'top-right'];
+                pos = positions[offset];
+              } else {
+                const positions: any[] = ['bottom-left', 'top-left', 'top-right', 'bottom-right'];
+                pos = positions[offset] || 'bottom-left';
+              }
             }
 
             const isActiveTurn = activePlayerIndex === p.id;
@@ -1642,9 +1751,9 @@ export function OnlineGameEngine({
                       finishedPlayerIndicesRef.current,
                       formattedPlayers,
                       tokens,
-                      getGoalStep(gameData.players.length)
+                      getGoalStep(dynamicPlayers.length)
                     );
-                const pCount = gameData.players.length
+                const pCount = dynamicPlayers.length
                 const prizeList = ECONOMY_MATRIX[pCount]?.prizes || []
                 return listToDisplay.map((p, idx) => {
                   const prize = modeType === 'competitive' ? (prizeList[idx] || 0) : 0
