@@ -818,7 +818,10 @@ export function OnlineGameEngine({
       const activeId = data.playerId || data.activePlayerId || ''
       globalLogger.log('SOCKET', 'Recibido event_turn_started', { activeId })
 
+      // BUG FIX v8.0.7: When the turn genuinely changes to a DIFFERENT player,
+      // clear any stale pending extra turns so doubles don't accidentally bleed over.
       if (activeId !== currentTurnPlayerId) {
+        pendingExtraTurnsRef.current = 0
         lastMovedTokenGlobalIdRef.current = null
       }
 
@@ -854,8 +857,13 @@ export function OnlineGameEngine({
         setTurnTimer(10)
         globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
 
+        // BUG FIX v8.0.7: Register pending extra turn when doubles are rolled (R9)
+        // WITHOUT this, pendingExtraTurnsRef is always 0 and emitEndTurnIfNeeded
+        // always advances to the next player even on doubles.
         if (vals[0] === vals[1]) {
+          pendingExtraTurnsRef.current += 1
           showToast('🎲 ¡Turno Extra por Doble!')
+          globalLogger.log('GAME-FLOW', `Doble detectado [${vals[0]},${vals[1]}]. Turno extra registrado (pendingExtraTurns: ${pendingExtraTurnsRef.current})`)
         }
 
         // Only chain auto-move if this was a timeout-triggered roll (not human-initiated)
