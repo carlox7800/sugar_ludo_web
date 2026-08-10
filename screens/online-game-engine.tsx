@@ -360,7 +360,7 @@ export function OnlineGameEngine({
           const targetColor = visualSequence[checkSeqIdx]
           const targetPlayer = formattedPlayers.find((p) => p.color === targetColor)
 
-          if (targetPlayer && targetPlayer.isActive !== false) {
+          if (targetPlayer) {
             const pGoalTokens = tokensRef.current.filter((t) => t.playerId === targetPlayer.id && t.step === goalStep)
             const isActuallyFinished = pGoalTokens.length >= requiredTokens
             if (!isActuallyFinished) {
@@ -382,7 +382,7 @@ export function OnlineGameEngine({
           const targetColor = visualSequence[checkSeqIdx]
           const targetPlayer = formattedPlayers.find((p) => p.color === targetColor)
 
-          if (targetPlayer && targetPlayer.isActive !== false) {
+          if (targetPlayer) {
             const pGoalTokens = tokensRef.current.filter((t) => t.playerId === targetPlayer.id && t.step === goalStep)
             const isActuallyFinished = pGoalTokens.length >= requiredTokens
             if (!isActuallyFinished) {
@@ -1565,7 +1565,7 @@ export function OnlineGameEngine({
           if (isHexGame) {
             const hexInfo = HEX_COLOR_INFO[myColor as HexPlayerColor];
             const sectorIndex = hexInfo ? hexInfo.sectorIndex : 4;
-            rotationOffset = 240 - sectorIndex * 60;
+            rotationOffset = 300 - sectorIndex * 60;
           } else {
             switch (myColor) {
               case 'red': rotationOffset = 0; break;
@@ -1580,7 +1580,7 @@ export function OnlineGameEngine({
               className={cn(
                 "z-10 mx-auto flex items-center justify-center",
                 "w-full max-w-[100vw] px-1 md:px-0",
-                isHexGame ? "aspect-square" : "max-w-[var(--board-max)]"
+                isHexGame ? "aspect-square max-w-[var(--board-max)]" : "max-w-[var(--board-max)]"
               )}
               style={{ '--board-max': 'min(700px, calc((100dvh - 180px) * 1.05))' } as React.CSSProperties}
             >
@@ -1631,22 +1631,20 @@ export function OnlineGameEngine({
             let pos: 'bottom-left' | 'bottom-right' | 'top-right' | 'top-left' | 'mid-left' | 'mid-right' = 'bottom-left';
 
             if (isHexGame) {
-              if (activePlayers.length === 6) {
-                const positions: any[] = ['bottom-left', 'bottom-right', 'mid-right', 'top-right', 'top-left', 'mid-left'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 5) {
-                const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left', 'mid-left'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 4) {
-                const positions: any[] = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 3) {
-                const positions: any[] = ['bottom-left', 'bottom-right', 'top-left'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 2) {
-                const positions: any[] = ['bottom-left', 'top-right'];
-                pos = positions[offset];
-              }
+              const HEX_COLORS_ORDER = ['purple', 'red', 'yellow', 'orange', 'blue', 'green'];
+              const myColor = activePlayers[baseIdx]?.color || 'orange';
+              const mySeatIndex = HEX_COLORS_ORDER.indexOf(myColor);
+              const playerSeatIndex = HEX_COLORS_ORDER.indexOf(p.color);
+              const seatOffset = (playerSeatIndex - mySeatIndex + 6) % 6;
+              const hexPositions: ('bottom-left' | 'bottom-right' | 'mid-right' | 'top-right' | 'top-left' | 'mid-left')[] = [
+                'bottom-left',   // seatOffset 0 (Usuario Local)
+                'bottom-right',  // seatOffset 1
+                'mid-right',     // seatOffset 2
+                'top-right',     // seatOffset 3
+                'top-left',      // seatOffset 4
+                'mid-left'       // seatOffset 5
+              ];
+              pos = hexPositions[seatOffset] || 'bottom-left';
             } else {
               // Tablero cuadrado online (perspectiva dinámica local: mi casa siempre abajo a la izquierda)
               if (activePlayers.length === 4) {
