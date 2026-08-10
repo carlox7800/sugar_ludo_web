@@ -15,7 +15,7 @@ import { audio } from '@/src/audio'
 import { ECONOMY_MATRIX } from '@/components/competitive-training'
 
 import { HexagonalLudoBoardView } from '@/src/components/HexagonalLudoBoardView'
-import { HEX_COLORS_ORDER, STAR_CELLS } from '@/src/HexBoardConstants'
+import { HEX_COLORS_ORDER, STAR_CELLS, HEX_COLOR_INFO, HexPlayerColor } from '@/src/HexBoardConstants'
 import { getCellIndexForToken, hasBarrierAtHex } from '@/src/HexGameEngine'
 
 const SQUARE_COLORS_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'orange']
@@ -37,11 +37,11 @@ const slotToAndroidColorId: Record<number, number> = {
 }
 
 // --- NATIVE 0-INDEXED MULTI-BOARD MATH HELPERS ---
-const getTrackSteps = (pCount: number): number => pCount === 6 ? 77 : 51
-const getGoalStep = (pCount: number): number => pCount === 6 ? 82 : 56
-const getTotalPerimeter = (pCount: number): number => pCount === 6 ? 78 : 52
-const getStartOffset = (color: PlayerColor, pCount: number): number => {
-  if (pCount === 6) {
+const getTrackSteps = (isHex: boolean): number => isHex ? 77 : 51
+const getGoalStep = (isHex: boolean): number => isHex ? 82 : 56
+const getTotalPerimeter = (isHex: boolean): number => isHex ? 78 : 52
+const getStartOffset = (color: PlayerColor, isHex: boolean): number => {
+  if (isHex) {
     const offsets6: Record<PlayerColor, number> = { blue: 1, green: 14, red: 27, yellow: 40, purple: 53, orange: 66 }
     return offsets6[color] || 0
   }
@@ -316,12 +316,12 @@ export function OnlineGameEngine({
     const nextLifetimes: Record<number, number> = { ...barrierLifetimesRef.current }
     const cellCounts: Record<number, number> = {}
     const pCount = dynamicPlayers.length
-    const trackSteps = getTrackSteps(pCount)
-    const perimeter = getTotalPerimeter(pCount)
+    const trackSteps = getTrackSteps(isHexGame)
+    const perimeter = getTotalPerimeter(isHexGame)
 
     currentTokens.forEach((tk) => {
       if (tk.step >= 0 && tk.step < trackSteps) {
-        const tkIdx = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
+        const tkIdx = (getStartOffset(tk.color, isHexGame) + tk.step) % perimeter
         cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1
       }
     })
@@ -347,7 +347,29 @@ export function OnlineGameEngine({
 
   const getNextActivePlayerIndex = (currentIndex: number, totalPlayers: number): number => {
     const requiredTokens = isHexGame ? 3 : 4
-    const goalStep = isHexGame ? 45 : 56
+    const goalStep = getGoalStep(isHexGame)
+
+    if (isHexGame) {
+      const visualSequence: PlayerColor[] = ['purple', 'red', 'yellow', 'orange', 'blue', 'green']
+      const currentColor = formattedPlayers[currentIndex]?.color || 'purple'
+      const startSeqIndex = visualSequence.indexOf(currentColor)
+
+      if (startSeqIndex !== -1) {
+        for (let i = 1; i <= visualSequence.length; i++) {
+          const checkSeqIdx = (startSeqIndex + i) % visualSequence.length
+          const targetColor = visualSequence[checkSeqIdx]
+          const targetPlayer = formattedPlayers.find((p) => p.color === targetColor)
+
+          if (targetPlayer && targetPlayer.isActive !== false) {
+            const pGoalTokens = tokensRef.current.filter((t) => t.playerId === targetPlayer.id && t.step === goalStep)
+            const isActuallyFinished = pGoalTokens.length >= requiredTokens
+            if (!isActuallyFinished) {
+              return targetPlayer.id
+            }
+          }
+        }
+      }
+    }
 
     if (!isHexGame && totalPlayers === 4) {
       const visualSequence: PlayerColor[] = ['blue', 'green', 'red', 'yellow']
@@ -391,7 +413,7 @@ export function OnlineGameEngine({
   // Sincronizar dinámicamente los jugadores terminados leyendo únicamente las fichas en meta en tiempo real
   useEffect(() => {
     const requiredTokens = isHexGame ? 3 : 4
-    const goalStep = isHexGame ? 45 : 56
+    const goalStep = getGoalStep(isHexGame)
     const currentFinished: number[] = []
     
     for (let pIdx = 0; pIdx < formattedPlayers.length; pIdx++) {
@@ -415,14 +437,14 @@ export function OnlineGameEngine({
   // Check if a perimeter cell has 2 or more tokens (forming a barrier/bloqueo)
   const hasBarrierAt = (perimeterIndex: number, currentTokens: Token[] = tokensRef.current): boolean => {
     const pCount = dynamicPlayers.length
-    const trackSteps = getTrackSteps(pCount)
-    const perimeter = getTotalPerimeter(pCount)
+    const trackSteps = getTrackSteps(isHexGame)
+    const perimeter = getTotalPerimeter(isHexGame)
 
     if (perimeterIndex < 0 || perimeterIndex >= perimeter) return false
     let totalCount = 0
     currentTokens.forEach((tk) => {
       if (tk.step >= 0 && tk.step < trackSteps) {
-        const tkIdx = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
+        const tkIdx = (getStartOffset(tk.color, isHexGame) + tk.step) % perimeter
         if (tkIdx === perimeterIndex) {
           totalCount++
         }
@@ -434,13 +456,13 @@ export function OnlineGameEngine({
   // Validate if a move is legal for a specific token
   const checkMoveValid = (token: Token, moveVal: number, currentTokens: Token[] = tokensRef.current): boolean => {
     const pCount = dynamicPlayers.length
-    const trackSteps = getTrackSteps(pCount)
-    const goalStep = getGoalStep(pCount)
-    const perimeter = getTotalPerimeter(pCount)
+    const trackSteps = getTrackSteps(isHexGame)
+    const goalStep = getGoalStep(isHexGame)
+    const perimeter = getTotalPerimeter(isHexGame)
 
     if (token.step === -1) {
       if (moveVal === 5) {
-        const startIdx = getStartOffset(token.color, pCount)
+        const startIdx = getStartOffset(token.color, isHexGame)
         return !hasBarrierAt(startIdx, currentTokens)
       }
       return false
@@ -453,7 +475,7 @@ export function OnlineGameEngine({
       for (let stepOffset = 1; stepOffset <= stepsToCheck; stepOffset++) {
         const pathStep = token.step + stepOffset
         if (pathStep < trackSteps) {
-          const pIndex = (getStartOffset(token.color, pCount) + pathStep) % perimeter
+          const pIndex = (getStartOffset(token.color, isHexGame) + pathStep) % perimeter
           if (hasBarrierAt(pIndex, currentTokens)) {
             blocked = true
             break
@@ -474,7 +496,6 @@ export function OnlineGameEngine({
     if (moves.length === 0) return []
     const playerTokens = currentTokens.filter((t) => t.playerId === playerIdx)
     const playableIds: number[] = []
-    const pCount = dynamicPlayers.length
 
     if (isHexGame) {
       const hasFive = moves.includes(5)
@@ -548,20 +569,20 @@ export function OnlineGameEngine({
       return playableIds
     }
 
-    const trackSteps = getTrackSteps(pCount)
-    const goalStep = getGoalStep(pCount)
-    const perimeter = getTotalPerimeter(pCount)
+    const trackSteps = getTrackSteps(isHexGame)
+    const goalStep = getGoalStep(isHexGame)
+    const perimeter = getTotalPerimeter(isHexGame)
 
     const forcedTokens = playerTokens
       .filter((t) => {
         const globalId = t.playerId * 4 + t.id
         if ((barrierLifetimesRef.current[globalId] || 0) >= 2) {
           if (t.step >= 0 && t.step < trackSteps) {
-            const tkIdx = (getStartOffset(t.color, pCount) + t.step) % perimeter
+            const tkIdx = (getStartOffset(t.color, isHexGame) + t.step) % perimeter
             let totalCount = 0
             currentTokens.forEach((tk) => {
               if (tk.step >= 0 && tk.step < trackSteps) {
-                const tkIdx2 = (getStartOffset(tk.color, pCount) + tk.step) % perimeter
+                const tkIdx2 = (getStartOffset(tk.color, isHexGame) + tk.step) % perimeter
                 if (tkIdx2 === tkIdx) totalCount++
               }
             })
@@ -578,7 +599,7 @@ export function OnlineGameEngine({
         const hasFive = moves.includes(5)
         const hasSumFive = moves.length === 2 && (moves[0] + moves[1] === 5)
         if (hasFive || hasSumFive) {
-          const startIdx = getStartOffset(token.color, pCount)
+          const startIdx = getStartOffset(token.color, isHexGame)
           if (!hasBarrierAt(startIdx, currentTokens)) {
             playableIds.push(globalId)
           }
@@ -938,10 +959,9 @@ export function OnlineGameEngine({
         return
       }
 
-      const pCount = dynamicPlayers.length
-      const trackSteps = getTrackSteps(pCount)
-      const goalStep = getGoalStep(pCount)
-      const perimeter = getTotalPerimeter(pCount)
+      const trackSteps = getTrackSteps(isHexGame)
+      const goalStep = getGoalStep(isHexGame)
+      const perimeter = getTotalPerimeter(isHexGame)
 
       // Calculate consumed move value vs visual animation steps
       let consumedVal = 0
@@ -1070,14 +1090,14 @@ export function OnlineGameEngine({
                 }
               }
             } else if (targetStep >= 0 && targetStep < trackSteps) {
-              const pIndex = (getStartOffset(currentToken.color, pCount) + targetStep) % perimeter
+              const pIndex = (getStartOffset(currentToken.color, isHexGame) + targetStep) % perimeter
               const isStartCell = [1, 14, 27, 40, 53, 66].includes(pIndex)
               const isGoldStar = [8, 21, 34, 47, 60, 73].includes(pIndex)
 
               if (targetStep === 1) {
                 const cellTokens = tokensRef.current.filter((t) => {
                   if (t.step < 0 || t.step >= trackSteps) return false
-                  const oppPIndex = (getStartOffset(t.color, pCount) + t.step) % perimeter
+                  const oppPIndex = (getStartOffset(t.color, isHexGame) + t.step) % perimeter
                   return oppPIndex === pIndex
                 })
                 const myTokens = cellTokens.filter((t) => t.color === currentToken.color)
@@ -1094,7 +1114,7 @@ export function OnlineGameEngine({
                 const opponents = tokensRef.current.filter((t) => {
                   if (t.playerId === serverPlayerIdx || t.step === -1 || t.step === goalStep) return false
                   if (t.step < 0 || t.step >= trackSteps) return false
-                  const oppPIndex = (getStartOffset(t.color, pCount) + t.step) % perimeter
+                  const oppPIndex = (getStartOffset(t.color, isHexGame) + t.step) % perimeter
                   return oppPIndex === pIndex
                 })
 
@@ -1132,36 +1152,44 @@ export function OnlineGameEngine({
           setTimeout(processNextQueuedMove, 80)
 
           // Check for Player Win / Completion
-          if (targetStep === goalStep) {
-            const playerGoalTokens = finalTokens.filter((t) => t.playerId === serverPlayerIdx && t.step === goalStep)
-            const requiredTokens = isHexGame ? 3 : 4
-            if (playerGoalTokens.length === requiredTokens && !finishedPlayerIndicesRef.current.includes(serverPlayerIdx)) {
+          const requiredTokens = isHexGame ? 3 : 4
+          const currentFinishedIndices: number[] = []
+          for (let pIdx = 0; pIdx < formattedPlayersRef.current.length; pIdx++) {
+            const pGoalTokens = finalTokens.filter((t) => t.playerId === pIdx && t.step === goalStep)
+            if (pGoalTokens.length >= requiredTokens) {
+              currentFinishedIndices.push(pIdx)
+            }
+          }
+
+          if (currentFinishedIndices.includes(serverPlayerIdx)) {
+            const finishedPlayer = formattedPlayersRef.current[serverPlayerIdx]
+            if (!finishedPlayerIndicesRef.current.includes(serverPlayerIdx)) {
               finishedPlayerIndicesRef.current.push(serverPlayerIdx)
-              const finishedPlayer = formattedPlayersRef.current[serverPlayerIdx]
               setRankings((prev) => [...prev, finishedPlayer])
               showToast(`🏆 ¡${finishedPlayer.name} completó todas sus fichas!`)
+            }
 
-              const totalPlayers = dynamicPlayers.length
-              const finishedCount = finishedPlayerIndicesRef.current.length
+            const totalPlayers = dynamicPlayers.length
+            const finishedCount = currentFinishedIndices.length
 
-              const isGameOver =
-                (totalPlayers === 2 && finishedCount >= 1) ||
-                (totalPlayers === 3 && finishedCount >= 2) ||
-                (totalPlayers >= 4 && (finishedCount >= 3 || finishedCount >= totalPlayers - 1))
+            const isGameOver =
+              (totalPlayers === 2 && finishedCount >= 1) ||
+              (totalPlayers === 3 && finishedCount >= 2) ||
+              (totalPlayers >= 4 && (finishedCount >= 3 || finishedCount >= totalPlayers - 1))
 
-              if (isGameOver) {
-                const finalRankings = buildFinalRankings(
-                  finishedPlayerIndicesRef.current,
-                  formattedPlayersRef.current,
-                  finalTokens,
-                  goalStep
-                )
-                setRankings(finalRankings)
-                setWinnerPlayer(finishedPlayer)
-                recordOnlineMatchResult(finalRankings)
-                globalLogger.log('GAME-FLOW', `¡Partida finalizada! Ganadores: ${finishedPlayer.name}`)
-                return
-              }
+            if (isGameOver) {
+              const finalRankings = buildFinalRankings(
+                currentFinishedIndices,
+                formattedPlayersRef.current,
+                finalTokens,
+                goalStep
+              )
+              setRankings(finalRankings)
+              const firstWinner = finalRankings[0] || finishedPlayer
+              setWinnerPlayer(firstWinner)
+              recordOnlineMatchResult(finalRankings)
+              globalLogger.log('GAME-FLOW', `¡Partida finalizada! Ganador: ${firstWinner.name}`)
+              return
             }
           }
 
@@ -1238,7 +1266,7 @@ export function OnlineGameEngine({
         [winIdx],
         formattedPlayersRef.current,
         tokensRef.current,
-        getGoalStep(dynamicPlayers.length)
+        getGoalStep(isHexGame)
       )
       setRankings(finalRankings)
       setWinnerPlayer(wPlayer)
@@ -1355,8 +1383,7 @@ export function OnlineGameEngine({
 
     const startStep = token.step
     let targetStep = startStep + moveVal
-    const pCount = dynamicPlayers.length
-    const goalStep = getGoalStep(pCount)
+    const goalStep = getGoalStep(isHexGame)
 
     if (startStep < 0) {
       targetStep = isHexGame ? 1 : 0
@@ -1489,6 +1516,10 @@ export function OnlineGameEngine({
                   {muted ? 'MUTEADO' : 'MUTEAR'}
                 </button>
               </div>
+              <div className="flex justify-between items-center bg-gray-800/80 p-2 rounded">
+                <span className="text-gray-300 font-bold">Modo</span>
+                <span className="text-p-blue font-bold">Online Síncrono</span>
+              </div>
               
               <div className="space-y-3">
                 <div className="flex flex-col gap-1">
@@ -1531,25 +1562,32 @@ export function OnlineGameEngine({
         {(() => {
           const myColor = formattedPlayers[myPlayerIndex >= 0 ? myPlayerIndex : 0]?.color || 'yellow';
           let rotationOffset = 0;
-          switch (myColor) {
-            case 'red': rotationOffset = 0; break;
-            case 'green': rotationOffset = -90; break;
-            case 'blue': rotationOffset = 180; break;
-            case 'yellow': rotationOffset = 90; break;
+          if (isHexGame) {
+            const hexInfo = HEX_COLOR_INFO[myColor as HexPlayerColor];
+            const sectorIndex = hexInfo ? hexInfo.sectorIndex : 4;
+            rotationOffset = 240 - sectorIndex * 60;
+          } else {
+            switch (myColor) {
+              case 'red': rotationOffset = 0; break;
+              case 'green': rotationOffset = -90; break;
+              case 'blue': rotationOffset = 180; break;
+              case 'yellow': rotationOffset = 90; break;
+            }
           }
 
           return (
             <div 
               className={cn(
                 "z-10 mx-auto flex items-center justify-center",
-                isHexGame ? "w-[95%] max-w-full md:w-full" : "w-full max-w-[100vw] px-1 md:px-0 md:max-w-[var(--board-max)]"
+                "w-full max-w-[100vw] px-1 md:px-0",
+                isHexGame ? "aspect-square" : "max-w-[var(--board-max)]"
               )}
               style={{ '--board-max': 'min(700px, calc((100dvh - 180px) * 1.05))' } as React.CSSProperties}
             >
               <div 
                 className="relative mx-auto w-full flex items-center justify-center"
                 style={{
-                  transform: !isHexGame ? `rotate(${rotationOffset}deg)` : undefined,
+                  transform: `rotate(${rotationOffset}deg)`,
                   transformOrigin: 'center center',
                 }}
               >
@@ -1563,6 +1601,7 @@ export function OnlineGameEngine({
                     onTokenClick={handleTokenClick}
                     explosionData={explosionData}
                     appTheme="classic"
+                    rotationOffset={rotationOffset}
                   />
                 ) : (
                   <GameBoard
