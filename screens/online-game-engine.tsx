@@ -842,9 +842,12 @@ export function OnlineGameEngine({
 
       globalLogger.log('SOCKET', 'Recibido event_dice_result', { playerId: data.playerId, vals })
       
+      // BUG FIX v8.0.6: Sync isRollingRef so the timer freeze works correctly during animation
       setIsRolling(true)
+      isRollingRef.current = true
       setTimeout(() => {
         setIsRolling(false)
+        isRollingRef.current = false
         setDiceValues(vals)
         setRemainingMoves([...vals])
         setHasRolled(true)
@@ -855,7 +858,7 @@ export function OnlineGameEngine({
           showToast('🎲 ¡Turno Extra por Doble!')
         }
 
-        // If timeout auto-roll was triggered, chain auto-move
+        // Only chain auto-move if this was a timeout-triggered roll (not human-initiated)
         if (isMyTurnRef.current && data.playerId === myPlayerId && isProcessingTimeoutRef.current) {
           setTimeout(() => {
             executeRandomValidMove([...vals], tokensRef.current)
@@ -1339,6 +1342,8 @@ export function OnlineGameEngine({
   // Roll Dice Action
   const handleRollDice = () => {
     if (!isMyTurnRef.current || hasRolledRef.current || isRollingRef.current || isAnimatingMoveRef.current) return
+    // BUG FIX v8.0.6: Reset timeout flag so human roll is never confused with auto-roll
+    isProcessingTimeoutRef.current = false
     setIsRolling(true)
     isRollingRef.current = true
     if (!muted) audio.playDiceRoll()
@@ -1382,7 +1387,8 @@ export function OnlineGameEngine({
 
   // Handle Token Click from Board (with Dice Choice Modal detection)
   const handleTokenClick = (rawTokenId: number) => {
-    if (!isMyTurnRef.current || isAnimatingMoveRef.current || isRollingRef.current || !hasRolled) return
+    // BUG FIX v8.0.6: Use hasRolledRef.current (live ref) not hasRolled (stale closure)
+    if (!isMyTurnRef.current || isAnimatingMoveRef.current || isRollingRef.current || !hasRolledRef.current) return
     isProcessingTimeoutRef.current = false
 
     let tokenId = rawTokenId
