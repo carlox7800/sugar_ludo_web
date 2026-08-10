@@ -254,7 +254,7 @@ export function OnlineGameEngine({
 
   const isProcessingTimeoutRef = useRef(false)
   const pendingExtraTurnsRef = useRef<number>(0)
-  const consecutiveDoublesCountRef = useRef<number>(0)
+
   const lastMovedTokenGlobalIdRef = useRef<number | null>(null)
   const barrierLifetimesRef = useRef<Record<number, number>>({})
   const finishedPlayerIndicesRef = useRef<number[]>([])
@@ -819,7 +819,6 @@ export function OnlineGameEngine({
       globalLogger.log('SOCKET', 'Recibido event_turn_started', { activeId })
 
       if (activeId !== currentTurnPlayerId) {
-        consecutiveDoublesCountRef.current = 0
         lastMovedTokenGlobalIdRef.current = null
       }
 
@@ -832,7 +831,6 @@ export function OnlineGameEngine({
       setIsAnimatingMove(false)
       setMoveSelectorTokenId(null)
       isProcessingTimeoutRef.current = false
-      pendingExtraTurnsRef.current = 0
     }
 
     // 2. Dice Result
@@ -844,55 +842,17 @@ export function OnlineGameEngine({
 
       globalLogger.log('SOCKET', 'Recibido event_dice_result', { playerId: data.playerId, vals })
       
-      // Track extra turn strictly for doubles & 3rd double penalty
-      let isPenalty = false
-      if (vals[0] === vals[1]) {
-        consecutiveDoublesCountRef.current += 1
-        if (consecutiveDoublesCountRef.current >= 3) {
-          isPenalty = true
-          pendingExtraTurnsRef.current = 0
-          consecutiveDoublesCountRef.current = 0
-          showToast('🚫 Penalización por tres dobles consecutivos')
-          globalLogger.log('GAME-FLOW', '¡Penalización por 3 dobles consecutivos!')
-        } else {
-          pendingExtraTurnsRef.current = 1
-        }
-      } else {
-        pendingExtraTurnsRef.current = 0
-        consecutiveDoublesCountRef.current = 0
-      }
-
       setIsRolling(true)
       setTimeout(() => {
         setIsRolling(false)
         setDiceValues(vals)
-        setRemainingMoves(isPenalty ? [] : [...vals])
+        setRemainingMoves([...vals])
         setHasRolled(true)
         setTurnTimer(10)
         globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
 
-        if (!isPenalty && vals[0] === vals[1]) {
+        if (vals[0] === vals[1]) {
           showToast('🎲 ¡Turno Extra por Doble!')
-        }
-
-        if (isPenalty) {
-          if (isMyTurnRef.current && data.playerId === myPlayerId) {
-            const lastTokenId = lastMovedTokenGlobalIdRef.current
-            if (lastTokenId !== null) {
-              const tkIndex = lastTokenId % 4
-              globalLogger.log('GAME-FLOW', `Enviando última ficha (id: ${tkIndex}) a la base por penalización 3er doble.`)
-              socket.emit('intent_move_token', {
-                roomId: gameData.roomId,
-                playerId: myPlayerId,
-                tokenId: tkIndex,
-                newPathIndex: -1,
-                isBotMove: false,
-              })
-            } else {
-              emitEndTurnIfNeeded([])
-            }
-          }
-          return
         }
 
         // If timeout auto-roll was triggered, chain auto-move
@@ -945,6 +905,33 @@ export function OnlineGameEngine({
       if (targetStep === -1) {
         if ('playCapture' in audio) (audio as any).playCapture()
         else audio.playStep()
+        
+        // Fase 4: Autoritativo total - Identificar si fue penalización o captura por el contexto
+        const activePlayerIdx = dynamicPlayers.findIndex(p => p.playerId === currentTurnPlayerId)
+        if (serverPlayerIdx === activePlayerIdx) {
+          showToast('🚫 Penalización por tres dobles consecutivos')
+          globalLogger.log('GAME-FLOW', '¡Penalización por 3 dobles consecutivos recibida del servidor!')
+        } else {
+          showToast('⚔️ ¡Ficha enemiga enviada a la base!')
+          if (!mutedRef.current) audio.playFireworks()
+          
+          let explosionCell = startStep
+          if (explosionCell < 0) explosionCell = 0
+          
+          let cellIndex: number | null = null
+          if (isHexGame) {
+             cellIndex = getCellIndexForToken(currentToken?.color as any, explosionCell)
+             if (typeof cellIndex !== 'number') cellIndex = explosionCell
+          } else {
+             const perimeter = getTotalPerimeter(isHexGame)
+             cellIndex = (getStartOffset(currentToken?.color || 'red', isHexGame) + explosionCell) % perimeter
+             cellIndex += 1 // UI uses 1-based index for explosion sometimes
+          }
+          
+          setExplosionData({ cellIndex: cellIndex || 1, color: currentToken?.color || 'red' })
+          setTimeout(() => setExplosionData(null), 3500)
+        }
+
         setTokens((prev) =>
           prev.map((t) =>
             t.playerId === serverPlayerIdx && t.id === tokenIndex
@@ -953,6 +940,8 @@ export function OnlineGameEngine({
           )
         )
         if (isMyTurnRef.current && serverPlayerIdx === myPlayerIndex) {
+          // Empty remaining moves local state on penalty
+          setRemainingMoves([])
           emitEndTurnIfNeeded([])
         }
         setTimeout(processNextQueuedMove, 100)
@@ -1056,7 +1045,22 @@ export function OnlineGameEngine({
             if (!mutedRef.current) audio.playGoal()
           }
 
-          // Capture Check (Perimeter cells)
+          // Apply goal bonuses manually since server doesn't broadcast bonus steps
+          if (targetStep === goalStep) {
+            const goalBonus = isHexGame ? 15 : 10
+            bonusSteps += goalBonus
+          }
+          
+          // Fase 4: Limpieza de validadores locales. 
+          // El servidor ya evalúa capturas y envía event_token_moved(-1) para las fichas enemigas.
+          // Solo necesitamos sumar +25/+20 bonusSteps si hubo una captura en ESTE movimiento.
+          // Como el cliente recibe event_token_moved(-1) por SEPARADO, podemos no agregar el bono aquí
+          // o inferirlo. Dado que el servidor no emite bonusSteps, ¿cómo recibe el cliente los pasos extra?
+          // En modo offline el jugador obtenía +20 pasos para mover OTRA ficha.
+          // El servidor autoritativo NO envía los pasos extra al cliente. 
+          // Si el cliente no valida la captura, no obtendrá los +20 pasos de bono en su UI!
+          
+          // Wait, I need to keep the local check ONLY for adding bonusSteps!
           if (currentToken) {
             if (isHexGame) {
               const targetCellIndex = getCellIndexForToken(currentToken.color as any, targetStep)
@@ -1069,23 +1073,15 @@ export function OnlineGameEngine({
                   const enemyTokens = cellTokens.filter((t) => t.color !== currentToken.color)
 
                   if (myTokens.length === 1 && enemyTokens.length === 1) {
-                    capturedOpponents = [{ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id }]
-                    showToast('💥 ¡Expulsión de salida! Ficha enemiga enviada a casa (+0 bonus)')
-                    if (!mutedRef.current) audio.playFireworks()
-                    setExplosionData({ cellIndex: targetCellIndex, color: enemyTokens[0].color })
-                    setTimeout(() => setExplosionData(null), 3500)
+                     // Solo expulsión, bonus +0
                   }
                 } else if (!STAR_CELLS.includes(targetCellIndex)) {
                   const enemyTokens = tokensRef.current.filter(
                     (t) => t.playerId !== serverPlayerIdx && t.step > 0 && t.step <= 76 && getCellIndexForToken(t.color as any, t.step) === targetCellIndex
                   )
                   if (enemyTokens.length === 1) {
-                    capturedOpponents = [{ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id }]
                     showToast('⚔️ ¡Ficha capturada! +25 pasos de bono')
                     bonusSteps += 25
-                    if (!mutedRef.current) audio.playFireworks()
-                    setExplosionData({ cellIndex: targetCellIndex, color: enemyTokens[0].color })
-                    setTimeout(() => setExplosionData(null), 3500)
                   }
                 }
               }
@@ -1095,21 +1091,7 @@ export function OnlineGameEngine({
               const isGoldStar = [8, 21, 34, 47, 60, 73].includes(pIndex)
 
               if (targetStep === 1) {
-                const cellTokens = tokensRef.current.filter((t) => {
-                  if (t.step < 0 || t.step >= trackSteps) return false
-                  const oppPIndex = (getStartOffset(t.color, isHexGame) + t.step) % perimeter
-                  return oppPIndex === pIndex
-                })
-                const myTokens = cellTokens.filter((t) => t.color === currentToken.color)
-                const enemyTokens = cellTokens.filter((t) => t.color !== currentToken.color)
-
-                if (myTokens.length === 1 && enemyTokens.length === 1) {
-                  capturedOpponents = [{ playerId: enemyTokens[0].playerId, id: enemyTokens[0].id }]
-                  showToast('💥 ¡Expulsión de salida! Ficha enemiga enviada a casa (+0 bonus)')
-                  if (!mutedRef.current) audio.playFireworks()
-                  setExplosionData({ cellIndex: pIndex + 1, color: enemyTokens[0].color })
-                  setTimeout(() => setExplosionData(null), 3500)
-                }
+                // Expulsión en salida, bonus +0
               } else if (!isStartCell && !isGoldStar) {
                 const opponents = tokensRef.current.filter((t) => {
                   if (t.playerId === serverPlayerIdx || t.step === -1 || t.step === goalStep) return false
@@ -1119,24 +1101,17 @@ export function OnlineGameEngine({
                 })
 
                 if (opponents.length > 0) {
-                  capturedOpponents = opponents.map((o) => ({ playerId: o.playerId, id: o.id }))
                   showToast(`⚔️ ¡Ficha capturada! +20 pasos de bono`)
                   bonusSteps += 20
-                  if (!mutedRef.current) audio.playFireworks()
-                  setExplosionData({ cellIndex: pIndex + 1, color: opponents[0].color })
-                  setTimeout(() => setExplosionData(null), 3500)
                 }
               }
             }
           }
 
-          // Apply captured opponents returning to base
+          // Apply current token's new position
           const finalTokens = tokensRef.current.map((t) => {
             if (t.playerId === serverPlayerIdx && t.id === tokenIndex) {
               return { ...t, step: targetStep }
-            }
-            if (capturedOpponents.some((o) => o.playerId === t.playerId && o.id === t.id)) {
-              return { ...t, step: -1 }
             }
             return t
           })
