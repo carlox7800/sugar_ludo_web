@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
 // Constants
 // -----------------------------------------------------------------------------
-export const APP_VERSION = 'v8.1.0'
+export const APP_VERSION = 'v8.2.0'
 export const IS_PRODUCTION = true // Change to false for localhost testing;
