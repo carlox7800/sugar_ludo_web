@@ -240,6 +240,9 @@ export function OnlineGameEngine({
   const remainingMovesRef = useRef(remainingMoves)
   remainingMovesRef.current = remainingMoves
 
+  const currentTurnPlayerIdRef = useRef(currentTurnPlayerId)
+  currentTurnPlayerIdRef.current = currentTurnPlayerId
+
   const isMyTurnRef = useRef(isMyTurn)
   isMyTurnRef.current = isMyTurn
 
@@ -818,13 +821,14 @@ export function OnlineGameEngine({
       const activeId = data.playerId || data.activePlayerId || ''
       globalLogger.log('SOCKET', 'Recibido event_turn_started', { activeId })
 
-      // BUG FIX v8.0.7: When the turn genuinely changes to a DIFFERENT player,
+      // BUG FIX v8.0.7 & v8.0.9: When the turn genuinely changes to a DIFFERENT player,
       // clear any stale pending extra turns so doubles don't accidentally bleed over.
-      if (activeId !== currentTurnPlayerId) {
+      if (activeId !== currentTurnPlayerIdRef.current) {
         pendingExtraTurnsRef.current = 0
         lastMovedTokenGlobalIdRef.current = null
       }
 
+      currentTurnPlayerIdRef.current = activeId
       setCurrentTurnPlayerId(activeId)
       setTurnTimer(10)
       setHasRolled(false)
@@ -918,7 +922,7 @@ export function OnlineGameEngine({
         else audio.playStep()
         
         // Fase 4: Autoritativo total - Identificar si fue penalización o captura por el contexto
-        const activePlayerIdx = dynamicPlayers.findIndex(p => p.playerId === currentTurnPlayerId)
+        const activePlayerIdx = dynamicPlayers.findIndex(p => p.playerId === currentTurnPlayerIdRef.current)
         if (serverPlayerIdx === activePlayerIdx) {
           showToast('🚫 Penalización por tres dobles consecutivos')
           globalLogger.log('GAME-FLOW', '¡Penalización por 3 dobles consecutivos recibida del servidor!')
