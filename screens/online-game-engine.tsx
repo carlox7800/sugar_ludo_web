@@ -1055,12 +1055,6 @@ export function OnlineGameEngine({
             bonusSteps += goalBonus
             if (!mutedRef.current) audio.playGoal()
           }
-
-          // Apply goal bonuses manually since server doesn't broadcast bonus steps
-          if (targetStep === goalStep) {
-            const goalBonus = isHexGame ? 15 : 10
-            bonusSteps += goalBonus
-          }
           
           // Fase 4: Limpieza de validadores locales. 
           // El servidor ya evalúa capturas y envía event_token_moved(-1) para las fichas enemigas.
@@ -1090,7 +1084,7 @@ export function OnlineGameEngine({
                   const enemyTokens = tokensRef.current.filter(
                     (t) => t.playerId !== serverPlayerIdx && t.step > 0 && t.step <= 76 && getCellIndexForToken(t.color as any, t.step) === targetCellIndex
                   )
-                  if (enemyTokens.length === 1) {
+                  if (enemyTokens.length > 0) {
                     showToast('⚔️ ¡Ficha capturada! +25 pasos de bono')
                     bonusSteps += 25
                   }
