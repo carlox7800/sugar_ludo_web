@@ -867,7 +867,7 @@ export function OnlineGameEngine({
         setDiceValues(vals)
         setRemainingMoves([...vals])
         setHasRolled(true)
-        setTurnTimer(30)
+        // setTurnTimer(30) // REMOVED: Enforce strict 15s absolute timer
         globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
 
         // BUG FIX v8.0.7: Register pending extra turn when doubles are rolled (R9)
@@ -936,7 +936,7 @@ export function OnlineGameEngine({
           showToast('🚫 Penalización por tres dobles consecutivos')
           globalLogger.log('GAME-FLOW', '¡Penalización por 3 dobles consecutivos recibida del servidor!')
         } else {
-          showToast('⚔️ ¡Ficha enemiga enviada a la base!')
+          showToast(`⚔️ ¡Ficha capturada! +${isHexGame ? 25 : 20} pasos de bonificación`)
           if (!mutedRef.current) audio.playFireworks()
           
           let explosionCell = startStep
@@ -1027,6 +1027,7 @@ export function OnlineGameEngine({
       }
 
       setIsAnimatingMove(true)
+      isAnimatingMoveRef.current = true
 
       // Step-by-step animation loop (recursive setTimeout avoids browser interval bunching)
       let iteration = 0
@@ -1192,7 +1193,7 @@ export function OnlineGameEngine({
             if (updatedMoves.length === 0 || playables.length === 0) {
               emitEndTurnIfNeeded(updatedMoves, finalTokens)
             } else {
-              setTurnTimer(30)
+              // setTurnTimer(30) // REMOVED: Enforce strict 15s absolute timer
               if (isProcessingTimeoutRef.current) {
                 // Auto-play next move recursively with 500ms visual delay
                 setTimeout(() => {
