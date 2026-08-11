@@ -208,7 +208,7 @@ export function OnlineGameEngine({
   const [explosionData, setExplosionData] = useState<{ cellIndex: number; color: PlayerColor } | null>(null)
   
   // Timer & UI Notifications
-  const [turnTimer, setTurnTimer] = useState<number>(10)
+  const [turnTimer, setTurnTimer] = useState<number>(30)
   const [notification, setNotification] = useState<string | null>(null)
   const [playerReactions, setPlayerReactions] = useState<Record<string, string>>({})
   const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false)
@@ -245,6 +245,9 @@ export function OnlineGameEngine({
 
   const isMyTurnRef = useRef(isMyTurn)
   isMyTurnRef.current = isMyTurn
+
+  const myPlayerIdRef = useRef(myPlayerId)
+  myPlayerIdRef.current = myPlayerId
 
   const activePlayerIndexRef = useRef(activePlayerIndex)
   activePlayerIndexRef.current = activePlayerIndex
@@ -746,31 +749,16 @@ export function OnlineGameEngine({
   }
 
   // ---------------------------------------------------------------------------
-  // Robust Single-Timer Effect (Prevents duplicate timeouts)
+  // Visual Countdown Timer Effect (Server-Authoritative event_turn_timeout handles gameplay action)
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (winnerPlayer) return
 
     const interval = setInterval(() => {
       setTurnTimer((prev) => {
-        // Freeze timer during animations or rolling dice
+        // Freeze timer display during animations or rolling dice
         if (isAnimatingMoveRef.current || isRollingRef.current) return prev
-
-        if (prev <= 1) {
-          const shouldIPlay = activePlayerIndexRef.current === myPlayerIndex
-
-          if (shouldIPlay && !isProcessingTimeoutRef.current) {
-            isProcessingTimeoutRef.current = true
-            if (!hasRolledRef.current && !isRollingRef.current) {
-              globalLogger.log('GAME-FLOW', 'Tiempo agotado (Lanzar). Emitiendo intent_roll_dice.')
-              handleRollDice()
-            } else if (hasRolledRef.current) {
-              executeRandomValidMove()
-            }
-          }
-          return 0
-        }
-        return prev - 1
+        return prev > 0 ? prev - 1 : 0
       })
     }, 1000)
 
@@ -817,9 +805,10 @@ export function OnlineGameEngine({
     if (!socket) return
 
     // 1. Turn Started
-    const handleTurnStarted = (data: { playerId: string; activePlayerId?: string }) => {
+    const handleTurnStarted = (data: { playerId: string; activePlayerId?: string; turnDurationSeconds?: number }) => {
       const activeId = data.playerId || data.activePlayerId || ''
-      globalLogger.log('SOCKET', 'Recibido event_turn_started', { activeId })
+      const duration = data.turnDurationSeconds || 30
+      globalLogger.log('SOCKET', 'Recibido event_turn_started', { activeId, turnDurationSeconds: duration })
 
       // BUG FIX v8.0.7 & v8.0.9: When the turn genuinely changes to a DIFFERENT player,
       // clear any stale pending extra turns so doubles don't accidentally bleed over.
@@ -830,7 +819,7 @@ export function OnlineGameEngine({
 
       currentTurnPlayerIdRef.current = activeId
       setCurrentTurnPlayerId(activeId)
-      setTurnTimer(10)
+      setTurnTimer(duration)
       setHasRolled(false)
       setDiceValues(null)
       setRemainingMoves([])
@@ -838,6 +827,26 @@ export function OnlineGameEngine({
       setIsAnimatingMove(false)
       setMoveSelectorTokenId(null)
       isProcessingTimeoutRef.current = false
+    }
+
+    // 1b. Server Authoritative Turn Timeout Handler (v8.0.10)
+    const handleTurnTimeout = (data: { playerId: string; reason?: string }) => {
+      globalLogger.log('SOCKET', 'Recibido event_turn_timeout', data)
+      const targetId = data.playerId
+      const myId = myPlayerIdRef.current || myPlayerId
+
+      if (targetId === myId) {
+        if (!isProcessingTimeoutRef.current) {
+          isProcessingTimeoutRef.current = true
+          if (!hasRolledRef.current && !isRollingRef.current) {
+            globalLogger.log('GAME-FLOW', 'Timeout recibido del servidor (Lanzar). Emitiendo intent_roll_dice.')
+            handleRollDice()
+          } else if (hasRolledRef.current) {
+            globalLogger.log('GAME-FLOW', 'Timeout recibido del servidor (Mover). Ejecutando jugada aleatoria.')
+            executeRandomValidMove()
+          }
+        }
+      }
     }
 
     // 2. Dice Result
@@ -858,7 +867,7 @@ export function OnlineGameEngine({
         setDiceValues(vals)
         setRemainingMoves([...vals])
         setHasRolled(true)
-        setTurnTimer(10)
+        setTurnTimer(30)
         globalLogger.log('GAME-FLOW', `Dados recibidos por ${data.playerId}: [${vals[0]}, ${vals[1]}]`)
 
         // BUG FIX v8.0.7: Register pending extra turn when doubles are rolled (R9)
@@ -1183,7 +1192,7 @@ export function OnlineGameEngine({
             if (updatedMoves.length === 0 || playables.length === 0) {
               emitEndTurnIfNeeded(updatedMoves, finalTokens)
             } else {
-              setTurnTimer(10)
+              setTurnTimer(30)
               if (isProcessingTimeoutRef.current) {
                 // Auto-play next move recursively with 500ms visual delay
                 setTimeout(() => {
@@ -1296,6 +1305,7 @@ export function OnlineGameEngine({
     }
 
     socket.on('event_turn_started', handleTurnStarted)
+    socket.on('event_turn_timeout', handleTurnTimeout)
     socket.on('event_dice_result', handleDiceResult)
     socket.on('event_token_moved', handleTokenMoved)
     socket.on('event_player_disconnected', handlePlayerDisconnected)
@@ -1308,6 +1318,7 @@ export function OnlineGameEngine({
 
     return () => {
       socket.off('event_turn_started', handleTurnStarted)
+      socket.off('event_turn_timeout', handleTurnTimeout)
       socket.off('event_dice_result', handleDiceResult)
       socket.off('event_token_moved', handleTokenMoved)
       socket.off('event_player_disconnected', handlePlayerDisconnected)
