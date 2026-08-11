@@ -1439,7 +1439,7 @@ export function OnlineGameEngine({
           }
         })
 
-        if (remainingMoves.length === 2 && checkMoveValid(token, remainingMoves[0] + remainingMoves[1])) {
+        if (remainingMoves.length === 2 && remainingMoves[0] <= 6 && remainingMoves[1] <= 6 && checkMoveValid(token, remainingMoves[0] + remainingMoves[1])) {
           validOptions.push(remainingMoves[0] + remainingMoves[1])
         }
 
@@ -1731,7 +1731,7 @@ export function OnlineGameEngine({
           }
         })
 
-        if (remainingMoves.length === 2) {
+        if (remainingMoves.length === 2 && remainingMoves[0] <= 6 && remainingMoves[1] <= 6) {
           const sum = remainingMoves[0] + remainingMoves[1]
           if (checkMoveValid(token, sum)) {
             options.push(sum)
