@@ -65,12 +65,16 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   // Confetti effect when game ends
   useEffect(() => {
     if (gameState.winner) {
-      confetti({
-        particleCount: 150,
-        spread: 100,
-        origin: { y: 0.6 },
-        zIndex: 9999
-      });
+      const timer = setTimeout(() => {
+        confetti({
+          particleCount: 150,
+          spread: 100,
+          origin: { y: 0.6 },
+          zIndex: 9999,
+          useWorker: true
+        });
+      }, 400);
+      return () => clearTimeout(timer);
     }
   }, [gameState.winner]);
 
@@ -196,7 +200,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
        if (playableForced.length > 0) {
           return playableForced;
        }
-       return [];
+       // Fallback: If forced barrier tokens cannot move, allow moving regular playable tokens
+       return playableIds;
     }
 
     return playableIds;

@@ -197,12 +197,16 @@ export function OnlineGameEngine({
   // Confetti effect when winner is declared
   useEffect(() => {
     if (winnerPlayer) {
-      confetti({
-        particleCount: 150,
-        spread: 100,
-        origin: { y: 0.6 },
-        zIndex: 9999
-      });
+      const timer = setTimeout(() => {
+        confetti({
+          particleCount: 150,
+          spread: 100,
+          origin: { y: 0.6 },
+          zIndex: 9999,
+          useWorker: true
+        });
+      }, 400);
+      return () => clearTimeout(timer);
     }
   }, [winnerPlayer])
   const [explosionData, setExplosionData] = useState<{ cellIndex: number; color: PlayerColor } | null>(null)
