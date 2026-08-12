@@ -21,6 +21,8 @@ interface HexagonalLudoBoardViewProps {
   appTheme?: 'classic' | 'sugar';
   explosionData?: { cellIndex: number | string, color: HexPlayerColor } | null;
   rotationOffset?: number;
+  isAnimating?: boolean;
+  isRolling?: boolean;
 }
 
 const CX = 500;
@@ -601,6 +603,8 @@ export const HexagonalLudoBoardView = React.memo(HexagonalLudoBoardViewComponent
   if (prevProps.appTheme !== nextProps.appTheme) return false;
   if (prevProps.currentTurnIndex !== nextProps.currentTurnIndex) return false;
   if (prevProps.humanPlayerId !== nextProps.humanPlayerId) return false;
+  if (prevProps.isAnimating !== nextProps.isAnimating) return false;
+  if (prevProps.isRolling !== nextProps.isRolling) return false;
   
   // Comparar tokens rápidamente
   if (prevProps.tokens.length !== nextProps.tokens.length) return false;

@@ -969,6 +969,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
               humanPlayerId={gameState.players.findIndex(p => p.type === 'human')}
               explosionData={explosionData}
               rotationOffset={rotationOffset}
+              isAnimating={gameState.isAnimating}
+              isRolling={gameState.isRolling}
             />
           </div>
         </div>
