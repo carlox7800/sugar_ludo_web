@@ -96,8 +96,12 @@ function PageContent() {
         }
       }
     } else {
-      // Not logged in
-      setScreen('landing')
+      // Not logged in: protect active games from being abruptly closed by a transient auth drop
+      if (screen !== 'online-game' && screen !== 'game') {
+        setScreen('landing')
+      } else {
+        console.warn('Auth state reported null during active match, preserving game screen:', screen)
+      }
     }
   }, [user, screen])
 

@@ -84,8 +84,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 isDev: false,
               })
             } else {
-              // Si por alguna razón el documento no existe aún
-              setUser(null)
+              // Si por alguna razón el documento no existe aún o hay un parpadeo de caché
+              setUser(prev => {
+                if (prev && prev.uid === firebaseUser.uid) {
+                  console.warn('Firestore auth snapshot: doc does not exist yet, preserving prev active user:', firebaseUser.uid)
+                  return prev
+                }
+                return null
+              })
             }
             setIsLoaded(true)
           },
@@ -95,20 +101,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         )
 
-
         return () => unsubscribeSnapshot()
       } else {
         // Not logged in via Firebase Auth, check if there's a Dev user in localStorage
         const savedUser = localStorage.getItem('sugar_auth_user')
         if (savedUser) {
-          const parsed = JSON.parse(savedUser)
-          if (parsed.isDev) {
-            setUser(parsed)
-          } else {
+          try {
+            const parsed = JSON.parse(savedUser)
+            if (parsed.isDev) {
+              setUser(parsed)
+            } else {
+              setUser(prev => (prev?.isDev ? null : prev))
+            }
+          } catch {
             setUser(null)
           }
         } else {
-          setUser(null)
+          // Prevent eviction if user was actively logged in and Auth state flickered
+          setUser(prev => {
+            if (prev) {
+              console.warn('Firebase Auth state reported null for user, preserving active session:', prev.uid)
+              return prev
+            }
+            return null
+          })
         }
         setIsLoaded(true)
       }
