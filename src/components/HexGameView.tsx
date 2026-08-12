@@ -200,8 +200,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
        if (playableForced.length > 0) {
           return playableForced;
        }
-       // Fallback: If forced barrier tokens cannot move, allow moving regular playable tokens
-       return playableIds;
+       return [];
     }
 
     return playableIds;
