@@ -903,13 +903,13 @@ export function OnlineGameEngine({
     }
 
     // 3. Token Moved (with Step-by-Step animation & Rules checking)
-    const handleTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number }) => {
+    const handleTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number; isPenalty?: boolean }) => {
       globalLogger.log('SOCKET', 'Recibido event_token_moved', data)
       moveQueueRef.current.push(data)
       processNextQueuedMove()
     }
 
-    const processTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number }) => {
+    const processTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number; isPenalty?: boolean }) => {
       if (isAnimatingMoveRef.current) {
         // Re-queue if an animation is currently running
         moveQueueRef.current.unshift(data)
@@ -929,35 +929,39 @@ export function OnlineGameEngine({
       let startStep = currentToken ? currentToken.step : -1
       const targetStep = data.newPathIndex
 
-      // Intercept Penalty return to base (-1)
+      // Intercept Penalty / Capture return to base (-1)
       if (targetStep === -1) {
         if ('playCapture' in audio) (audio as any).playCapture()
         else audio.playStep()
         
-        // Fase 4: Autoritativo total - Identificar si fue penalización o captura por el contexto
+        // Fase 4 / v8.2.8: Identificar si fue penalización por la bandera autoritativa o por el contexto
         const activePlayerIdx = dynamicPlayers.findIndex(p => p.playerId === currentTurnPlayerIdRef.current)
-        if (serverPlayerIdx === activePlayerIdx) {
-          showToast('🚫 Penalización por tres dobles consecutivos')
+        const isPenalty = data.isPenalty === true || (serverPlayerIdx === activePlayerIdx)
+
+        // Calcular casilla de origen para activar la explosión visual
+        let explosionCell = startStep
+        if (explosionCell < 0) explosionCell = 0
+        
+        let cellIndex: number | null = null
+        if (isHexGame) {
+           cellIndex = getCellIndexForToken(currentToken?.color as any, explosionCell)
+           if (typeof cellIndex !== 'number') cellIndex = explosionCell
+        } else {
+           const perimeter = getTotalPerimeter(isHexGame)
+           cellIndex = (getStartOffset(currentToken?.color || 'red', isHexGame) + explosionCell) % perimeter
+           cellIndex += 1 // UI uses 1-based index for explosion
+        }
+        
+        // Efecto visual de explosión (para AMBOS: capturas y penalizaciones)
+        if (!mutedRef.current) audio.playFireworks()
+        setExplosionData({ cellIndex: cellIndex || 1, color: currentToken?.color || 'red' })
+        setTimeout(() => setExplosionData(null), 3500)
+
+        if (isPenalty) {
+          showToast('🚫 ¡Penalización por 3 dobles consecutivos! Ficha devuelta a la base')
           globalLogger.log('GAME-FLOW', '¡Penalización por 3 dobles consecutivos recibida del servidor!')
         } else {
           showToast(`⚔️ ¡Ficha capturada! +${isHexGame ? 25 : 20} pasos de bonificación`)
-          if (!mutedRef.current) audio.playFireworks()
-          
-          let explosionCell = startStep
-          if (explosionCell < 0) explosionCell = 0
-          
-          let cellIndex: number | null = null
-          if (isHexGame) {
-             cellIndex = getCellIndexForToken(currentToken?.color as any, explosionCell)
-             if (typeof cellIndex !== 'number') cellIndex = explosionCell
-          } else {
-             const perimeter = getTotalPerimeter(isHexGame)
-             cellIndex = (getStartOffset(currentToken?.color || 'red', isHexGame) + explosionCell) % perimeter
-             cellIndex += 1 // UI uses 1-based index for explosion sometimes
-          }
-          
-          setExplosionData({ cellIndex: cellIndex || 1, color: currentToken?.color || 'red' })
-          setTimeout(() => setExplosionData(null), 3500)
         }
 
         setTokens((prev) =>

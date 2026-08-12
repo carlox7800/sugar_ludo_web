@@ -463,7 +463,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
             
             setTokens(newTokens);
             addLog(`🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`, 'warning', activePlayer.color);
-            showToast('🚨 ¡Tercer doble! Ficha a la base.');
+            showToast('🚫 ¡Penalización por 3 dobles consecutivos! Ficha devuelta a la base');
             
             setRemainingMoves([]);
             setTimeout(() => advanceTurn(false, newTokens), 1500);

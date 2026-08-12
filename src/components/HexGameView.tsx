@@ -646,7 +646,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           thirdDouble = true;
           
           globalLogger.log('GAME-FLOW', `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`, { playerColor: activePlayer.color });
-          showToast('🚨 ¡Tercer doble! Ficha a la base.');
+          showToast('🚫 ¡Penalización por 3 dobles consecutivos! Ficha devuelta a la base');
         } else {
           pendingExtraTurnsRef.current += 1;
           rollLogMessage = `🎲 ¡${activePlayer.name} sacó doble (${r1},${r2}) y gana tiro extra!`;
