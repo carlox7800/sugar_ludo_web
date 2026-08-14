@@ -4,7 +4,7 @@ const path = require('path');
 const url = require('url');
 
 const OUT_DIR = path.join(__dirname, 'out');
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
