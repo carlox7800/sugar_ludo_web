@@ -20,6 +20,12 @@ export const metadata: Metadata = {
   description:
     'Juega Ludo en un mundo Cyber Candy: entrena contra IA, compite online y sube de nivel.',
   generator: 'v0.app',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Sugar Ludo',
+  },
 }
 
 export const viewport: Viewport = {

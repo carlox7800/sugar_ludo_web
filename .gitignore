@@ -14,3 +14,13 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+dist/
+out/
+releases/
+*.exe
+*.zip
+android/app/build/
+android/build/
+android/.gradle/
+.gradle/
+*.log

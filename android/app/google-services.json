@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1034741558395",
+    "project_id": "sweety-ludo-87343",
+    "storage_bucket": "sweety-ludo-87343.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1034741558395:android:ab5a3dd7b87eb9f8bd46de",
+        "android_client_info": {
+          "package_name": "com.aistudio.sweetyludo.kxmpzq"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1034741558395-59rjhfbtqvslkie1qnido1npg7fas2qb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.sweetyludo.kxmpzq",
+            "certificate_hash": "23b5f977d9a3d902b83ca82b5d463ae63e5b97a1"
+          }
+        },
+        {
+          "client_id": "1034741558395-sjuc2lhr53pdsrftv5l04og431k0gvmc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDB2tQxzzqnBawmE9gMDoDBCGSU68HD3WA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1034741558395-sjuc2lhr53pdsrftv5l04og431k0gvmc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

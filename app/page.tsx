@@ -13,7 +13,7 @@ import { SettingsModal } from '@/components/settings-modal'
 import GameEngine from '@/src/GameEngine'
 import { GameConfig } from '@/src/types'
 import { OnlineGameEngine, OnlineGameData } from '@/screens/online-game-engine'
-import { Maximize, Minimize } from 'lucide-react'
+import { LogIn } from 'lucide-react'
 
 // Screens
 import { WalletScreen } from '@/screens/wallet-screen'
@@ -24,7 +24,7 @@ import { MailScreen } from '@/screens/mail-screen'
 import { CollectionScreen } from '@/screens/collection-screen'
 import { LandingPage } from '@/screens/landing-page'
 
-// Contexts & Modals
+// Contexts, Hooks & Modals
 import { PlayerProvider } from '@/lib/player-context'
 import { AuthProvider, useAuth } from '@/lib/auth-context'
 import { LoginModal } from '@/components/login-modal'
@@ -47,12 +47,22 @@ export type Screen =
 
 function PageContent() {
   const { user, loginWithGoogle, loginDev, setNickname } = useAuth()
+  const [isNative, setIsNative] = useState(false)
   
-  // Decide initial screen based on auth
-  const [screen, setScreen] = useState<Screen>(() => {
-    if (user && user.nickname) return 'lobby'
-    return 'landing'
-  })
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const capacitor = (window as any).Capacitor;
+      const isCapacitor = capacitor && (
+        (capacitor.isNativePlatform && capacitor.isNativePlatform()) || 
+        (capacitor.getPlatform && capacitor.getPlatform() !== 'web')
+      );
+      const isElectron = window.navigator.userAgent.includes('Electron') || window.location.protocol === 'file:' || window.location.protocol === 'app:'
+      setIsNative(!!isCapacitor || !!isElectron)
+    }
+  }, [])
+  
+  // Decide initial screen based on PWA environment and Auth
+  const [screen, setScreen] = useState<Screen>('landing')
   const [config, setConfig] = useState<GameConfig | null>(null)
   const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
   const [onlineGameOrigin, setOnlineGameOrigin] = useState<Screen>('online-training')
@@ -61,49 +71,33 @@ function PageContent() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
 
+  const [forceWebMode, setForceWebMode] = useState(false)
+
+  // Auth & Native routing logic
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable fullscreen: ${err.message}`);
-      });
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      }
+    // REGLA 1: Si se está accediendo desde un navegador web normal y no se ha activado modo web, se fuerza la Landing Page informativa
+    if (!isNative && !forceWebMode) {
+      setScreen('landing')
+      return
     }
-  };
 
-  // Auth routing logic
-  useEffect(() => {
+    // REGLA 2: Si es la App Instalada (Standalone PWA) o Modo Web Forzado
     if (user) {
-      if (!user.nickname) {
-        // Logged in but needs nickname
-        setIsLoginModalOpen(false)
-      } else {
-        // Logged in and has nickname
+      if (user.nickname) {
+        // Usuario logueado con nickname -> Ir al Lobby (salvo que ya esté en partida o pantalla específica)
         if (screen === 'landing') {
           setScreen('lobby')
         }
+        setIsLoginModalOpen(false)
       }
     } else {
-      // Not logged in: protect active games from being abruptly closed by a transient auth drop
+      // Usuario no logueado en App instalada o Modo Web -> Abrir inmediatamente el modal de Login
       if (screen !== 'online-game' && screen !== 'game') {
-        setScreen('landing')
-      } else {
-        console.warn('Auth state reported null during active match, preserving game screen:', screen)
+        setIsLoginModalOpen(true)
       }
     }
-  }, [user, screen])
+  }, [user, screen, isNative, forceWebMode])
 
   const handleStartGame = (gameConfig: GameConfig) => {
     setConfig(gameConfig)
@@ -131,6 +125,14 @@ function PageContent() {
   // Si está logueado pero falta el nick, forzamos esa pantalla por encima de todo
   if (user && !user.nickname) {
     return <NicknameSetupModal onConfirm={handleNicknameConfirm} />
+  }
+
+  // Render web-browser portal strictly if NOT native and NOT forceWebMode
+  if (!isNative && !forceWebMode) {
+    return <LandingPage onContinueInBrowser={() => {
+      setForceWebMode(true)
+      setScreen('lobby')
+    }} />
   }
 
   // Render the active screen (Lobby-related)
@@ -188,21 +190,6 @@ function PageContent() {
     }
   }
 
-  // Landing Page (Isolated)
-  if (screen === 'landing') {
-    return (
-      <>
-        <LandingPage onLoginClick={() => setIsLoginModalOpen(true)} />
-        <LoginModal 
-          isOpen={isLoginModalOpen} 
-          onClose={() => setIsLoginModalOpen(false)} 
-          onLoginGoogle={handleLoginGoogle}
-          onLoginDev={handleLoginDev}
-        />
-      </>
-    )
-  }
-
   // Offline Game Engine runs independently outside the Lobby layout
   if (screen === 'game' && config) {
     return <GameEngine initialConfig={config} onExit={() => setScreen('training')} />
@@ -219,6 +206,40 @@ function PageContent() {
           setScreen(onlineGameOrigin)
         }} 
       />
+    )
+  }
+
+  // Native App / Web Mode Screen for Non-Logged User
+  if (!user && (isNative || forceWebMode)) {
+    return (
+      <main className="cyber-bg min-h-screen w-full flex flex-col items-center justify-center p-6 text-center">
+        <div className="flex flex-col items-center max-w-md w-full glass rounded-3xl p-8 border border-[var(--candy-magenta)]/30 shadow-2xl">
+          <div className="flex size-16 items-center justify-center rounded-2xl bg-[var(--candy-magenta)] shadow-[0_0_20px_rgba(255,34,119,0.5)] mb-4">
+            <span className="font-display text-4xl font-extrabold text-white">S</span>
+          </div>
+          <h1 className="font-display text-3xl font-extrabold text-white tracking-tight mb-2">
+            SUGAR <span className="text-[var(--candy-cyan)]">LUDO</span>
+          </h1>
+          <p className="text-sm text-muted-foreground font-semibold mb-6">
+            Bienvenido a la App Oficial. Inicia sesión para entrar al Arena.
+          </p>
+
+          <button
+            onClick={() => setIsLoginModalOpen(true)}
+            className="btn-3d w-full flex items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(135deg,var(--candy-magenta),var(--candy-cyan))] py-4 font-display text-lg font-extrabold text-white shadow-lg"
+          >
+            <LogIn className="size-5" />
+            INICIAR SESIÓN
+          </button>
+        </div>
+
+        <LoginModal 
+          isOpen={isLoginModalOpen} 
+          onClose={() => setIsLoginModalOpen(false)} 
+          onLoginGoogle={handleLoginGoogle}
+          onLoginDev={handleLoginDev}
+        />
+      </main>
     )
   }
 
@@ -239,18 +260,15 @@ function PageContent() {
         {/* Bottom navigation (mobile) */}
         <MobileNav currentScreen={screen} onNavigate={(s) => setScreen(s as Screen)} />
 
-        {/* Floating Fullscreen Button (Mobile Only) */}
-        <button
-          onClick={toggleFullscreen}
-          className="md:hidden fixed bottom-[90px] right-4 z-50 flex size-12 items-center justify-center rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white/70 shadow-lg transition-all hover:bg-black/60 hover:text-white"
-          aria-label="Pantalla Completa"
-        >
-          {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
-        </button>
-
         {/* Modals */}
         <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        <LoginModal 
+          isOpen={isLoginModalOpen} 
+          onClose={() => setIsLoginModalOpen(false)} 
+          onLoginGoogle={handleLoginGoogle}
+          onLoginDev={handleLoginDev}
+        />
       </main>
     </PlayerProvider>
   )

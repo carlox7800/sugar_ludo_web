@@ -1,0 +1,19 @@
+# Carpetas pesadas y dependencias (NO INDEXAR)
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Archivos de registros y temporales
+*.log
+sugar-ludo-logs-*.txt
+*.tmp
+
+# Archivos multimedia y binarios grandes (ahorra tokens)
+*.mp3
+*.wav
+*.png
+*.jpg
+*.jpeg
+*.svg

@@ -1,0 +1,31 @@
+{
+  "name": "Sugar Ludo — Cyber Candy Arena",
+  "short_name": "Sugar Ludo",
+  "description": "Juega Ludo en un mundo Cyber Candy: entrena contra IA, compite online y sube de nivel.",
+  "start_url": "/?mode=pwa",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#1a0f2e",
+  "theme_color": "#1a0f2e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/apple-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/avatar-ludo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

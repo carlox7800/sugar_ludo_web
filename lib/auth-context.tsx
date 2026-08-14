@@ -5,8 +5,12 @@ import {
   signInWithPopup, 
   signOut, 
   onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithCredential,
   User as FirebaseUser
 } from 'firebase/auth'
+import { Capacitor } from '@capacitor/core'
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication'
 import { 
   doc, 
   getDoc, 
@@ -144,39 +148,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGoogle = async () => {
     try {
-      const result = await signInWithPopup(auth, googleProvider)
-      const firebaseUser = result.user
-      const userRef = doc(db, 'users', firebaseUser.uid)
-      const docSnap = await getDoc(userRef)
+      const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform()
 
-      if (!docSnap.exists()) {
-        // New user default state in Firestore
-        const newUserData = {
-          nickname: null,
-          nicknameUpdatedAt: null,
-          photoURL: '1',
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          createdAt: serverTimestamp(),
-          coins: 200,
-          diamonds: 0,
-          level: 1,
-          xp: 0,
-          unlockedSkins: ['classic'],
-          selectedSkin: 'classic',
-          totalWins: 0,
-          totalLosses: 0,
-          totalGames: 0,
-          rankPoints: 0,
+      let firebaseUser: FirebaseUser | null = null
+
+      if (isNative) {
+        // En Android/iOS nativo: Abre el selector de cuentas del sistema operativo
+        console.log('[Auth] Ejecutando FirebaseAuthentication.signInWithGoogle() nativo...')
+        const result = await FirebaseAuthentication.signInWithGoogle()
+        console.log('[Auth] Resultado recibido de FirebaseAuthentication:', JSON.stringify(result))
+
+        if (result?.credential?.idToken) {
+          const credential = GoogleAuthProvider.credential(result.credential.idToken)
+          const userCredential = await signInWithCredential(auth, credential)
+          firebaseUser = userCredential.user
+        } else {
+          throw new Error(`Google Nativo no devolvió idToken (Resultado: ${JSON.stringify(result)})`)
         }
-        await setDoc(userRef, newUserData)
+      } else {
+        // En Web / Desktop
+        const result = await signInWithPopup(auth, googleProvider)
+        firebaseUser = result.user
       }
 
-      // Clear any dev user session from local storage
-      localStorage.removeItem('sugar_auth_user')
-    } catch (error) {
-      console.error('Error initiating Google Login:', error)
-      throw error
+      if (firebaseUser) {
+        const userRef = doc(db, 'users', firebaseUser.uid)
+        const docSnap = await getDoc(userRef)
+
+        if (!docSnap.exists()) {
+          // New user default state in Firestore
+          const newUserData = {
+            nickname: null,
+            nicknameUpdatedAt: null,
+            photoURL: '1',
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            createdAt: serverTimestamp(),
+            coins: 200,
+            diamonds: 0,
+            level: 1,
+            xp: 0,
+            unlockedSkins: ['classic'],
+            selectedSkin: 'classic',
+            totalWins: 0,
+            totalLosses: 0,
+            totalGames: 0,
+            rankPoints: 0,
+          }
+          await setDoc(userRef, newUserData)
+        }
+
+        // Clear any dev user session from local storage
+        localStorage.removeItem('sugar_auth_user')
+      }
+    } catch (error: any) {
+      console.error('[Auth] Error initiating Google Login:', error)
+      const errorMsg = error?.message || error?.code || (typeof error === 'string' ? error : JSON.stringify(error))
+      throw new Error(errorMsg || 'Fallo desconocido al conectar con Google')
     }
   }
 
@@ -197,6 +225,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user?.isDev) {
       saveDevUser(null)
     } else {
+      if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+        try {
+          await FirebaseAuthentication.signOut()
+        } catch (e) {
+          console.warn('Native signOut warning:', e)
+        }
+      }
       await signOut(auth)
       setUser(null)
     }
