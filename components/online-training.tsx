@@ -94,8 +94,9 @@ export function OnlineTraining({
   useEffect(() => {
     const socket = connect()
 
-    // Register identity
+    // Register identity & clean up any prior matchmaking queue authoritatively
     const playerId = user?.uid || `guest_${Math.floor(Math.random() * 100000)}`
+    socket.emit('leave_matchmaking', { playerId })
     socket.emit('register_identity', { playerId })
 
     const handlePrivateRoomCreated = (data: { roomCode?: string; id?: string }) => {
@@ -173,6 +174,8 @@ export function OnlineTraining({
     socket.on('room_error', handleRoomError)
 
     return () => {
+      hasLobbyIntentRef.current = false
+      socket.emit('leave_matchmaking', { playerId })
       socket.off('private_room_created', handlePrivateRoomCreated)
       socket.off('room_updated', handleRoomUpdated)
       socket.off('match_found', handleMatchFound)
@@ -272,12 +275,22 @@ export function OnlineTraining({
     })
   }
 
+  const handleBackToMenu = () => {
+    hasLobbyIntentRef.current = false
+    const socket = getSocketInstance()
+    const playerId = user?.uid || socket.id
+    if (socket) {
+      socket.emit('leave_matchmaking', { playerId })
+    }
+    onBack()
+  }
+
   return (
     <section className="flex flex-col gap-5 md:gap-6 animate-slide-in">
       {/* Top navigation bar */}
       <div className="flex items-center justify-between gap-3">
         <button
-          onClick={onBack}
+          onClick={handleBackToMenu}
           className="glass glass-hover flex items-center gap-3 rounded-2xl py-2.5 pl-2.5 pr-5"
           aria-label="Volver al menú principal"
         >

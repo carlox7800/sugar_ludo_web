@@ -381,14 +381,14 @@ export function OnlineGameEngine({
       }
     }
 
-    if (!isHexGame && totalPlayers === 4) {
+    if (!isHexGame) {
       const visualSequence: PlayerColor[] = ['blue', 'green', 'red', 'yellow']
       const currentColor = formattedPlayers[currentIndex]?.color || 'yellow'
       const startSeqIndex = visualSequence.indexOf(currentColor)
 
       if (startSeqIndex !== -1) {
-        for (let i = 1; i <= 4; i++) {
-          const checkSeqIdx = (startSeqIndex + i) % 4
+        for (let i = 1; i <= visualSequence.length; i++) {
+          const checkSeqIdx = (startSeqIndex + i) % visualSequence.length
           const targetColor = visualSequence[checkSeqIdx]
           const targetPlayer = formattedPlayers.find((p) => p.color === targetColor)
 
@@ -465,15 +465,32 @@ export function OnlineGameEngine({
 
   // Validate if a move is legal for a specific token
   const checkMoveValid = (token: Token, moveVal: number, currentTokens: Token[] = tokensRef.current): boolean => {
-    const pCount = dynamicPlayers.length
     const trackSteps = getTrackSteps(isHexGame)
     const goalStep = getGoalStep(isHexGame)
     const perimeter = getTotalPerimeter(isHexGame)
 
     if (token.step === -1) {
       if (moveVal === 5) {
-        const startIdx = getStartOffset(token.color, isHexGame)
-        return !hasBarrierAt(startIdx, currentTokens)
+        if (isHexGame) {
+          const startIdx = getCellIndexForToken(token.color as any, 1)
+          if (typeof startIdx === 'number') {
+            let myCount = 0
+            let enemyCount = 0
+            currentTokens.forEach((tk) => {
+              const tkIdx = getCellIndexForToken(tk.color as any, tk.step)
+              if (typeof tkIdx === 'number' && tkIdx === startIdx) {
+                if (tk.color === token.color) myCount++
+                else enemyCount++
+              }
+            })
+            const isExpellable = myCount === 1 && enemyCount === 1
+            return !(myCount + enemyCount >= 2 && !isExpellable)
+          }
+          return true
+        } else {
+          const startIdx = getStartOffset(token.color, isHexGame)
+          return !hasBarrierAt(startIdx, currentTokens)
+        }
       }
       return false
     } else if (token.step >= 0 && token.step < goalStep) {
@@ -484,11 +501,19 @@ export function OnlineGameEngine({
       const stepsToCheck = Math.min(moveVal, distanceToGoal)
       for (let stepOffset = 1; stepOffset <= stepsToCheck; stepOffset++) {
         const pathStep = token.step + stepOffset
-        if (pathStep < trackSteps) {
-          const pIndex = (getStartOffset(token.color, isHexGame) + pathStep) % perimeter
-          if (hasBarrierAt(pIndex, currentTokens)) {
+        if (isHexGame) {
+          const pIndex = getCellIndexForToken(token.color as any, pathStep)
+          if (typeof pIndex === 'number' && hasBarrierAtHex(pIndex, currentTokens as any)) {
             blocked = true
             break
+          }
+        } else {
+          if (pathStep < trackSteps) {
+            const pIndex = (getStartOffset(token.color, isHexGame) + pathStep) % perimeter
+            if (hasBarrierAt(pIndex, currentTokens)) {
+              blocked = true
+              break
+            }
           }
         }
       }
@@ -719,31 +744,39 @@ export function OnlineGameEngine({
     const playables = getPlayableTokenIds(activeIdx, currentMoves, currentTokens)
 
     if (playables.length > 0) {
-      globalLogger.log('GAME-FLOW', 'Inactividad/Timeout: Ejecutando jugada automática aleatoria.')
-      const randomGlobalId = playables[Math.floor(Math.random() * playables.length)]
-      const tokenIndex = randomGlobalId % 4
-      const playerIndex = Math.floor(randomGlobalId / 4)
-      const token = currentTokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
+      // Shuffle playables to pick randomly and try all candidates
+      const shuffledPlayables = [...playables].sort(() => Math.random() - 0.5)
+      
+      for (const randomGlobalId of shuffledPlayables) {
+        const tokenIndex = randomGlobalId % 4
+        const playerIndex = Math.floor(randomGlobalId / 4)
+        const token = currentTokens.find((t) => t.playerId === playerIndex && t.id === tokenIndex)
 
-      if (token) {
-        let chosenMove = -1
-        if (token.step === -1) {
-          chosenMove = 5
-        } else {
-          for (const m of currentMoves) {
-            if (checkMoveValid(token, m, currentTokens)) {
-              chosenMove = m
-              break
+        if (token) {
+          let chosenMove = -1
+          if (token.step === -1) {
+            const hasFive = currentMoves.includes(5)
+            const hasSumFive = currentMoves.length === 2 && (currentMoves[0] + currentMoves[1] === 5)
+            if (hasFive || hasSumFive) {
+              chosenMove = 5
+            }
+          } else {
+            for (const m of currentMoves) {
+              if (checkMoveValid(token, m, currentTokens)) {
+                chosenMove = m
+                break
+              }
+            }
+            if (chosenMove === -1 && currentMoves.length === 2 && checkMoveValid(token, currentMoves[0] + currentMoves[1], currentTokens)) {
+              chosenMove = currentMoves[0] + currentMoves[1]
             }
           }
-          if (chosenMove === -1 && currentMoves.length === 2 && checkMoveValid(token, currentMoves[0] + currentMoves[1], currentTokens)) {
-            chosenMove = currentMoves[0] + currentMoves[1]
-          }
-        }
 
-        if (chosenMove !== -1) {
-          executeMoveIntent(randomGlobalId, chosenMove)
-          return
+          if (chosenMove !== -1) {
+            globalLogger.log('GAME-FLOW', `Inactividad/Timeout: Jugando ficha ${tokenIndex} con valor ${chosenMove}.`)
+            executeMoveIntent(randomGlobalId, chosenMove)
+            return
+          }
         }
       }
     }
@@ -762,6 +795,21 @@ export function OnlineGameEngine({
       setTurnTimer((prev) => {
         // Freeze timer display during animations or rolling dice
         if (isAnimatingMoveRef.current || isRollingRef.current) return prev
+        if (prev === 1 && isMyTurnRef.current && !isProcessingTimeoutRef.current) {
+          // Client safety backup timeout if server event is delayed
+          setTimeout(() => {
+            if (isMyTurnRef.current && !isProcessingTimeoutRef.current) {
+              isProcessingTimeoutRef.current = true
+              if (!hasRolledRef.current && !isRollingRef.current) {
+                globalLogger.log('GAME-FLOW', 'Timeout de seguridad (Lanzar). Emitiendo intent_roll_dice.')
+                handleRollDice()
+              } else if (hasRolledRef.current) {
+                globalLogger.log('GAME-FLOW', 'Timeout de seguridad (Mover). Ejecutando jugada aleatoria.')
+                executeRandomValidMove()
+              }
+            }
+          }, 1500)
+        }
         return prev > 0 ? prev - 1 : 0
       })
     }, 1000)
@@ -972,8 +1020,9 @@ export function OnlineGameEngine({
           )
         )
         if (isMyTurnRef.current && serverPlayerIdx === myPlayerIndex) {
-          // Empty remaining moves local state on penalty
+          // Empty remaining moves local state on penalty and clear extra turns so turn advances
           setRemainingMoves([])
+          pendingExtraTurnsRef.current = 0
           emitEndTurnIfNeeded([])
         }
         setTimeout(processNextQueuedMove, 100)
@@ -1482,6 +1531,17 @@ export function OnlineGameEngine({
       })
     }
     
+    // Limpieza autoritativa en el servidor al abandonar la partida
+    if (socket) {
+      socket.emit('intent_leave_room', { 
+        roomId: gameData.roomId, 
+        playerId: myPlayerId 
+      })
+      socket.emit('leave_matchmaking', { 
+        playerId: myPlayerId 
+      })
+    }
+    
     onExit()
   }
 
@@ -1589,7 +1649,7 @@ export function OnlineGameEngine({
                 "w-full max-w-[100vw] px-1 md:px-0",
                 isHexGame ? "aspect-square max-w-[var(--board-max)]" : "max-w-[var(--board-max)]"
               )}
-              style={{ '--board-max': 'min(700px, calc((100dvh - 180px) * 1.05))' } as React.CSSProperties}
+              style={{ '--board-max': 'min(700px, calc((100dvh - 160px) * 0.96))' } as React.CSSProperties}
             >
               <div 
                 className="relative mx-auto w-full flex items-center justify-center"

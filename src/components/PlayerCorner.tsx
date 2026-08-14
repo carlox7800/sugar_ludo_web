@@ -122,21 +122,21 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   // Calculate CSS classes for position
   let posClass = '';
   switch(position) {
-    case 'top-left': posClass = 'top-4 md:top-6 left-2 md:left-6'; break;
-    case 'top-right': posClass = 'top-4 md:top-6 right-2 md:right-6 flex-row-reverse'; break;
-    case 'bottom-left': posClass = 'bottom-10 md:bottom-6 left-2 md:left-6'; break;
-    case 'bottom-right': posClass = 'bottom-10 md:bottom-6 right-2 md:right-6 flex-row-reverse'; break;
-    case 'mid-left': posClass = 'top-[22%] md:top-1/2 -translate-y-1/2 left-2 md:left-6'; break;
-    case 'mid-right': posClass = 'top-[22%] md:top-1/2 -translate-y-1/2 right-2 md:right-6 flex-row-reverse'; break;
+    case 'top-left': posClass = 'top-2 md:top-6 left-1.5 md:left-6'; break;
+    case 'top-right': posClass = 'top-2 md:top-6 right-1.5 md:right-6 flex-row-reverse'; break;
+    case 'bottom-left': posClass = 'bottom-2 md:bottom-6 left-1.5 md:left-6'; break;
+    case 'bottom-right': posClass = 'bottom-2 md:bottom-6 right-1.5 md:right-6 flex-row-reverse'; break;
+    case 'mid-left': posClass = 'top-[22%] md:top-1/2 -translate-y-1/2 left-1.5 md:left-6'; break;
+    case 'mid-right': posClass = 'top-[22%] md:top-1/2 -translate-y-1/2 right-1.5 md:right-6 flex-row-reverse'; break;
   }
 
   const isTopPosition = position?.startsWith('top-');
   const isRightPosition = position?.endsWith('-right');
 
   return (
-    <div className={`absolute z-40 flex items-center gap-4 ${posClass}`}>
+    <div className={`absolute z-40 flex items-center gap-2 md:gap-4 pointer-events-none ${posClass}`}>
       {/* Avatar Wrapper */}
-      <div className="relative flex flex-col items-center">
+      <div className="relative flex flex-col items-center pointer-events-auto">
         {/* Floating Comic Speech/Thought Bubble */}
         {currentMessage && (
           <div className={`absolute z-50 pointer-events-none duration-300 ${
@@ -164,7 +164,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
 
         {/* Action Buttons for Human Player */}
         {isLocalUser && player.type === 'human' && (
-          <div className="relative flex gap-2 mb-2">
+          <div className="relative flex gap-1.5 md:gap-2 mb-1 md:mb-2 pointer-events-auto">
              <button 
                onClick={() => setActiveMenu(activeMenu === 'emoji' ? null : 'emoji')}
                className="bg-white/10 hover:bg-white/20 border border-white/10 rounded-full px-2 py-0.5 text-[9px] text-white font-bold sm:backdrop-blur-md transition-all active:scale-95 uppercase cursor-pointer"
@@ -181,8 +181,8 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
              {/* Popover Menu */}
              {activeMenu && (
                <>
-                 <div className="fixed inset-0 z-40 cursor-default" onClick={() => setActiveMenu(null)} />
-                 <div className={`absolute z-50 duration-200 bg-[#0f172a]/95 sm:backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px] ${
+                 <div className="fixed inset-0 z-40 cursor-default pointer-events-auto" onClick={() => setActiveMenu(null)} />
+                 <div className={`absolute z-50 duration-200 bg-[#0f172a]/95 sm:backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px] pointer-events-auto ${
                    isTopPosition 
                      ? 'top-[100%] mt-2 animate-in fade-in zoom-in slide-in-from-top-2' 
                      : 'bottom-[100%] mb-2 animate-in fade-in zoom-in slide-in-from-bottom-2'
@@ -242,10 +242,10 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
           </div>
         )}
         
-        <div className={`w-14 h-14 md:w-20 md:h-20 rounded-full flex items-center justify-center bg-[oklch(0.12_0.02_285/0.95)] sm:bg-[oklch(0.12_0.02_285/0.8)] sm:backdrop-blur-md border border-[var(--panel-border,oklch(0.7_0.27_350/0.3))] shadow-lg transition-all duration-300 ${isActiveTurn ? `ring-4 ring-offset-2 ring-offset-[oklch(0.08_0.02_285)] ${ringColors[player.color] || ringColors['blue']} animate-pulse scale-110` : 'opacity-70 grayscale-[0.3]'}`}>
+        <div className={`w-12 h-12 md:w-20 md:h-20 rounded-full flex items-center justify-center bg-[oklch(0.12_0.02_285/0.95)] sm:bg-[oklch(0.12_0.02_285/0.8)] sm:backdrop-blur-md border border-[var(--panel-border,oklch(0.7_0.27_350/0.3))] shadow-lg transition-all duration-300 pointer-events-auto ${isActiveTurn ? `ring-4 ring-offset-2 ring-offset-[oklch(0.08_0.02_285)] ${ringColors[player.color] || ringColors['blue']} animate-pulse scale-105 md:scale-110` : 'opacity-70 grayscale-[0.3]'}`}>
            {isHuman ? (
              <div 
-               className="w-full h-full rounded-full flex items-center justify-center text-3xl md:text-4xl overflow-hidden"
+               className="w-full h-full rounded-full flex items-center justify-center text-2xl md:text-4xl overflow-hidden"
                style={{ backgroundColor: `${activeAvatar.color}33`, color: activeAvatar.color }}
              >
                {isLocalUser && (user?.photoURL?.startsWith('http') || user?.photoURL?.startsWith('data:')) ? (
@@ -257,7 +257,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
                )}
              </div>
            ) : (
-             <svg className="w-7 h-7 md:w-10 md:h-10 text-white opacity-80" viewBox="0 0 24 24" fill="currentColor">
+             <svg className="w-6 h-6 md:w-10 md:h-10 text-white opacity-80" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
              </svg>
            )}
@@ -267,14 +267,14 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
               </div>
            )}
         </div>
-        <span className={`text-[10px] md:text-xs mt-2 font-bold font-mono tracking-wider drop-shadow-md ${isActiveTurn ? 'text-white' : 'text-white/60'}`}>
+        <span className={`text-[9px] md:text-xs mt-1 md:mt-2 font-bold font-mono tracking-wider drop-shadow-md ${isActiveTurn ? 'text-white' : 'text-white/60'}`}>
           {displayName}
         </span>
       </div>
 
       {/* Itinerant Dice */}
       {isActiveTurn && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 md:gap-2 pointer-events-auto">
           {[0, 1].map((dieIdx) => {
             const hasBeenUsed = diceValues !== null && !remainingMoves.includes(diceValues[dieIdx]);
             let isUsed = false;
@@ -288,7 +288,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
               <div
                 key={dieIdx}
                 onClick={() => isHumanTurnToRoll && !isRolling && !hasRolled && onRollDice()}
-                className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center transition-all duration-300 relative ${isUsed ? 'opacity-30 grayscale scale-90' : ''} ${
+                className={`w-9 h-9 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center transition-all duration-300 relative ${isUsed ? 'opacity-30 grayscale scale-90' : ''} ${
                   isWaitingForRoll
                     ? `cursor-pointer hover:scale-105 active:scale-95 border border-border ${turnGlowStyle}`
                     : 'shadow-md border border-border'
@@ -297,7 +297,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
                 { diceValues !== null ? (
                   renderDiceDots(diceValues[dieIdx], player.color)
                 ) : (
-                  <span className="text-white/60 font-bold text-lg font-mono">?</span>
+                  <span className="text-white/60 font-bold text-base md:text-lg font-mono">?</span>
                 )}
               </div>
             );

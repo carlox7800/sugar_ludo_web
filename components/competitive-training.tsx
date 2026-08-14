@@ -68,6 +68,7 @@ export function CompetitiveTraining({
 
   // Private Match State
   const isPrivateMatchRef = useRef(false)
+  const hasLobbyIntentRef = useRef(false)
 
   // Dev Sandbox State (Only keeping the ref since competitive shouldn't really have sandbox, but for parity)
   const isDevSandboxRef = useRef(false)
@@ -88,6 +89,7 @@ export function CompetitiveTraining({
             const socket = getSocketInstance()
             const playerId = user?.uid || socket.id
             socket.emit('leave_matchmaking', { playerId })
+            hasLobbyIntentRef.current = false
             setIsSearching(false)
             setLobbyData(null)
             setCreatedRoomCode(null)
@@ -108,11 +110,13 @@ export function CompetitiveTraining({
   useEffect(() => {
     const socket = connect()
 
-    // Register identity
+    // Register identity & clean up any prior matchmaking queue authoritatively
     const playerId = user?.uid || `guest_${Math.floor(Math.random() * 100000)}`
+    socket.emit('leave_matchmaking', { playerId })
     socket.emit('register_identity', { playerId })
 
     const handlePrivateRoomCreated = (data: { roomCode?: string; id?: string }) => {
+      if (!hasLobbyIntentRef.current) return
       const baseCode = data.roomCode || data.id || ''
       const code = `${baseCode}-${createPlayersRef.current}`
       setCreatedRoomCode(code)
@@ -121,6 +125,7 @@ export function CompetitiveTraining({
     }
 
     const handleRoomUpdated = (data: { id?: string; players?: any[] }) => {
+      if (!hasLobbyIntentRef.current) return
       if (data.players) {
         setLobbyData((prev) => ({
           roomId: prev?.roomId && prev.roomId !== 'Buscando...' && prev.roomId !== 'Creando...' ? prev.roomId : (data.id || 'Buscando...'),
@@ -132,6 +137,7 @@ export function CompetitiveTraining({
     }
 
     const handleMatchFound = (gameData: any) => {
+      if (!hasLobbyIntentRef.current) return
       const receivedCount = gameData.players?.length ?? 0
       if (!isPrivateMatchRef.current && receivedCount < quickPlayersRef.current && !isDevSandboxRef.current) {
         return // Ignore match if it doesn't meet our requested player count
@@ -162,6 +168,7 @@ export function CompetitiveTraining({
     }
 
     const handleRoomError = (data: { message: string }) => {
+      hasLobbyIntentRef.current = false
       setIsSearching(false)
       setLobbyData(null)
       setCreatedRoomCode(null)
@@ -176,6 +183,8 @@ export function CompetitiveTraining({
     socket.on('room_error', handleRoomError)
 
     return () => {
+      hasLobbyIntentRef.current = false
+      socket.emit('leave_matchmaking', { playerId })
       socket.off('private_room_created', handlePrivateRoomCreated)
       socket.off('room_updated', handleRoomUpdated)
       socket.off('match_found', handleMatchFound)
@@ -197,6 +206,7 @@ export function CompetitiveTraining({
       return
     }
     
+    hasLobbyIntentRef.current = true
     // Defer coin deduction
     entryCostRef.current = entryFee
     targetPlayersRef.current = quickPlayers
@@ -219,6 +229,7 @@ export function CompetitiveTraining({
   }
 
   const handleCancelQuickMatch = () => {
+    hasLobbyIntentRef.current = false
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id
     setIsSearching(false)
@@ -238,6 +249,7 @@ export function CompetitiveTraining({
       return
     }
 
+    hasLobbyIntentRef.current = true
     // Defer coin deduction
     entryCostRef.current = eco.entry
     targetPlayersRef.current = createPlayers
@@ -296,6 +308,7 @@ export function CompetitiveTraining({
        return
     }
     
+    hasLobbyIntentRef.current = true
     // Defer coin deduction
     entryCostRef.current = cost
     targetPlayersRef.current = capacity
@@ -320,6 +333,16 @@ export function CompetitiveTraining({
     })
   }
 
+  const handleBackToMenu = () => {
+    hasLobbyIntentRef.current = false
+    const socket = getSocketInstance()
+    const playerId = user?.uid || socket.id
+    if (socket) {
+      socket.emit('leave_matchmaking', { playerId })
+    }
+    onBack()
+  }
+
   const currentEconomy = ECONOMY_MATRIX[quickPlayers]
 
   return (
@@ -327,7 +350,7 @@ export function CompetitiveTraining({
       {/* Top navigation bar */}
       <div className="flex items-center justify-between gap-3">
         <button
-          onClick={onBack}
+          onClick={handleBackToMenu}
           className="glass glass-hover flex items-center gap-3 rounded-2xl py-2 pl-2.5 pr-5"
           aria-label="Volver al menú principal"
         >
