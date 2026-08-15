@@ -7,9 +7,10 @@ class LudoAudio {
   private musicMasterGain: GainNode | null = null;
   private sfxMasterGain: GainNode | null = null;
   
-  // Background Music HTML5 Audio & Media Source (Anti-IDM Interception)
-  private bgmAudioElement: HTMLAudioElement | null = null;
-  private bgmMediaSource: MediaElementAudioSourceNode | null = null;
+  // Background Music 100% Web Audio API Buffer (Professional In-Game Audio Graph)
+  private bgmBuffer: AudioBuffer | null = null;
+  private bgmSourceNode: AudioBufferSourceNode | null = null;
+  private isBgmLoading: boolean = false;
   private isBgmPlaying: boolean = false;
   
   // State
@@ -19,7 +20,7 @@ class LudoAudio {
   private turnAlertInterval: number | null = null;
 
   private init() {
-    if (!this.ctx) {
+    if (!this.ctx && typeof window !== 'undefined') {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
@@ -37,6 +38,11 @@ class LudoAudio {
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
+    if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.playbackState = 'none';
+      } catch {}
+    }
   }
 
   public setVolumes(musicVol: number, sfxVol: number, muted: boolean) {
@@ -48,65 +54,90 @@ class LudoAudio {
 
   private updateGains() {
     if (!this.ctx || !this.musicMasterGain || !this.sfxMasterGain) return;
-    
-    const t = this.ctx.currentTime;
-    
-    // Apply an exponential curve for natural human hearing perception.
-    // This allows fine control at low slider values (e.g. 5% slider = 0.25% actual power).
     const perceivedMusicVolume = Math.pow(this.musicVolume, 2);
     const perceivedSfxVolume = Math.pow(this.sfxVolume, 2);
+    const targetMusicGain = this.isMuted ? 0 : perceivedMusicVolume;
+    const targetSfxGain = this.isMuted ? 0 : perceivedSfxVolume;
 
+    const t = this.ctx.currentTime;
     // Smooth transition
-    this.musicMasterGain.gain.setTargetAtTime(this.isMuted ? 0 : perceivedMusicVolume, t, 0.1);
-    this.sfxMasterGain.gain.setTargetAtTime(this.isMuted ? 0 : perceivedSfxVolume, t, 0.1);
+    this.musicMasterGain.gain.setTargetAtTime(targetMusicGain, t, 0.05);
+    this.sfxMasterGain.gain.setTargetAtTime(targetSfxGain, t, 0.05);
   }
 
-  private initBgmElement() {
-    if (!this.bgmAudioElement) {
-      this.bgmAudioElement = new Audio();
-      this.bgmAudioElement.loop = true;
-      this.bgmAudioElement.preload = 'none';
+  private async loadBgmBuffer(): Promise<AudioBuffer | null> {
+    if (this.bgmBuffer) return this.bgmBuffer;
+    if (!this.ctx || this.isBgmLoading) return null;
 
-      // Fetch the audio as a blob to prevent external download managers (like IDM) 
-      // from intercepting the media request from the <audio> tag.
-      fetch('/tam-lin.mp3')
-        .then(res => res.blob())
-        .then(blob => {
-          if (this.bgmAudioElement) {
-            this.bgmAudioElement.src = URL.createObjectURL(blob);
-          }
-        })
-        .catch(err => console.warn('LudoAudio: Failed to fetch BGM blob', err));
-    }
-    if (this.ctx && this.musicMasterGain && !this.bgmMediaSource && this.bgmAudioElement) {
-      try {
-        this.bgmMediaSource = this.ctx.createMediaElementSource(this.bgmAudioElement);
-        this.bgmMediaSource.connect(this.musicMasterGain);
-      } catch (e) {
-        console.warn("LudoAudio: Failed to create MediaElementSource", e);
-      }
+    this.isBgmLoading = true;
+    try {
+      const response = await fetch('/tam-lin.mp3');
+      const arrayBuffer = await response.arrayBuffer();
+      this.bgmBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+      return this.bgmBuffer;
+    } catch (err) {
+      console.warn('LudoAudio: Error decoding BGM buffer', err);
+      return null;
+    } finally {
+      this.isBgmLoading = false;
     }
   }
 
   /**
    * Sound 0: Background Music (Tam Lin)
-   * Plays tam-lin.mp3 via HTML5 Audio element connected to WebAudio MasterGain
+   * 100% Web Audio API AudioBufferSourceNode - Zero OS MediaSession / Notification widgets
    */
   public async playBackgroundMusic(isPlaying: boolean) {
     this.init();
-    this.initBgmElement();
+    if (!this.ctx || !this.musicMasterGain) return;
 
-    if (isPlaying && !this.isBgmPlaying && this.bgmAudioElement) {
-      this.isBgmPlaying = true;
-      try {
-        await this.bgmAudioElement.play();
-      } catch (e) {
-        console.warn("LudoAudio: User interaction required or file missing for /tam-lin.mp3", e);
-        this.isBgmPlaying = false;
+    if (isPlaying) {
+      if (this.isBgmPlaying && this.bgmSourceNode) {
+        return;
       }
-    } else if (!isPlaying && this.isBgmPlaying && this.bgmAudioElement) {
+      this.isBgmPlaying = true;
+
+      const buffer = await this.loadBgmBuffer();
+      if (!buffer || !this.isBgmPlaying) return;
+
+      // Stop previous source if any
+      if (this.bgmSourceNode) {
+        try {
+          this.bgmSourceNode.stop();
+          this.bgmSourceNode.disconnect();
+        } catch {}
+      }
+
+      this.bgmSourceNode = this.ctx.createBufferSource();
+      this.bgmSourceNode.buffer = buffer;
+      this.bgmSourceNode.loop = true;
+      this.bgmSourceNode.connect(this.musicMasterGain);
+
+      try {
+        this.bgmSourceNode.start(0);
+      } catch (err) {
+        console.warn('LudoAudio: Failed to start BGM buffer source', err);
+      }
+
+      if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.playbackState = 'none';
+        } catch {}
+      }
+    } else {
       this.isBgmPlaying = false;
-      this.bgmAudioElement.pause();
+      if (this.bgmSourceNode) {
+        try {
+          this.bgmSourceNode.stop();
+          this.bgmSourceNode.disconnect();
+        } catch {}
+        this.bgmSourceNode = null;
+      }
+      if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.playbackState = 'none';
+        } catch {}
+      }
     }
   }
 
@@ -356,11 +387,19 @@ class LudoAudio {
 
   public stopAll() {
     this.stopTurnAlertLoop();
-    if (this.bgmAudioElement) {
-      this.bgmAudioElement.pause();
-      this.bgmAudioElement.currentTime = 0;
-    }
     this.isBgmPlaying = false;
+    if (this.bgmSourceNode) {
+      try {
+        this.bgmSourceNode.stop();
+        this.bgmSourceNode.disconnect();
+      } catch {}
+      this.bgmSourceNode = null;
+    }
+    if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.playbackState = 'none';
+      } catch {}
+    }
   }
 
   /**
