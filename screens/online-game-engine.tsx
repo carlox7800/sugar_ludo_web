@@ -176,9 +176,7 @@ export function OnlineGameEngine({
 
   // Core Play State
   const [tokens, setTokens] = useState<Token[]>(initialTokensList)
-  const [currentTurnPlayerId, setCurrentTurnPlayerId] = useState<string>(
-    gameData.players?.[0]?.playerId || ''
-  )
+  const [currentTurnPlayerId, setCurrentTurnPlayerId] = useState<string>('')
   const [diceValues, setDiceValues] = useState<[number, number] | null>(null)
   const [remainingMoves, setRemainingMoves] = useState<number[]>([])
   const [moveSelectorTokenId, setMoveSelectorTokenId] = useState<number | null>(null)
@@ -224,18 +222,18 @@ export function OnlineGameEngine({
   const muted = audioSettings.isMuted
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
 
-  const activePlayerIndex = Math.max(
+  const activePlayerIndex = currentTurnPlayerId ? Math.max(
     0,
     dynamicPlayers.findIndex((p, idx) => 
       p.playerId === currentTurnPlayerId || 
       String(idx) === String(currentTurnPlayerId) || 
       (p as any).colorId !== undefined && String((p as any).colorId) === String(currentTurnPlayerId)
     )
-  )
+  ) : -1
 
-  const currentTurnPlayer: Player = formattedPlayers[activePlayerIndex] || formattedPlayers[0] || defaultPlayer
+  const currentTurnPlayer: Player = (activePlayerIndex >= 0 ? formattedPlayers[activePlayerIndex] : null) || formattedPlayers[0] || defaultPlayer
 
-  const isMyTurn = activePlayerIndex === myPlayerIndex
+  const isMyTurn = currentTurnPlayerId !== '' && activePlayerIndex === myPlayerIndex
 
   // Refs to prevent closure staleness and duplicate timer triggers
   const tokensRef = useRef(tokens)
@@ -1281,6 +1279,29 @@ export function OnlineGameEngine({
       })
     }
 
+    const handleSocketConnect = () => {
+      if (!socket.connected) {
+        try {
+          socket.connect()
+        } catch {}
+      }
+      if (gameData?.roomId && myPlayerId) {
+        globalLogger.log('SOCKET', 'Socket conectado/reconectado. Reasociando a sala:', gameData.roomId)
+        socket.emit('join_room', {
+          roomId: gameData.roomId,
+          playerId: myPlayerId,
+          playerName: user?.nickname || 'Jugador'
+        })
+      }
+    }
+
+    socket.on('connect', handleSocketConnect)
+    window.addEventListener('online', handleSocketConnect)
+
+    if (socket.connected && gameData?.roomId && myPlayerId) {
+      handleSocketConnect()
+    }
+
     const handlePlayerReconnected = (data: { playerId: string }) => {
       setDynamicPlayers(prev => {
         const updated = [...prev]
@@ -1289,7 +1310,11 @@ export function OnlineGameEngine({
           updated[idx] = { ...updated[idx], isConnected: true, isBot: false }
           let rawName = updated[idx].playerName || updated[idx].name || 'Jugador'
           if (rawName.includes('|||')) rawName = rawName.split('|||')[0]
-          showToast(`🟢 ${rawName} se reconectó.`)
+          if (data.playerId === myPlayerId) {
+            showToast('🟢 ¡Te has reconectado a la partida!')
+          } else {
+            showToast(`🟢 ${rawName} se reconectó.`)
+          }
         }
         return updated
       })
@@ -1301,15 +1326,13 @@ export function OnlineGameEngine({
         const idx = updated.findIndex(p => p.playerId === data.playerId)
         if (idx !== -1) {
           updated[idx] = { ...updated[idx], isConnected: false, isBot: true }
-          let rawName = updated[idx].playerName || updated[idx].name || 'Jugador'
-          if (rawName.includes('|||')) rawName = rawName.split('|||')[0]
-          showToast(`💀 ${rawName} expulsado por inactividad.`)
         }
         return updated
       })
     }
 
-    const handleGameOverAbandonment = (data: { winnerId: string }) => {
+    const handleGameOverAbandonment = (data: { winnerId: string; reason?: string; isSelfExpelled?: boolean }) => {
+      const isMeWinner = data.winnerId === myPlayerId
       const winnerIdx = dynamicPlayers.findIndex((p) => p.playerId === data.winnerId)
       const wPlayer = formattedPlayersRef.current[winnerIdx >= 0 ? winnerIdx : 0]
       const winIdx = winnerIdx >= 0 ? winnerIdx : 0
@@ -1319,16 +1342,72 @@ export function OnlineGameEngine({
         tokensRef.current,
         getGoalStep(isHexGame)
       )
-      setRankings(finalRankings)
-      setWinnerPlayer(wPlayer)
-      recordOnlineMatchResult(finalRankings)
-      showToast(`🏆 ¡Partida finalizada! Ganador: ${wPlayer.name}`)
+
+      // Mostrar el aviso diferenciado según quién fue desconectado
+      if (data.isSelfExpelled || (!isMeWinner && data.reason === 'inactivity')) {
+        showToast('Has sido desconectado por inactividad')
+      } else if (data.reason === 'inactivity') {
+        showToast('El jugador rival fue desconectado por inactividad')
+      } else {
+        showToast('El rival ha abandonado la partida')
+      }
+
+      // Pausa de 3.5 segundos para lectura con calma antes de desplegar el podio
+      setTimeout(() => {
+        setRankings(finalRankings)
+        setWinnerPlayer(wPlayer)
+        recordOnlineMatchResult(finalRankings)
+      }, 3500)
+    }
+
+    const handleRoomExpired = (data: { roomId?: string; reason?: string; isSelfExpelled?: boolean }) => {
+      const rivalIdx = dynamicPlayers.findIndex((p) => p.playerId !== myPlayerId)
+      const wPlayer = formattedPlayersRef.current[rivalIdx >= 0 ? rivalIdx : 0]
+      const winIdx = rivalIdx >= 0 ? rivalIdx : 0
+      const finalRankings = buildFinalRankings(
+        [winIdx],
+        formattedPlayersRef.current,
+        tokensRef.current,
+        getGoalStep(isHexGame)
+      )
+
+      showToast('Has sido desconectado por inactividad')
+      setTimeout(() => {
+        setRankings(finalRankings)
+        setWinnerPlayer(wPlayer)
+        recordOnlineMatchResult(finalRankings)
+      }, 3500)
     }
 
     const handleStateResynced = (gameState: any) => {
-      if (gameState.tokens) setTokens(gameState.tokens)
-      if (gameState.currentTurn) setCurrentTurnPlayerId(gameState.currentTurn)
-      showToast('🔄 Estado resincronizado.')
+      try {
+        if (gameState.tokens && Array.isArray(gameState.tokens)) {
+          const enriched = gameState.tokens.map((tk: any) => {
+            const player = formattedPlayersRef.current[tk.playerId] || formattedPlayers[tk.playerId]
+            const tokenColor = tk.color || player?.color || currentColorsOrder[tk.playerId] || 'yellow'
+            return {
+              id: tk.id,
+              playerId: tk.playerId,
+              color: tokenColor,
+              step: typeof tk.step === 'number' ? tk.step : -1
+            }
+          })
+          setTokens(enriched)
+          tokensRef.current = enriched
+        }
+        if (gameState.currentTurn) {
+          setCurrentTurnPlayerId(gameState.currentTurn)
+          currentTurnPlayerIdRef.current = gameState.currentTurn
+        }
+        setIsRolling(false)
+        isRollingRef.current = false
+        setIsAnimatingMove(false)
+        isAnimatingMoveRef.current = false
+        setMoveSelectorTokenId(null)
+        showToast('🔄 Partida sincronizada.')
+      } catch (err) {
+        console.error('Error procesando event_state_resynced:', err)
+      }
     }
 
     const handleEventChat = (data: { playerId?: string; senderId?: string; message?: string; text?: string }) => {
@@ -1370,11 +1449,14 @@ export function OnlineGameEngine({
     socket.on('event_player_reconnected', handlePlayerReconnected)
     socket.on('event_player_expelled', handlePlayerExpelled)
     socket.on('event_game_over_by_abandonment', handleGameOverAbandonment)
+    socket.on('event_room_expired', handleRoomExpired)
     socket.on('event_state_resynced', handleStateResynced)
     socket.on('event_chat', handleEventChat)
     socket.on('player_reaction', handleEventChat)
 
     return () => {
+      socket.off('connect', handleSocketConnect)
+      window.removeEventListener('online', handleSocketConnect)
       socket.off('event_turn_started', handleTurnStarted)
       socket.off('event_turn_timeout', handleTurnTimeout)
       socket.off('event_dice_result', handleDiceResult)
@@ -1383,6 +1465,7 @@ export function OnlineGameEngine({
       socket.off('event_player_reconnected', handlePlayerReconnected)
       socket.off('event_player_expelled', handlePlayerExpelled)
       socket.off('event_game_over_by_abandonment', handleGameOverAbandonment)
+      socket.off('event_room_expired', handleRoomExpired)
       socket.off('event_state_resynced', handleStateResynced)
       socket.off('event_chat', handleEventChat)
       socket.off('player_reaction', handleEventChat)
@@ -1729,7 +1812,7 @@ export function OnlineGameEngine({
               }
             }
 
-            const isActiveTurn = activePlayerIndex === p.id;
+            const isActiveTurn = activePlayerIndex >= 0 && activePlayerIndex === p.id && currentTurnPlayerId !== '';
             const isHumanTurnToRoll = isActiveTurn && isMyTurn && !hasRolled && !isRolling && !isAnimatingMove;
             const isLocalUser = p.id === (myPlayerIndex >= 0 ? myPlayerIndex : 0);
 

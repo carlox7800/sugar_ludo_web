@@ -72,10 +72,20 @@ function PageContent() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
 
-  const [forceWebMode, setForceWebMode] = useState(false)
+  const [forceWebMode, setForceWebMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sugar_force_web_mode') === 'true'
+    }
+    return false
+  })
 
   // Auth & Native routing logic
   useEffect(() => {
+    // CORTAFUEGOS DE PARTIDA: Durante una partida activa, NUNCA redirigir a landing ni a lobby
+    if (screen === 'online-game' || screen === 'game') {
+      return
+    }
+
     // REGLA 1: Si se está accediendo desde un navegador web normal y no se ha activado modo web, se fuerza la Landing Page informativa
     if (!isNative && !forceWebMode) {
       setScreen('landing')
@@ -93,9 +103,7 @@ function PageContent() {
       }
     } else {
       // Usuario no logueado en App instalada o Modo Web -> Abrir inmediatamente el modal de Login
-      if (screen !== 'online-game' && screen !== 'game') {
-        setIsLoginModalOpen(true)
-      }
+      setIsLoginModalOpen(true)
     }
   }, [user, screen, isNative, forceWebMode])
 
@@ -130,6 +138,9 @@ function PageContent() {
   // Render web-browser portal strictly if NOT native and NOT forceWebMode
   if (!isNative && !forceWebMode) {
     return <LandingPage onContinueInBrowser={() => {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sugar_force_web_mode', 'true')
+      }
       setForceWebMode(true)
       setScreen('lobby')
     }} />

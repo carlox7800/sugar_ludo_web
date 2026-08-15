@@ -92,9 +92,25 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
     magenta: 'ring-[#f43f5e] shadow-[0_0_20px_#f43f5e]',
   };
 
-  const renderDiceDots = (value: number, color: string) => {
+  const renderDiceDots = (value: number | undefined, color: string) => {
+    if (value === undefined || value === null) return null;
+
     const isDarkDots = color === 'yellow';
     const dotColor = isDarkDots ? 'bg-gray-800' : 'bg-white';
+
+    // Para bonificaciones (+10, +15, +20, +25)
+    if (value > 6 || value <= 0) {
+      if (value > 0) {
+        return (
+          <div className="flex items-center justify-center w-full h-full">
+            <span className={`font-extrabold text-xs md:text-base font-mono tracking-tight ${isDarkDots ? 'text-gray-800' : 'text-white'} drop-shadow-sm`}>
+              +{value}
+            </span>
+          </div>
+        );
+      }
+      return null;
+    }
 
     const dotPositions: Record<number, string[]> = {
       1: ['col-start-2 row-start-2'],
@@ -275,12 +291,12 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
       {/* Itinerant Dice */}
       {isActiveTurn && (
         <div className="flex items-center gap-1.5 md:gap-2 pointer-events-auto">
-          {[0, 1].map((dieIdx) => {
-            const hasBeenUsed = diceValues !== null && !remainingMoves.includes(diceValues[dieIdx]);
+          {(diceValues && diceValues.length === 1 ? [0] : [0, 1]).map((dieIdx) => {
+            const val = diceValues ? diceValues[dieIdx] : undefined;
             let isUsed = false;
-            if (diceValues) {
-               const rolledCount = diceValues.filter((v, i) => v === diceValues[dieIdx] && i <= dieIdx).length;
-               const remainingCount = remainingMoves.filter(v => v === diceValues[dieIdx]).length;
+            if (diceValues && val !== undefined) {
+               const rolledCount = diceValues.filter((v, i) => v === val && i <= dieIdx).length;
+               const remainingCount = remainingMoves.filter(v => v === val).length;
                isUsed = rolledCount > remainingCount;
             }
 
@@ -294,8 +310,8 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
                     : 'shadow-md border border-border'
                 } ${isRolling ? 'animate-spin' : ''} ${bgColors[player.color] || bgColors['blue']}`}
               >
-                { diceValues !== null ? (
-                  renderDiceDots(diceValues[dieIdx], player.color)
+                { diceValues !== null && val !== undefined ? (
+                  renderDiceDots(val, player.color)
                 ) : (
                   <span className="text-white/60 font-bold text-base md:text-lg font-mono">?</span>
                 )}
