@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Settings, Volume2, VolumeX, Smartphone, Palette, Copy, Check, LogOut, Info } from 'lucide-react'
+import { X, Settings, Volume2, VolumeX, Smartphone, Palette, Copy, Check, LogOut, Info, Download } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { globalLogger } from '@/lib/logger'
 import { APP_VERSION } from '@/lib/constants'
@@ -9,9 +9,10 @@ import { APP_VERSION } from '@/lib/constants'
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
+  onNavigateToLanding?: () => void
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, onNavigateToLanding }: SettingsModalProps) {
   const { logout } = useAuth()
   const [isMuted, setIsMuted] = useState(false)
   const [vibration, setVibration] = useState(true)
@@ -206,6 +207,27 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
           {/* Utilities */}
           <div className="flex flex-col gap-3 pt-1">
+            {onNavigateToLanding && (
+              <button
+                onClick={() => {
+                  onClose()
+                  onNavigateToLanding()
+                }}
+                className="btn-3d flex items-center justify-between rounded-2xl border border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/10 px-4 py-3 text-sm font-bold text-[var(--candy-cyan)] hover:bg-[var(--candy-cyan)]/20 transition-all shadow-[0_0_15px_rgba(6,182,212,0.15)]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex size-9 items-center justify-center rounded-xl bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)]">
+                    <Download className="size-4.5" />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="font-display text-sm font-bold text-foreground">Portal de Descargas</span>
+                    <span className="text-[10px] text-muted-foreground">Ir a la Landing Page y descargas</span>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-[var(--candy-cyan)] uppercase tracking-wider">Ir →</span>
+              </button>
+            )}
+
             <button
               onClick={handleExportLogs}
               className="btn-3d flex items-center justify-between rounded-2xl border border-border bg-[oklch(1_0_0/0.04)] px-4 py-3 text-sm font-bold text-foreground hover:bg-[oklch(1_0_0/0.08)] transition-all"

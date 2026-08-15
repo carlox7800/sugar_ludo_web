@@ -146,6 +146,15 @@ function PageContent() {
     }} />
   }
 
+  const handleNavigateToLanding = () => {
+    setIsSettingsOpen(false)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('sugar_force_web_mode')
+    }
+    setForceWebMode(false)
+    setScreen('landing')
+  }
+
   // Render the active screen (Lobby-related)
   const renderScreen = () => {
     switch (screen) {
@@ -273,7 +282,11 @@ function PageContent() {
 
         {/* Modals */}
         <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
-        <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        <SettingsModal 
+          isOpen={isSettingsOpen} 
+          onClose={() => setIsSettingsOpen(false)} 
+          onNavigateToLanding={handleNavigateToLanding}
+        />
         <LoginModal 
           isOpen={isLoginModalOpen} 
           onClose={() => setIsLoginModalOpen(false)} 
