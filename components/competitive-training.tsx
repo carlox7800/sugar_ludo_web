@@ -712,7 +712,7 @@ export function CompetitiveTraining({
         </div>
       </article>
 
-      <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+      <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} showEconomy={true} />
 
       {/* Join Confirmation Modal */}
       {joinConfirmation?.isOpen && (

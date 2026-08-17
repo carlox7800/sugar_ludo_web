@@ -651,7 +651,7 @@ export function OnlineTraining({
         </div>
       </article>
 
-      <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+      <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} showEconomy={false} />
       {/* FLOATING LOBBY MODAL */}
       {(isSearching || lobbyData) && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in zoom-in-95">

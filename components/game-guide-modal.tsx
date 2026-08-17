@@ -6,9 +6,10 @@ import { X, BookOpen, Flag, ShieldAlert, Zap, Target } from 'lucide-react'
 interface GameGuideModalProps {
   isOpen: boolean
   onClose: () => void
+  showEconomy?: boolean
 }
 
-export function GameGuideModal({ isOpen, onClose }: GameGuideModalProps) {
+export function GameGuideModal({ isOpen, onClose, showEconomy = true }: GameGuideModalProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -142,63 +143,65 @@ export function GameGuideModal({ isOpen, onClose }: GameGuideModalProps) {
           </div>
 
           {/* Sec 5: Economía Competitiva */}
-          <div className="flex flex-col gap-3 rounded-2xl border border-[var(--candy-gold)] bg-[var(--candy-gold)]/10 p-5 mt-2">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--candy-gold)]/20 text-[var(--candy-gold)]">
-                <Target className="size-5" />
+          {showEconomy && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-[var(--candy-gold)] bg-[var(--candy-gold)]/10 p-5 mt-2">
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--candy-gold)]/20 text-[var(--candy-gold)]">
+                  <Target className="size-5" />
+                </div>
+                <h4 className="font-display text-sm font-extrabold uppercase text-[var(--candy-gold)]">
+                  Economía Competitiva
+                </h4>
               </div>
-              <h4 className="font-display text-sm font-extrabold uppercase text-[var(--candy-gold)]">
-                Economía Competitiva
-              </h4>
+              <p className="text-sm text-foreground font-bold flex items-center gap-1 flex-wrap">
+                En el Modo Competitivo compites por Sugar Coins <img src="/sugar-coin.png" alt="Coin" className="size-4 inline-block object-contain" />. La entrada se cobra al iniciar y los premios se reparten según el puesto:
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs sm:text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--candy-gold)]/30 text-[var(--candy-gold)]">
+                      <th className="py-2 pr-2">Jugadores</th>
+                      <th className="py-2 px-2 text-red-400">Entrada</th>
+                      <th className="py-2 px-2">Pozo</th>
+                      <th className="py-2 pl-2">Premios (1º, 2º, 3º, 4º)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-muted-foreground">
+                    <tr className="border-b border-border/30">
+                      <td className="py-2 pr-2 font-bold text-foreground">2 Jug</td>
+                      <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-100 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
+                      <td className="py-2 px-2 font-bold text-foreground">200 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
+                      <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+150</span></td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-2 pr-2 font-bold text-foreground">3 Jug</td>
+                      <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-120 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
+                      <td className="py-2 px-2 font-bold text-foreground">360 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
+                      <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+200</span>, <span className="text-emerald-400/80 font-bold">+80</span></td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-2 pr-2 font-bold text-foreground">4 Jug</td>
+                      <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-150 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
+                      <td className="py-2 px-2 font-bold text-foreground">600 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
+                      <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+300</span>, <span className="text-emerald-400/80 font-bold">+150</span></td>
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-2 pr-2 font-bold text-foreground">5 Jug</td>
+                      <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-200 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
+                      <td className="py-2 px-2 font-bold text-foreground">1000 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
+                      <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+400</span>, <span className="text-emerald-400/80 font-bold">+200</span>, <span className="text-emerald-400/60 font-bold">+100</span></td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 pr-2 font-bold text-foreground">6 Jug</td>
+                      <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-300 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
+                      <td className="py-2 px-2 font-bold text-foreground">1800 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
+                      <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+600</span>, <span className="text-emerald-400/80 font-bold">+450</span>, <span className="text-emerald-400/60 font-bold">+250</span>, <span className="text-emerald-400/40 font-bold">+100</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <p className="text-sm text-foreground font-bold flex items-center gap-1 flex-wrap">
-              En el Modo Competitivo compites por Sugar Coins <img src="/sugar-coin.png" alt="Coin" className="size-4 inline-block object-contain" />. La entrada se cobra al iniciar y los premios se reparten según el puesto:
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--candy-gold)]/30 text-[var(--candy-gold)]">
-                    <th className="py-2 pr-2">Jugadores</th>
-                    <th className="py-2 px-2 text-red-400">Entrada</th>
-                    <th className="py-2 px-2">Pozo</th>
-                    <th className="py-2 pl-2">Premios (1º, 2º, 3º)</th>
-                  </tr>
-                </thead>
-                <tbody className="text-muted-foreground">
-                  <tr className="border-b border-border/30">
-                    <td className="py-2 pr-2 font-bold text-foreground">2 Jug</td>
-                    <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-100 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
-                    <td className="py-2 px-2 font-bold text-foreground">-200 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
-                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+150</span></td>
-                  </tr>
-                  <tr className="border-b border-border/30">
-                    <td className="py-2 pr-2 font-bold text-foreground">3 Jug</td>
-                    <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-120 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
-                    <td className="py-2 px-2 font-bold text-foreground">-360 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
-                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+200</span>, <span className="text-emerald-400/80 font-bold">+80</span></td>
-                  </tr>
-                  <tr className="border-b border-border/30">
-                    <td className="py-2 pr-2 font-bold text-foreground">4 Jug</td>
-                    <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-150 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
-                    <td className="py-2 px-2 font-bold text-foreground">-600 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
-                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+300</span>, <span className="text-emerald-400/80 font-bold">+150</span></td>
-                  </tr>
-                  <tr className="border-b border-border/30">
-                    <td className="py-2 pr-2 font-bold text-foreground">5 Jug</td>
-                    <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-200 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
-                    <td className="py-2 px-2 font-bold text-foreground">-1000 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
-                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+400</span>, <span className="text-emerald-400/80 font-bold">+200</span>, <span className="text-emerald-400/60 font-bold">+100</span></td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 pr-2 font-bold text-foreground">6 Jug</td>
-                    <td className="py-2 px-2 text-red-400 font-bold flex items-center gap-0.5">-300 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /></td>
-                    <td className="py-2 px-2 font-bold text-foreground">-1800 <img src="/sugar-coin.png" alt="Coin" className="size-3.5 inline-block object-contain" /></td>
-                    <td className="py-2 pl-2"><span className="text-emerald-400 font-bold">+500</span>, <span className="text-emerald-400/80 font-bold">+250</span>, <span className="text-emerald-400/60 font-bold">+100</span></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          )}
 
           {/* Cierre */}
           <button

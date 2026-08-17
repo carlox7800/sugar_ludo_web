@@ -161,7 +161,7 @@ export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStar
         </div>
       </article>
 
-      <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+      <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} showEconomy={false} />
     </section>
   )
 }
