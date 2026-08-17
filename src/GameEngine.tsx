@@ -93,6 +93,23 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
   const isMuted = audioSettings.isMuted;
 
+  // Ambient BGM Sync & Master Gain Control
+  useEffect(() => {
+    audio.setVolumes(audioSettings.musicVolume, audioSettings.sfxVolume, audioSettings.isMuted);
+    if (!audioSettings.isMuted) {
+      audio.playBackgroundMusic(true);
+    } else {
+      audio.playBackgroundMusic(false);
+    }
+  }, [audioSettings]);
+
+  // Master Audio Cleanup on Unmount
+  useEffect(() => {
+    return () => {
+      audio.stopAll();
+    };
+  }, []);
+
   // Logs state
   const [logs, setLogs] = useState<GameLog[]>([]);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState<boolean>(false);
@@ -442,19 +459,33 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
             pendingExtraTurnsRef.current = 0;
             
             let newTokens = [...tokens];
+            let penalizedToken: Token | null = null;
+
             if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
               const lastId = lastMovedTokenRef.current.tokenId;
               const lastToken = tokens.find(t => t.playerId === activePlayer.id && t.id === lastId);
-              
               if (lastToken && lastToken.step > 0 && lastToken.step < 57) {
-                const cellIndex = (START_OFFSETS[lastToken.color] + lastToken.step - 1) % 52;
-                setExplosionData({ cellIndex, color: activePlayer.color });
-                setTimeout(() => setExplosionData(null), 3500);
-                if (!isMuted) audio.playFireworks();
+                penalizedToken = lastToken;
               }
+            }
+
+            // Fallback: Si no hay última ficha movida o está en base, castigar la ficha activa más avanzada
+            if (!penalizedToken) {
+              const activeTokens = tokens.filter(t => t.playerId === activePlayer.id && t.step > 0 && t.step < 57);
+              if (activeTokens.length > 0) {
+                activeTokens.sort((a, b) => b.step - a.step);
+                penalizedToken = activeTokens[0];
+              }
+            }
+
+            if (penalizedToken) {
+              const cellIndex = (START_OFFSETS[penalizedToken.color] + penalizedToken.step - 1) % 52;
+              setExplosionData({ cellIndex: cellIndex + 1, color: activePlayer.color });
+              setTimeout(() => setExplosionData(null), 3500);
+              if (!isMuted) audio.playFireworks();
 
               newTokens = newTokens.map(t => {
-                if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 57) {
+                if (t.playerId === activePlayer.id && t.id === penalizedToken!.id) {
                   return { ...t, step: 0 };
                 }
                 return t;
@@ -462,7 +493,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
             }
             
             setTokens(newTokens);
-            addLog(`🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`, 'warning', activePlayer.color);
+            addLog(`🚨 ¡Tercer doble consecutivo! Ficha devuelta a la base.`, 'warning', activePlayer.color);
             showToast('🚫 ¡Penalización por 3 dobles consecutivos! Ficha devuelta a la base');
             
             setRemainingMoves([]);

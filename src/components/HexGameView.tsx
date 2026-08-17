@@ -240,6 +240,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
   // Ambient BGM Sync Effect
   useEffect(() => {
+    audio.setVolumes(0.25, 1.0, isMuted);
     if (!isMuted) {
       audio.playBackgroundMusic(true);
     } else {
@@ -664,21 +665,35 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       setGameState((prev) => {
         if (thirdDouble) {
           let newTokens = [...prev.tokens];
+          let penalizedToken: any = null;
+
           if (lastMovedTokenRef.current && lastMovedTokenRef.current.playerId === activePlayer.id) {
             const lastId = lastMovedTokenRef.current.tokenId;
             const lastToken = prev.tokens.find(t => t.playerId === activePlayer.id && t.id === lastId);
-
             if (lastToken && lastToken.step > 0 && lastToken.step < 83) {
-              const targetCellIndex = getCellIndexForToken(lastToken.color, lastToken.step);
-              if (typeof targetCellIndex === 'number' || typeof targetCellIndex === 'string') {
-                setExplosionData({ cellIndex: targetCellIndex, color: activePlayer.color });
-                setTimeout(() => setExplosionData(null), 3500);
-                if (!isMuted) audio.playFireworks();
-              }
+              penalizedToken = lastToken;
+            }
+          }
+
+          // Fallback: Si no hay última ficha movida o está en base, castigar la ficha activa más avanzada
+          if (!penalizedToken) {
+            const activeTokens = prev.tokens.filter(t => t.playerId === activePlayer.id && t.step > 0 && t.step < 83);
+            if (activeTokens.length > 0) {
+              activeTokens.sort((a, b) => b.step - a.step);
+              penalizedToken = activeTokens[0];
+            }
+          }
+
+          if (penalizedToken) {
+            const targetCellIndex = getCellIndexForToken(penalizedToken.color, penalizedToken.step);
+            if (typeof targetCellIndex === 'number' || typeof targetCellIndex === 'string') {
+              setExplosionData({ cellIndex: targetCellIndex, color: activePlayer.color });
+              setTimeout(() => setExplosionData(null), 3500);
+              if (!isMuted) audio.playFireworks();
             }
 
             newTokens = newTokens.map(t => {
-              if (t.playerId === activePlayer.id && t.id === lastId && t.step > 0 && t.step < 83) {
+              if (t.playerId === activePlayer.id && t.id === penalizedToken.id) {
                 return { ...t, step: 0 };
               }
               return t;
@@ -687,14 +702,14 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           
           const warningLog = {
             id: Math.random().toString(),
-            message: `🚨 ¡Tercer doble consecutivo! Tu última ficha regresa a la base.`,
+            message: `🚨 ¡Tercer doble consecutivo! Ficha devuelta a la base.`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             type: 'warning' as const,
             color: activePlayer.color,
           };
           
           setRemainingMoves([]);
-          setTimeout(() => advanceTurn(false), 1500);
+          setTimeout(() => advanceTurn(false, newTokens), 1500);
           
           return {
             ...prev,

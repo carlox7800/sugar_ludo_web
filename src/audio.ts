@@ -71,7 +71,7 @@ class LudoAudio {
 
     this.isBgmLoading = true;
     try {
-      const response = await fetch('/tam-lin.mp3');
+      const response = await fetch('/tam-lin.audio');
       const arrayBuffer = await response.arrayBuffer();
       this.bgmBuffer = await this.ctx.decodeAudioData(arrayBuffer);
       return this.bgmBuffer;
