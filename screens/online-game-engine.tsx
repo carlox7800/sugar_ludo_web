@@ -1244,7 +1244,9 @@ export function OnlineGameEngine({
             const isGameOver =
               (totalPlayers === 2 && finishedCount >= 1) ||
               (totalPlayers === 3 && finishedCount >= 2) ||
-              (totalPlayers >= 4 && (finishedCount >= 3 || finishedCount >= totalPlayers - 1))
+              (totalPlayers === 4 && finishedCount >= 3) ||
+              (totalPlayers === 5 && finishedCount >= 3) ||
+              (totalPlayers === 6 && finishedCount >= 4)
 
             if (isGameOver) {
               const finalRankings = buildFinalRankings(
@@ -1959,7 +1961,7 @@ export function OnlineGameEngine({
                       finishedPlayerIndicesRef.current,
                       formattedPlayers,
                       tokens,
-                      getGoalStep(dynamicPlayers.length)
+                      getGoalStep(isHexGame)
                     );
                 const pCount = dynamicPlayers.length
                 const prizeList = ECONOMY_MATRIX[pCount]?.prizes || []

@@ -14,7 +14,7 @@ export const ECONOMY_MATRIX: Record<number, { entry: number; pot: number; prizes
   3: { entry: 120, pot: 360, prizes: [200, 80] },
   4: { entry: 150, pot: 600, prizes: [300, 150] },
   5: { entry: 200, pot: 1000, prizes: [400, 200, 100] },
-  6: { entry: 300, pot: 1800, prizes: [500, 250, 100] },
+  6: { entry: 300, pot: 1800, prizes: [600, 450, 250, 100] },
 }
 
 export function CompetitiveTraining({ 
@@ -491,9 +491,14 @@ export function CompetitiveTraining({
                 </div>
                 <div className="flex flex-col gap-1 items-center justify-center p-2 rounded-xl bg-[oklch(1_0_0/0.05)] col-span-2 sm:col-span-2">
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Premios</span>
-                  <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+                  <div className={cn(
+                    "w-full items-center justify-center",
+                    currentEconomy.prizes.filter(prize => prize > 0).length >= 4
+                      ? "grid grid-cols-2 gap-x-2 gap-y-0.5"
+                      : "flex flex-wrap items-center justify-center gap-x-4 gap-y-1"
+                  )}>
                     {currentEconomy.prizes.filter(prize => prize > 0).map((prize, idx) => (
-                      <span key={idx} className={cn("font-display text-sm font-black flex items-center gap-1", idx === 0 ? 'text-emerald-400' : 'text-emerald-400/70')}>
+                      <span key={idx} className={cn("font-display text-xs sm:text-sm font-black flex items-center justify-center gap-1 whitespace-nowrap", idx === 0 ? 'text-emerald-400' : 'text-emerald-400/80')}>
                         {idx + 1}º: +{prize} <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" />
                       </span>
                     ))}
@@ -602,9 +607,14 @@ export function CompetitiveTraining({
                         </div>
                         <div className="flex flex-col gap-1 items-center justify-center p-2 rounded-xl bg-[oklch(1_0_0/0.05)] col-span-2 sm:col-span-2">
                           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Premios</span>
-                          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+                          <div className={cn(
+                            "w-full items-center justify-center",
+                            ECONOMY_MATRIX[createPlayers].prizes.filter(prize => prize > 0).length >= 4
+                              ? "grid grid-cols-2 gap-x-2 gap-y-0.5"
+                              : "flex flex-wrap items-center justify-center gap-x-4 gap-y-1"
+                          )}>
                             {ECONOMY_MATRIX[createPlayers].prizes.filter(prize => prize > 0).map((prize, idx) => (
-                              <span key={idx} className={cn("font-display text-sm font-black flex items-center gap-1", idx === 0 ? 'text-emerald-400' : 'text-emerald-400/70')}>
+                              <span key={idx} className={cn("font-display text-xs sm:text-sm font-black flex items-center justify-center gap-1 whitespace-nowrap", idx === 0 ? 'text-emerald-400' : 'text-emerald-400/80')}>
                                 {idx + 1}º: +{prize} <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" />
                               </span>
                             ))}
