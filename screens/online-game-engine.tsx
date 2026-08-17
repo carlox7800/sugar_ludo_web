@@ -1818,19 +1818,19 @@ export function OnlineGameEngine({
               pos = hexPositions[seatOffset] || 'bottom-left';
             } else {
               // Tablero cuadrado online (perspectiva dinámica local: mi casa siempre abajo a la izquierda)
-              if (activePlayers.length === 4) {
-                const positions: any[] = ['bottom-left', 'top-left', 'top-right', 'bottom-right'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 3) {
-                const positions: any[] = ['bottom-left', 'top-left', 'bottom-right'];
-                pos = positions[offset];
-              } else if (activePlayers.length === 2) {
-                const positions: any[] = ['bottom-left', 'top-right'];
-                pos = positions[offset];
-              } else {
-                const positions: any[] = ['bottom-left', 'top-left', 'top-right', 'bottom-right'];
-                pos = positions[offset] || 'bottom-left';
-              }
+              const SQUARE_SEAT_ORDER: PlayerColor[] = ['yellow', 'red', 'green', 'blue']
+              const myColor = (formattedPlayers[baseIdx]?.color || 'yellow') as PlayerColor
+              const mySeatIndex = SQUARE_SEAT_ORDER.indexOf(myColor)
+              const playerSeatIndex = SQUARE_SEAT_ORDER.indexOf(p.color as PlayerColor)
+              const seatOffset = (playerSeatIndex - (mySeatIndex >= 0 ? mySeatIndex : 0) + 4) % 4
+
+              const squarePositions: ('bottom-left' | 'top-left' | 'top-right' | 'bottom-right')[] = [
+                'bottom-left',   // seatOffset 0 (Usuario Local)
+                'top-left',      // seatOffset 1
+                'top-right',     // seatOffset 2
+                'bottom-right'   // seatOffset 3
+              ]
+              pos = squarePositions[seatOffset] || 'bottom-left'
             }
 
             const isActiveTurn = activePlayerIndex >= 0 && activePlayerIndex === p.id && currentTurnPlayerId !== '';
