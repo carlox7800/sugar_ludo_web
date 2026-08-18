@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeft, Volume2, VolumeX, Play, BookOpen, Bot } from 'lucide-react'
+import { ArrowLeft, Play, BookOpen, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GameConfig } from '@/src/types'
 import { GameGuideModal } from '@/components/game-guide-modal'
@@ -35,7 +35,6 @@ const DIFFICULTY_OPTIONS = [
 export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStartGame: (config: GameConfig) => void }) {
   const [players, setPlayers] = useState(4)
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTY_OPTIONS)[number]['id']>('medio')
-  const [muted, setMuted] = useState(false)
   const [isGuideOpen, setIsGuideOpen] = useState(false)
 
   const handleStart = () => {
@@ -65,15 +64,6 @@ export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStar
           <span className="font-display text-base font-extrabold uppercase tracking-wide text-foreground sm:text-lg">
             Entrenamiento con IA
           </span>
-        </button>
-
-        <button
-          onClick={() => setMuted((m) => !m)}
-          aria-label={muted ? 'Activar sonido' : 'Silenciar'}
-          aria-pressed={muted}
-          className="glass glass-hover flex size-12 shrink-0 items-center justify-center rounded-2xl text-[var(--candy-cyan)]"
-        >
-          {muted ? <VolumeX className="size-5" strokeWidth={2.4} /> : <Volume2 className="size-5" strokeWidth={2.4} />}
         </button>
       </div>
 

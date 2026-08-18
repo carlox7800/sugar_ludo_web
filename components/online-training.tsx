@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Volume2, VolumeX, Zap, Key, PlusCircle, LogIn, Copy, Check, Sparkles, Loader2, Wifi, WifiOff, BookOpen } from 'lucide-react'
+import { ArrowLeft, Zap, Key, PlusCircle, LogIn, Copy, Check, Sparkles, Loader2, Wifi, WifiOff, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSocket } from '@/lib/useSocket'
 import { useAuth } from '@/lib/auth-context'
@@ -41,7 +41,6 @@ export function OnlineTraining({
   const [roomCode, setRoomCode] = useState('')
 
   // UI state
-  const [muted, setMuted] = useState(false)
   const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null)
   const [copiedCode, setCopiedCode] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
@@ -302,33 +301,22 @@ export function OnlineTraining({
           </span>
         </button>
 
-        <div className="flex items-center gap-2">
-          {/* Socket Connection Badge */}
-          <div className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 border font-display text-xs font-bold ${
-            status === 'connected' 
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-              : status === 'connecting' || status === 'reconnecting'
-              ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
-              : 'border-red-500/30 bg-red-500/10 text-red-400'
-          }`}>
-            {status === 'connected' ? (
-              <Wifi className="size-3.5" />
-            ) : status === 'connecting' || status === 'reconnecting' ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <WifiOff className="size-3.5" />
-            )}
-            <span className="capitalize">{status === 'connected' ? 'En Línea' : status === 'connecting' ? 'Conectando...' : 'Desconectado'}</span>
-          </div>
-
-          <button
-            onClick={() => setMuted((m) => !m)}
-            aria-label={muted ? 'Activar sonido' : 'Silenciar'}
-            aria-pressed={muted}
-            className="glass glass-hover flex size-12 shrink-0 items-center justify-center rounded-2xl text-[var(--candy-cyan)]"
-          >
-            {muted ? <VolumeX className="size-5" strokeWidth={2.4} /> : <Volume2 className="size-5" strokeWidth={2.4} />}
-          </button>
+        {/* Socket Connection Badge */}
+        <div className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 border font-display text-xs font-bold ${
+          status === 'connected' 
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+            : status === 'connecting' || status === 'reconnecting'
+            ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+            : 'border-red-500/30 bg-red-500/10 text-red-400'
+        }`}>
+          {status === 'connected' ? (
+            <Wifi className="size-3.5" />
+          ) : status === 'connecting' || status === 'reconnecting' ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <WifiOff className="size-3.5" />
+          )}
+          <span className="capitalize">{status === 'connected' ? 'En Línea' : status === 'connecting' ? 'Conectando...' : 'Desconectado'}</span>
         </div>
       </div>
 
@@ -654,8 +642,8 @@ export function OnlineTraining({
       <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} showEconomy={false} />
       {/* FLOATING LOBBY MODAL */}
       {(isSearching || lobbyData) && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in zoom-in-95">
-          <div className="bg-panel w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-cyan)]/30 shadow-2xl flex flex-col items-center gap-6">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/40 backdrop-blur-[3px] animate-in fade-in zoom-in-95">
+          <div className="glass w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-cyan)]/40 shadow-2xl flex flex-col items-center gap-6 bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl">
             <header className="text-center w-full">
               <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase text-[var(--candy-cyan)] tracking-wider drop-shadow-md">
                 {isPrivateMatchRef.current ? `Batalla de Amigos` : `Partida Rápida`}

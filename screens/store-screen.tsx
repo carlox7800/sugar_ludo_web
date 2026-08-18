@@ -566,8 +566,8 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
       {/* MODAL 1: CONFIRMAR COMPRA DE PAQUETE USDT */}
       {packageToBuy && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in">
-          <div className="glass max-w-sm w-full rounded-3xl p-6 border border-[var(--candy-gold)] shadow-2xl flex flex-col gap-4 text-center">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[3px] animate-in fade-in">
+          <div className="glass max-w-sm w-full rounded-3xl p-6 border border-[var(--candy-gold)] shadow-2xl flex flex-col gap-4 text-center bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl">
             <div className="size-16 rounded-full bg-[var(--candy-gold)]/20 text-4xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(255,215,0,0.3)]">
               {packageToBuy.icon}
             </div>
@@ -609,8 +609,8 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
       {/* MODAL 2: CONFIRMAR COMPRA CON SUGAR COINS */}
       {itemToBuy && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in">
-          <div className="glass max-w-sm w-full rounded-3xl p-6 border border-[var(--candy-cyan)] shadow-2xl flex flex-col gap-4 text-center">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[3px] animate-in fade-in">
+          <div className="glass max-w-sm w-full rounded-3xl p-6 border border-[var(--candy-cyan)] shadow-2xl flex flex-col gap-4 text-center bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl">
             <div className="size-16 rounded-full bg-[var(--candy-cyan)]/20 text-4xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(0,242,255,0.3)]">
               {itemToBuy.icon}
             </div>
