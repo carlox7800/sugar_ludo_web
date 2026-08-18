@@ -272,7 +272,9 @@ function PageContent() {
 
         {/* Content area: offset for the fixed sidebar on desktop */}
         <div className="flex min-h-screen flex-col gap-5 px-4 pb-24 pt-4 sm:px-6 md:gap-6 md:pb-6 md:pl-[19.5rem] md:pr-6">
-          <TopBar onSettingsOpen={() => setIsSettingsOpen(true)} onStoreOpen={() => setScreen('tienda')} />
+          {screen === 'lobby' && (
+            <TopBar onSettingsOpen={() => setIsSettingsOpen(true)} onStoreOpen={() => setScreen('tienda')} />
+          )}
 
           {renderScreen()}
         </div>
