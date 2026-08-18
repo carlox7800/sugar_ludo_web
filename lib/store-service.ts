@@ -14,6 +14,7 @@ export interface CoinPackage {
   totalCoins: number
   tag?: string
   icon: string
+  image?: string
 }
 
 export interface StoreItem {
@@ -62,7 +63,8 @@ export const COIN_PACKAGES: CoinPackage[] = [
     bonusPercent: 10,
     totalCoins: 550,
     tag: '+10% Extra',
-    icon: '🍭'
+    icon: '🍭',
+    image: '/store/bolsa_dulce.png'
   },
   {
     id: 'pack_10',
@@ -72,7 +74,8 @@ export const COIN_PACKAGES: CoinPackage[] = [
     bonusPercent: 15,
     totalCoins: 1150,
     tag: 'Más Popular',
-    icon: '🍯'
+    icon: '🍯',
+    image: '/store/frasco_dorado.png'
   },
   {
     id: 'pack_25',
@@ -82,27 +85,30 @@ export const COIN_PACKAGES: CoinPackage[] = [
     bonusPercent: 25,
     totalCoins: 3125,
     tag: 'Mejor Valor',
-    icon: '💎'
+    icon: '💎',
+    image: '/store/cofre_imperial.png'
   },
   {
     id: 'pack_50',
-    name: 'Bóveda Sugar',
+    name: 'Cofre Sugar',
     usdtCost: 50,
     baseCoins: 5000,
     bonusPercent: 30,
     totalCoins: 6500,
     tag: '+30% Extra',
-    icon: '👑'
+    icon: '👑',
+    image: '/store/cofre_sugar.png'
   },
   {
     id: 'pack_100',
-    name: 'Bóveda Titán',
+    name: 'Cofre Titán',
     usdtCost: 100,
     baseCoins: 10000,
     bonusPercent: 35,
     totalCoins: 13500,
     tag: '+35% Extra',
-    icon: '🏛️'
+    icon: '🏛️',
+    image: '/store/cofre_titan.png'
   }
 ]
 

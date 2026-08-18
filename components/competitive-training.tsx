@@ -737,8 +737,8 @@ export function CompetitiveTraining({
 
       {/* FLOATING LOBBY MODAL */}
       {(isSearching || lobbyData) && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/40 backdrop-blur-[3px] animate-in fade-in zoom-in-95">
-          <div className="glass w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-gold)]/40 shadow-2xl flex flex-col items-center gap-6">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/75 sm:backdrop-blur-sm animate-in fade-in zoom-in-95">
+          <div className="bg-card w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border-2 border-[var(--candy-gold)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col items-center gap-6">
             <header className="text-center w-full">
               <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase text-[var(--candy-gold)] tracking-wider drop-shadow-sm">
                 {isPrivateMatchRef.current ? `Batalla de Amigos` : `Partida Rápida`}

@@ -258,15 +258,15 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
           <div className="glass relative overflow-hidden rounded-3xl p-5 sm:p-6 border border-[var(--candy-gold)]/40 bg-[linear-gradient(135deg,oklch(0.16_0.04_50/0.8),oklch(0.12_0.02_285/0.9))] shadow-xl">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-4 text-center sm:text-left">
-                <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-[var(--candy-gold)]/20 text-3xl shadow-[0_0_20px_rgba(255,215,0,0.3)]">
-                  🍯
+                <div className="flex size-14 sm:size-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--candy-gold)]/20 p-1.5 shadow-[0_0_20px_rgba(255,215,0,0.3)]">
+                  <img src="/store/cofre_sugar.png" alt="Cofre Sugar" className="size-full object-contain rounded-xl drop-shadow-md" />
                 </div>
                 <div>
                   <span className="inline-block rounded-md bg-[var(--candy-gold)]/20 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-[var(--candy-gold)] mb-1">
                     Bono de Bienvenida Activo
                   </span>
-                  <h2 className="font-display text-xl sm:text-2xl font-black text-white">
-                    ¡Hasta +30% Sugar Coins Extra con USDT!
+                  <h2 className="font-display text-xl sm:text-2xl font-black text-foreground">
+                    ¡Hasta +35% Sugar Coins Extra con USDT!
                   </h2>
                   <p className="text-xs text-muted-foreground">
                     Los fondos en Sugar Coins se acreditan instantáneamente en tu cuenta para torneos y compras.
@@ -301,10 +301,16 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
                     </div>
                   )}
 
-                  <div className="flex items-center gap-3 mb-4">
-                    <span className="text-3xl p-2 rounded-2xl bg-black/30 border border-white/10">{pkg.icon}</span>
+                  <div className="flex items-center gap-4 mb-4">
+                    {pkg.image ? (
+                      <div className="size-16 sm:size-20 shrink-0 rounded-2xl overflow-hidden bg-black/20 border border-white/10 flex items-center justify-center p-1 shadow-inner group">
+                        <img src={pkg.image} alt={pkg.name} className="size-full object-contain drop-shadow-md transition-transform duration-300 group-hover:scale-105" />
+                      </div>
+                    ) : (
+                      <span className="text-3xl p-2 rounded-2xl bg-black/30 border border-white/10">{pkg.icon}</span>
+                    )}
                     <div>
-                      <h3 className="font-display text-lg font-extrabold text-white">{pkg.name}</h3>
+                      <h3 className="font-display text-lg font-extrabold text-foreground">{pkg.name}</h3>
                       <span className="text-xs text-muted-foreground font-semibold">
                         Base: {pkg.baseCoins.toLocaleString()} SC {pkg.bonusPercent > 0 && `(+${pkg.bonusPercent}%)`}
                       </span>
@@ -462,7 +468,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
       {activeTab === 'emotes' && (
         <div className="flex flex-col gap-4 animate-in fade-in">
           <div className="glass rounded-3xl p-4 sm:p-5 border border-[var(--candy-magenta)]/30 bg-[linear-gradient(135deg,oklch(0.14_0.04_350/0.4),oklch(0.12_0.02_285/0.8))]">
-            <h2 className="font-display text-lg font-black text-white flex items-center gap-2">
+            <h2 className="font-display text-lg font-black text-foreground flex items-center gap-2">
               <Smile className="size-5 text-[var(--candy-magenta)]" /> Reacciones Premium para Chat de Partida
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -487,7 +493,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
                       <span className="rounded-full bg-[var(--candy-magenta)]/20 px-2 py-0.5 text-[9px] font-black uppercase text-[var(--candy-magenta)]">
                         {emote.rarity}
                       </span>
-                      <h3 className="font-display text-base font-extrabold text-white mt-1">{emote.name}</h3>
+                      <h3 className="font-display text-base font-extrabold text-foreground mt-1">{emote.name}</h3>
                       <p className="text-xs text-muted-foreground">{emote.description}</p>
                     </div>
                   </div>
@@ -521,7 +527,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
       {activeTab === 'boosters' && (
         <div className="flex flex-col gap-4 animate-in fade-in">
           <div className="glass rounded-3xl p-4 sm:p-5 border border-[var(--candy-orange)]/30 bg-[linear-gradient(135deg,oklch(0.14_0.04_45/0.4),oklch(0.12_0.02_285/0.8))]">
-            <h2 className="font-display text-lg font-black text-white flex items-center gap-2">
+            <h2 className="font-display text-lg font-black text-foreground flex items-center gap-2">
               <Zap className="size-5 text-[var(--candy-orange)]" /> Aceleradores de Nivel
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -542,7 +548,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
                       {booster.rarity}
                     </span>
                   </div>
-                  <h3 className="font-display text-base font-extrabold text-white">{booster.name}</h3>
+                  <h3 className="font-display text-base font-extrabold text-foreground">{booster.name}</h3>
                   <p className="text-xs text-muted-foreground mt-1">{booster.description}</p>
                 </div>
 
@@ -566,21 +572,27 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
       {/* MODAL 1: CONFIRMAR COMPRA DE PAQUETE USDT */}
       {packageToBuy && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[3px] animate-in fade-in">
-          <div className="glass max-w-sm w-full rounded-3xl p-6 border border-[var(--candy-gold)] shadow-2xl flex flex-col gap-4 text-center bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl">
-            <div className="size-16 rounded-full bg-[var(--candy-gold)]/20 text-4xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(255,215,0,0.3)]">
-              {packageToBuy.icon}
-            </div>
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/75 sm:backdrop-blur-sm animate-in fade-in">
+          <div className="bg-card max-w-sm w-full rounded-3xl p-6 border-2 border-[var(--candy-gold)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col gap-4 text-center">
+            {packageToBuy.image ? (
+              <div className="size-24 rounded-2xl overflow-hidden bg-black/20 border border-white/10 p-1 mx-auto shadow-inner flex items-center justify-center">
+                <img src={packageToBuy.image} alt={packageToBuy.name} className="size-full object-contain drop-shadow-md" />
+              </div>
+            ) : (
+              <div className="size-16 rounded-full bg-[var(--candy-gold)]/20 text-4xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(255,215,0,0.3)]">
+                {packageToBuy.icon}
+              </div>
+            )}
 
-            <h3 className="font-display text-xl font-black text-white">
+            <h3 className="font-display text-xl font-black text-foreground">
               Confirmar Adquisición
             </h3>
 
             <p className="text-xs text-muted-foreground">
-              Estás a punto de adquirir el paquete <strong className="text-white">{packageToBuy.name}</strong> por <strong className="text-emerald-400">${packageToBuy.usdtCost}.00 USDT</strong>.
+              Estás a punto de adquirir el paquete <strong className="text-foreground">{packageToBuy.name}</strong> por <strong className="text-emerald-500 font-black">${packageToBuy.usdtCost}.00 USDT</strong>.
             </p>
 
-            <div className="bg-black/30 rounded-2xl p-3 border border-white/10 flex items-center justify-between">
+            <div className="bg-muted/40 rounded-2xl p-3 border border-border flex items-center justify-between shadow-inner">
               <span className="text-xs text-muted-foreground font-semibold">Total a Recibir:</span>
               <span className="font-display text-base font-black text-[var(--candy-gold)] flex items-center gap-1">
                 +{packageToBuy.totalCoins.toLocaleString()} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
@@ -591,7 +603,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
               <button
                 disabled={isProcessing}
                 onClick={() => setPackageToBuy(null)}
-                className="flex-1 py-3 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all"
+                className="flex-1 py-3 rounded-xl bg-muted/40 text-foreground font-bold text-xs hover:bg-muted/70 transition-all border border-border"
               >
                 Cancelar
               </button>
@@ -609,35 +621,35 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
       {/* MODAL 2: CONFIRMAR COMPRA CON SUGAR COINS */}
       {itemToBuy && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[3px] animate-in fade-in">
-          <div className="glass max-w-sm w-full rounded-3xl p-6 border border-[var(--candy-cyan)] shadow-2xl flex flex-col gap-4 text-center bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/75 sm:backdrop-blur-sm animate-in fade-in">
+          <div className="bg-card max-w-sm w-full rounded-3xl p-6 border-2 border-[var(--candy-cyan)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col gap-4 text-center">
             <div className="size-16 rounded-full bg-[var(--candy-cyan)]/20 text-4xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(0,242,255,0.3)]">
               {itemToBuy.icon}
             </div>
 
-            <h3 className="font-display text-xl font-black text-white">
+            <h3 className="font-display text-xl font-black text-foreground">
               Desbloquear Artículo
             </h3>
 
             <p className="text-xs text-muted-foreground">
-              ¿Deseas desbloquear <strong className="text-white">{itemToBuy.name}</strong> por <strong className="text-[var(--candy-gold)]">{itemToBuy.priceSC} Sugar Coins</strong>?
+              ¿Deseas desbloquear <strong className="text-foreground">{itemToBuy.name}</strong> por <strong className="text-[var(--candy-gold)] font-black">{itemToBuy.priceSC} Sugar Coins</strong>?
             </p>
 
-            <div className="bg-black/30 rounded-2xl p-3 border border-white/10 flex flex-col gap-1 text-xs">
+            <div className="bg-muted/40 rounded-2xl p-3 border border-border flex flex-col gap-1.5 text-xs shadow-inner">
               <div className="flex justify-between text-muted-foreground">
                 <span>Tu saldo actual:</span>
-                <span className="text-white font-bold">{coins} SC</span>
+                <span className="text-foreground font-black">{coins} SC</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
                 <span>Saldo restante:</span>
-                <span className={cn("font-bold", coins >= itemToBuy.priceSC ? "text-emerald-400" : "text-red-400")}>
+                <span className={cn("font-black", coins >= itemToBuy.priceSC ? "text-emerald-500" : "text-red-500")}>
                   {coins - itemToBuy.priceSC} SC
                 </span>
               </div>
             </div>
 
             {coins < itemToBuy.priceSC && (
-              <div className="text-xs text-red-400 font-bold flex items-center justify-center gap-1">
+              <div className="text-xs text-red-500 font-bold flex items-center justify-center gap-1">
                 <AlertCircle className="size-3.5" /> Saldo insuficiente en Sugar Coins
               </div>
             )}
@@ -646,7 +658,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
               <button
                 disabled={isProcessing}
                 onClick={() => setItemToBuy(null)}
-                className="flex-1 py-3 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all"
+                className="flex-1 py-3 rounded-xl bg-muted/40 text-foreground font-bold text-xs hover:bg-muted/70 transition-all border border-border"
               >
                 Cancelar
               </button>
