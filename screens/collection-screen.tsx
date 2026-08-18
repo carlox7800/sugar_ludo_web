@@ -288,10 +288,14 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
                 >
                   <div className="flex items-start gap-3">
                     <div 
-                      className="size-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 shadow-inner border border-white/10"
+                      className="size-14 sm:size-16 rounded-2xl flex items-center justify-center shrink-0 shadow-inner border border-white/10 p-1 overflow-hidden"
                       style={{ backgroundColor: `${item.accentColor}20` }}
                     >
-                      {item.icon}
+                      {item.image ? (
+                        <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-sm" />
+                      ) : (
+                        <span className="text-3xl">{item.icon}</span>
+                      )}
                     </div>
 
                     <div className="flex flex-col min-w-0 flex-1">
@@ -365,10 +369,14 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
 
                 {/* Preview Avatar / Icon Box */}
                 <div 
-                  className="size-28 rounded-3xl flex items-center justify-center text-6xl mx-auto shadow-[0_0_30px_rgba(168,85,247,0.3)] border border-white/20 animate-pulse"
+                  className="size-28 sm:size-32 rounded-3xl flex items-center justify-center p-2 mx-auto shadow-[0_0_30px_rgba(168,85,247,0.3)] border border-white/20 overflow-hidden"
                   style={{ backgroundColor: `${selectedItem.accentColor}30` }}
                 >
-                  {selectedItem.icon}
+                  {selectedItem.image ? (
+                    <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-md animate-in zoom-in-95" />
+                  ) : (
+                    <span className="text-6xl">{selectedItem.icon}</span>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-1">

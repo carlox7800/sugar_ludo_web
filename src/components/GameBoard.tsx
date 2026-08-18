@@ -2,6 +2,8 @@ import React, { memo } from 'react';
 import { PlayerColor, Token, CellCoord } from '../types';
 
 import { AppTheme } from '../types';
+import { getBoardTheme } from '../themes/boardThemes';
+import { getTokenTheme } from '../themes/tokenThemes';
 
 const breathingAnimation = `
   @keyframes breathe {
@@ -27,6 +29,8 @@ const breathingAnimation = `
 
 interface GameBoardProps {
   appTheme?: AppTheme;
+  boardSkinId?: string;
+  tokenSkinId?: string;
   tokens: Token[];
   currentTurn: number;
   playableTokenIds: number[];
@@ -202,6 +206,8 @@ export function getBaseSlotCoord(color: PlayerColor, slotId: number): { x: numbe
 
 export const GameBoard: React.FC<GameBoardProps> = memo(({
   appTheme = 'classic',
+  boardSkinId,
+  tokenSkinId,
   tokens,
   currentTurn,
   playableTokenIds,
@@ -212,6 +218,8 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
   rotationOffset = 0,
 }) => {
   const cellSize = 50;
+  const boardTheme = getBoardTheme(boardSkinId);
+  const tokenTheme = getTokenTheme(tokenSkinId);
 
   // Pre-calculate which tokens are on which cell to avoid O(n^2) filter on every render
   const cellTokensMap = React.useMemo(() => {
@@ -287,39 +295,19 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
   };
 
   return (
-    <div id="ludo_board_container" className="relative w-full max-w-full md:max-w-[550px] mx-auto bg-white rounded-xl md:rounded-2xl shadow-sm md:shadow-[0_8px_32px_rgba(0,0,0,0.12)] border-[3px] md:border-4 border-[#cbd5e1] p-1 md:p-2 overflow-hidden select-none">
+    <div id="ludo_board_container" className={`relative w-full max-w-full md:max-w-[550px] mx-auto rounded-xl md:rounded-2xl shadow-sm md:shadow-[0_8px_32px_rgba(0,0,0,0.12)] border-[3px] md:border-4 p-1 md:p-2 overflow-hidden select-none ${boardTheme.containerBg} ${boardTheme.containerBorder}`}>
       <style>{breathingAnimation}</style>
       <div className="relative w-full h-full leading-none flex items-center justify-center">
         <svg
           viewBox="0 0 750 750"
-          className="w-full h-auto block rounded-lg bg-white"
-          style={{ touchAction: 'none' }}
+          className="w-full h-auto block rounded-lg"
+          style={{ touchAction: 'none', backgroundColor: boardTheme.svgBg }}
         >
         {/* Definition of shadows and gradients */}
         <defs>
           <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
             <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.6" floodColor="#000000" />
           </filter>
-          <radialGradient id="token-red-grad" cx="30%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#ff4d88" />
-            <stop offset="60%" stopColor="#ff0055" />
-            <stop offset="100%" stopColor="#990033" />
-          </radialGradient>
-          <radialGradient id="token-green-grad" cx="30%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#34d399" />
-            <stop offset="60%" stopColor="#059669" />
-            <stop offset="100%" stopColor="#065f46" />
-          </radialGradient>
-          <radialGradient id="token-blue-grad" cx="30%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#38bdf8" />
-            <stop offset="60%" stopColor="#0284c7" />
-            <stop offset="100%" stopColor="#075985" />
-          </radialGradient>
-          <radialGradient id="token-yellow-grad" cx="30%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#fde047" />
-            <stop offset="60%" stopColor="#ca8a04" />
-            <stop offset="100%" stopColor="#854d0e" />
-          </radialGradient>
         </defs>
 
         {/* --- GRID CELLS --- */}
@@ -331,9 +319,9 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           const isSafe = isSafeCell(idx);
 
           // Determine cell fill color
-          let fill = '#e2e8f0';
+          let fill = isSafe ? boardTheme.cellFillSafe : boardTheme.cellFillNormal;
           if (startColor) {
-            fill = COLOR_HEX[startColor];
+            fill = boardTheme.colorHexMap[startColor] || COLOR_HEX[startColor];
           }
 
           return (
@@ -344,20 +332,20 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
                 width={cellSize}
                 height={cellSize}
                 fill={fill}
-                stroke="#94a3b8"
+                stroke={boardTheme.gridStroke}
                 strokeWidth="1.5"
               />
               {/* If it's a starting cell, render a big white star */}
-              {startColor && renderStarPath(x + 25, y + 25, 22, '#ffffff', '#dc2626')}
-              {/* If it's a regular safe cell (not starting), render a golden star */}
-              {!startColor && isSafe && renderStarPath(x + 25, y + 25, 22, '#f59e0b', '#b45309')}
+              {startColor && renderStarPath(x + 25, y + 25, 22, '#ffffff', boardTheme.starStartStroke)}
+              {/* If it's a regular safe cell (not starting), render a themed safe star */}
+              {!startColor && isSafe && renderStarPath(x + 25, y + 25, 22, boardTheme.starSafeColor, boardTheme.starSafeStroke)}
 
               {/* Number for the cell (rendered on top) */}
               <text 
                 x={x + 25} y={y + 26} 
-                fill={startColor ? "#ffffff" : isSafe ? "#ca8a04" : "#94a3b8"} 
+                fill={startColor ? "#ffffff" : isSafe ? boardTheme.starSafeColor : boardTheme.cellTextColor} 
                 fontSize="14" fontWeight="bold" textAnchor="middle" dominantBaseline="middle" 
-                opacity={startColor ? 1 : isSafe ? 0.9 : 0.6}
+                opacity={startColor ? 1 : isSafe ? 0.95 : boardTheme.cellTextOpacity}
                 transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 26})`}
               >
                 {idx + 1}
@@ -374,7 +362,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           const y = 7 * cellSize;
           return (
             <g key={`home-red-${i}`}>
-              <rect x={x} y={y} width={cellSize} height={cellSize} fill="#ff0055" stroke="#ffffff" strokeWidth="1.5" />
+              <rect x={x} y={y} width={cellSize} height={cellSize} fill={boardTheme.colorHexMap.red || "#ff0055"} stroke={boardTheme.homeRunStroke} strokeWidth="1.5" />
               <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 22})`}>H{i+1}</text>
               <circle cx={x + 25} cy={y + 36} r="3" fill="#ffffff" opacity="0.8" />
             </g>
@@ -388,7 +376,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           const y = row * cellSize;
           return (
             <g key={`home-green-${i}`}>
-              <rect x={x} y={y} width={cellSize} height={cellSize} fill="#059669" stroke="#ffffff" strokeWidth="1.5" />
+              <rect x={x} y={y} width={cellSize} height={cellSize} fill={boardTheme.colorHexMap.green || "#059669"} stroke={boardTheme.homeRunStroke} strokeWidth="1.5" />
               <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 22})`}>H{i+1}</text>
               <circle cx={x + 25} cy={y + 36} r="3" fill="#ffffff" opacity="0.8" />
             </g>
@@ -402,7 +390,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           const y = 7 * cellSize;
           return (
             <g key={`home-blue-${i}`}>
-              <rect x={x} y={y} width={cellSize} height={cellSize} fill="#0284c7" stroke="#ffffff" strokeWidth="1.5" />
+              <rect x={x} y={y} width={cellSize} height={cellSize} fill={boardTheme.colorHexMap.blue || "#0284c7"} stroke={boardTheme.homeRunStroke} strokeWidth="1.5" />
               <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 22})`}>H{i+1}</text>
               <circle cx={x + 25} cy={y + 36} r="3" fill="#ffffff" opacity="0.8" />
             </g>
@@ -416,7 +404,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
           const y = row * cellSize;
           return (
             <g key={`home-yellow-${i}`}>
-              <rect x={x} y={y} width={cellSize} height={cellSize} fill="#ca8a04" stroke="#ffffff" strokeWidth="1.5" />
+              <rect x={x} y={y} width={cellSize} height={cellSize} fill={boardTheme.colorHexMap.yellow || "#ca8a04"} stroke={boardTheme.homeRunStroke} strokeWidth="1.5" />
               <text x={x + 25} y={y + 22} fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle" transform={`rotate(${-rotationOffset}, ${x + 25}, ${y + 22})`}>H{i+1}</text>
               <circle cx={x + 25} cy={y + 36} r="3" fill="#ffffff" opacity="0.8" />
             </g>
@@ -427,68 +415,66 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
         {/* --- BASE QUADRANTS (Esquinas de Base) --- */}
         {/* 1. Green Base (Top-Left) */}
         <g filter="url(#shadow)">
-          <rect x={0} y={0} width={300} height={300} fill="#059669" stroke="#047857" strokeWidth="2.5" />
-          <rect x={40} y={40} width={220} height={220} rx={15} ry={15} fill="#047857" stroke="#065f46" strokeWidth="1.5" strokeDasharray="3" />
+          <rect x={0} y={0} width={300} height={300} fill={boardTheme.colorHexMap.green || "#059669"} stroke={boardTheme.gridStroke} strokeWidth="2" />
+          <rect x={40} y={40} width={220} height={220} rx={15} ry={15} fill="rgba(0,0,0,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeDasharray="3" />
           {Array.from({ length: 4 }).map((_, i) => {
             const coord = getBaseSlotCoord('green', i);
             return (
-              <circle key={`slot-green-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.2)" stroke="#ffffff" strokeWidth="1.5" opacity="0.8" />
+              <circle key={`slot-green-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.25)" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
             );
           })}
         </g>
 
         {/* 2. Blue Base (Top-Right) */}
         <g filter="url(#shadow)">
-          <rect x={450} y={0} width={300} height={300} fill="#0284c7" stroke="#0369a1" strokeWidth="2.5" />
-          <rect x={490} y={40} width={220} height={220} rx={15} ry={15} fill="#0369a1" stroke="#075985" strokeWidth="1.5" strokeDasharray="3" />
+          <rect x={450} y={0} width={300} height={300} fill={boardTheme.colorHexMap.blue || "#0284c7"} stroke={boardTheme.gridStroke} strokeWidth="2" />
+          <rect x={490} y={40} width={220} height={220} rx={15} ry={15} fill="rgba(0,0,0,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeDasharray="3" />
           {Array.from({ length: 4 }).map((_, i) => {
             const coord = getBaseSlotCoord('blue', i);
             return (
-              <circle key={`slot-blue-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.2)" stroke="#ffffff" strokeWidth="1.5" opacity="0.8" />
+              <circle key={`slot-blue-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.25)" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
             );
           })}
         </g>
 
-        {/* 3. Yellow Base (Bottom-Right) */}
+        {/* 3. Red Base (Bottom-Left) */}
         <g filter="url(#shadow)">
-          <rect x={450} y={450} width={300} height={300} fill="#ca8a04" stroke="#a16207" strokeWidth="2.5" />
-          <rect x={490} y={490} width={220} height={220} rx={15} ry={15} fill="#a16207" stroke="#854d0e" strokeWidth="1.5" strokeDasharray="3" />
-          {Array.from({ length: 4 }).map((_, i) => {
-            const coord = getBaseSlotCoord('yellow', i);
-            return (
-              <circle key={`slot-yellow-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.2)" stroke="#ffffff" strokeWidth="1.5" opacity="0.8" />
-            );
-          })}
-        </g>
-
-        {/* 4. Red Base (Bottom-Left) */}
-        <g filter="url(#shadow)">
-          <rect x={0} y={450} width={300} height={300} fill="#ff0055" stroke="#e11d48" strokeWidth="2.5" />
-          <rect x={40} y={490} width={220} height={220} rx={15} ry={15} fill="#e11d48" stroke="#be123c" strokeWidth="1.5" strokeDasharray="3" />
+          <rect x={0} y={450} width={300} height={300} fill={boardTheme.colorHexMap.red || "#ff0055"} stroke={boardTheme.gridStroke} strokeWidth="2" />
+          <rect x={40} y={490} width={220} height={220} rx={15} ry={15} fill="rgba(0,0,0,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeDasharray="3" />
           {Array.from({ length: 4 }).map((_, i) => {
             const coord = getBaseSlotCoord('red', i);
             return (
-              <circle key={`slot-red-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.2)" stroke="#ffffff" strokeWidth="1.5" opacity="0.8" />
+              <circle key={`slot-red-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.25)" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
             );
           })}
         </g>
 
+        {/* 4. Yellow Base (Bottom-Right) */}
+        <g filter="url(#shadow)">
+          <rect x={450} y={450} width={300} height={300} fill={boardTheme.colorHexMap.yellow || "#ca8a04"} stroke={boardTheme.gridStroke} strokeWidth="2" />
+          <rect x={490} y={490} width={220} height={220} rx={15} ry={15} fill="rgba(0,0,0,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeDasharray="3" />
+          {Array.from({ length: 4 }).map((_, i) => {
+            const coord = getBaseSlotCoord('yellow', i);
+            return (
+              <circle key={`slot-yellow-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.25)" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
+            );
+          })}
+        </g>
 
-        {/* --- META CENTRAL (Dividida en 4 triángulos) --- */}
-        {/* Center triangle goal. Left-Top-Right-Bottom points in (6..8, 6..8) logic squares */}
-        <g stroke="#ffffff" strokeWidth="2">
+        {/* --- CENTER TRIANGLES (Triángulos del Centro / Meta) --- */}
+        <g filter="url(#shadow)">
           {/* Left triangle (Red Goal) */}
-          <polygon points="300,300 375,375 300,450" fill="#ff0055" stroke="#ffffff" strokeWidth="2" />
+          <polygon points="300,300 375,375 300,450" fill={boardTheme.colorHexMap.red || "#ff0055"} stroke={boardTheme.homeRunStroke} strokeWidth="2" />
           {/* Top triangle (Green Goal) */}
-          <polygon points="300,300 375,375 450,300" fill="#059669" stroke="#ffffff" strokeWidth="2" />
+          <polygon points="300,300 375,375 450,300" fill={boardTheme.colorHexMap.green || "#059669"} stroke={boardTheme.homeRunStroke} strokeWidth="2" />
           {/* Right triangle (Blue Goal) */}
-          <polygon points="450,300 375,375 450,450" fill="#0284c7" stroke="#ffffff" strokeWidth="2" />
+          <polygon points="450,300 375,375 450,450" fill={boardTheme.colorHexMap.blue || "#0284c7"} stroke={boardTheme.homeRunStroke} strokeWidth="2" />
           {/* Bottom triangle (Yellow Goal) */}
-          <polygon points="300,450 375,375 450,450" fill="#ca8a04" stroke="#ffffff" strokeWidth="2" />
+          <polygon points="300,450 375,375 450,450" fill={boardTheme.colorHexMap.yellow || "#ca8a04"} stroke={boardTheme.homeRunStroke} strokeWidth="2" />
         </g>
         {/* Decorative inner metal boundary for center goal */}
-        <circle cx={375} cy={375} r={15} fill="#ffffff" stroke="#cbd5e1" strokeWidth="2" />
-        <circle cx={375} cy={375} r={5} fill="#0284c7" />
+        <circle cx={375} cy={375} r={15} fill={boardTheme.centerBg} stroke={boardTheme.centerBorder} strokeWidth="2" />
+        <circle cx={375} cy={375} r={5} fill={boardTheme.colorHexMap.blue || "#0284c7"} />
 
 
       </svg>
@@ -498,11 +484,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
         {tokens.map((token) => {
           const { x, y } = getTokenVisualCoord(token);
           const isSelectable = playableTokenIds.includes(token.playerId * 4 + token.id);
-          const isHumanToken = token.playerId === humanPlayerId;
-
-          // Define glow style for selectable tokens
-          const pulseColor = COLOR_HEX[token.color];
-          const isCurrentTurnToken = token.playerId === currentTurn;
+          const tokenColor = boardTheme.colorHexMap[token.color] || COLOR_HEX[token.color];
 
           // Pure GPU Hardware Translation using percentage of 48px token size on 750px viewBox board
           const tx = ((x / 48) * 100) - 50;
@@ -524,10 +506,36 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
             >
               <div className={`w-full h-full flex items-center justify-center ${isSelectable ? 'breathing-token' : ''}`}>
                 <svg viewBox="-25 -25 50 50" className="w-full h-full overflow-visible" style={{ transform: `rotate(${-rotationOffset}deg)` }}>
-                  <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
-                  <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                  <circle cx={0} cy={0} r={5} fill={COLOR_HEX[token.color]} />
-                  <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                  {tokenTheme.style === 'gem' ? (
+                    /* Gem faceted diamond */
+                    <>
+                      <polygon points="0,-18 16,-6 12,16 -12,16 -16,-6" fill={tokenColor} stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.5))" />
+                      <polygon points="0,-18 16,-6 0,0 -16,-6" fill="rgba(255,255,255,0.4)" stroke="#ffffff" strokeWidth="1" />
+                      <circle cx={-5} cy={-8} r={1.5} fill="#ffffff" />
+                    </>
+                  ) : tokenTheme.style === 'candy' ? (
+                    /* Glazed Candy */
+                    <>
+                      <circle cx={0} cy={0} r={16} fill={tokenColor} stroke="#ffffff" strokeWidth="2.5" filter="drop-shadow(0px 2px 4px rgba(0,0,0,0.4))" />
+                      <circle cx={0} cy={0} r={12} fill="none" stroke="#fff0f5" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.9" />
+                      <circle cx={-6} cy={-6} r={2.5} fill="#ffffff" opacity="0.8" />
+                    </>
+                  ) : tokenTheme.style === 'gold' ? (
+                    /* Pure Gold 24K Medallion */
+                    <>
+                      <circle cx={0} cy={0} r={16} fill="url(#gold-grad,#eab308)" stroke="#fef08a" strokeWidth="2.5" filter="drop-shadow(0px 2px 4px rgba(0,0,0,0.5))" />
+                      <circle cx={0} cy={0} r={11} fill={tokenColor} stroke="#ca8a04" strokeWidth="1.5" />
+                      <circle cx={-5} cy={-5} r={2} fill="#ffffff" opacity="0.8" />
+                    </>
+                  ) : (
+                    /* Classic Standard */
+                    <>
+                      <circle cx={0} cy={0} r={16} fill={tokenColor} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
+                      <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                      <circle cx={0} cy={0} r={5} fill={tokenColor} />
+                      <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                    </>
+                  )}
 
                   {/* Number centered to differentiate same-color tokens */}
                   <text
@@ -538,7 +546,7 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
                     fontWeight="bold"
                     textAnchor="middle"
                     dominantBaseline="middle"
-                    opacity="0.9"
+                    opacity="0.95"
                   >
                     {token.id + 1}
                   </text>

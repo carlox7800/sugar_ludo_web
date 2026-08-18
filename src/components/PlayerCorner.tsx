@@ -2,6 +2,7 @@ import React, { useState, useEffect, memo } from 'react';
 import { Player, PlayerColor } from '../types';
 import { useAuth } from '@/lib/auth-context';
 import { PRESET_AVATARS } from '@/components/avatar-selector-modal';
+import { getDiceTheme } from '../themes/diceThemes';
 
 interface PlayerCornerProps {
   player: Player;
@@ -17,6 +18,7 @@ interface PlayerCornerProps {
   onSendReaction?: (message: string) => void;
   reactionMessage?: string | null;
   isLocalUser?: boolean;
+  diceSkinId?: string;
 }
 
 export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
@@ -33,6 +35,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   onSendReaction,
   reactionMessage,
   isLocalUser = false,
+  diceSkinId,
 }) => {
   const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
@@ -92,11 +95,13 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
     magenta: 'ring-[#f43f5e] shadow-[0_0_20px_#f43f5e]',
   };
 
+  const diceTheme = getDiceTheme(diceSkinId);
+
   const renderDiceDots = (value: number | undefined, color: string) => {
     if (value === undefined || value === null) return null;
 
-    const isDarkDots = color === 'yellow';
-    const dotColor = isDarkDots ? 'bg-gray-800' : 'bg-white';
+    const isDarkDots = !diceTheme.dotColor && color === 'yellow';
+    const dotColor = diceTheme.dotColor || (isDarkDots ? 'bg-gray-800' : 'bg-white');
 
     // Para bonificaciones (+10, +15, +20, +25)
     if (value > 6 || value <= 0) {
@@ -306,14 +311,14 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
                 onClick={() => isHumanTurnToRoll && !isRolling && !hasRolled && onRollDice()}
                 className={`w-9 h-9 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center transition-all duration-300 relative ${isUsed ? 'opacity-30 grayscale scale-90' : ''} ${
                   isWaitingForRoll
-                    ? `cursor-pointer hover:scale-105 active:scale-95 border border-border ${turnGlowStyle}`
-                    : 'shadow-md border border-border'
-                } ${isRolling ? 'animate-spin' : ''} ${bgColors[player.color] || bgColors['blue']}`}
+                    ? `cursor-pointer hover:scale-105 active:scale-95 border ${diceTheme.borderClass || 'border-border'} ${diceTheme.glowClass || turnGlowStyle}`
+                    : `shadow-md border ${diceTheme.borderClass || 'border-border'} ${diceTheme.glowClass || ''}`
+                } ${isRolling ? 'animate-spin' : ''} ${diceTheme.bgClass || bgColors[player.color] || bgColors['blue']}`}
               >
                 { diceValues !== null && val !== undefined ? (
                   renderDiceDots(val, player.color)
                 ) : (
-                  <span className="text-white/60 font-bold text-base md:text-lg font-mono">?</span>
+                  <span className="text-white/80 font-black text-base md:text-lg font-mono">?</span>
                 )}
               </div>
             );

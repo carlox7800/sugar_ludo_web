@@ -10,6 +10,7 @@ import { Volume2, VolumeX, BookOpen, Sparkles, Trophy, ArrowLeft, Settings, X, P
 import { HexGameView } from './components/HexGameView';
 import { useAuth } from '@/lib/auth-context';
 import { recordMatchResult } from '@/lib/stats-service';
+import { fetchUserInventory } from '@/lib/store-service';
 import confetti from 'canvas-confetti';
 
 // Clockwise standard colors list
@@ -26,6 +27,20 @@ const PLAYER_NAMES: Record<PlayerColor, string> = {
 
 export default function GameEngine({ initialConfig, onExit }: { initialConfig: GameConfig, onExit: () => void }) {
   const { user } = useAuth();
+  
+  const [equippedSkins, setEquippedSkins] = useState<{ board: string, token: string, dice: string }>({
+    board: 'board_default',
+    token: 'token_default',
+    dice: 'dice_default'
+  });
+
+  useEffect(() => {
+    fetchUserInventory(user?.uid).then((inv) => {
+      if (inv && inv.equipped) {
+        setEquippedSkins(inv.equipped);
+      }
+    });
+  }, [user?.uid]);
   
 
   // User Profile
@@ -1218,6 +1233,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
               }}
               isMuted={isMuted}
               appTheme={appTheme}
+              boardSkinId={equippedSkins.board}
+              tokenSkinId={equippedSkins.token}
+              diceSkinId={equippedSkins.dice}
             />
           ) : (
             <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[600px]">
@@ -1245,6 +1263,8 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                     >
                       <GameBoard
                         appTheme={appTheme}
+                        boardSkinId={equippedSkins.board}
+                        tokenSkinId={equippedSkins.token}
                         tokens={tokens}
                         currentTurn={currentTurn}
                         playableTokenIds={playableTokenIds}
@@ -1279,6 +1299,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                           remainingMoves={remainingMoves}
                           onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
                           timer={timer}
+                          diceSkinId={p.type === 'human' ? equippedSkins.dice : undefined}
                         />
                       );
                     })}

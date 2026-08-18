@@ -377,8 +377,12 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
           {selectedItem && (
             <div className="glass rounded-3xl p-5 border border-[var(--candy-cyan)]/40 bg-[linear-gradient(135deg,oklch(0.14_0.03_285/0.9),oklch(0.1_0.02_285/0.95))] shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="flex items-center gap-5">
-                <div className="size-20 sm:size-24 rounded-2xl bg-black/40 border border-[var(--candy-cyan)]/50 flex items-center justify-center text-4xl sm:text-5xl shadow-[0_0_20px_rgba(0,242,255,0.2)] animate-pulse">
-                  {selectedItem.icon}
+                <div className="size-20 sm:size-24 rounded-2xl bg-black/30 border border-[var(--candy-cyan)]/50 flex items-center justify-center p-1.5 shadow-[0_0_20px_rgba(0,242,255,0.2)]">
+                  {selectedItem.image ? (
+                    <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-md" />
+                  ) : (
+                    <span className="text-4xl sm:text-5xl">{selectedItem.icon}</span>
+                  )}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -389,8 +393,8 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
                       {selectedItem.category === 'board' ? 'Tablero 3D' : selectedItem.category === 'token' ? 'Fichas de Juego' : 'Dado Personalizado'}
                     </span>
                   </div>
-                  <h3 className="font-display text-2xl font-black text-white">{selectedItem.name}</h3>
-                  <p className="text-xs sm:text-sm text-slate-300 max-w-md">{selectedItem.description}</p>
+                  <h3 className="font-display text-2xl font-black text-foreground">{selectedItem.name}</h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground max-w-md">{selectedItem.description}</p>
                 </div>
               </div>
 
@@ -431,7 +435,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
                   key={item.id}
                   onClick={() => setSelectedItem(item)}
                   className={cn(
-                    "glass relative flex flex-col items-center text-center p-4 rounded-3xl border cursor-pointer transition-all duration-200",
+                    "glass relative flex flex-col items-center text-center p-4 rounded-3xl border cursor-pointer transition-all duration-200 group",
                     isSelected ? "border-[var(--candy-cyan)] bg-[oklch(0.16_0.04_200/0.3)] shadow-[0_0_20px_rgba(0,242,255,0.2)] scale-[1.02]" : "border-border/50 hover:bg-white/5",
                     isEquipped && "ring-2 ring-emerald-400/50"
                   )}
@@ -442,11 +446,15 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
                     </div>
                   )}
 
-                  <div className="size-16 rounded-2xl bg-black/30 border border-white/10 flex items-center justify-center text-3xl mb-3 mt-1 shadow-inner">
-                    {item.icon}
+                  <div className="size-16 sm:size-20 rounded-2xl bg-black/20 border border-white/10 flex items-center justify-center p-1 mb-3 mt-1 shadow-inner transition-transform group-hover:scale-105">
+                    {item.image ? (
+                      <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-md" />
+                    ) : (
+                      <span className="text-3xl">{item.icon}</span>
+                    )}
                   </div>
 
-                  <h4 className="font-display text-sm font-extrabold text-white truncate w-full mb-1">{item.name}</h4>
+                  <h4 className="font-display text-sm font-extrabold text-foreground truncate w-full mb-1">{item.name}</h4>
                   
                   <div className="mt-2 w-full">
                     {isOwned ? (

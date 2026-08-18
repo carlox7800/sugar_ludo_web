@@ -39,6 +39,9 @@ interface HexGameViewProps {
   onExit: () => void;
   isMuted: boolean;
   appTheme: 'classic' | 'sugar';
+  boardSkinId?: string;
+  tokenSkinId?: string;
+  diceSkinId?: string;
 }
 
 export const HexGameView: React.FC<HexGameViewProps> = ({
@@ -48,6 +51,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   onExit,
   isMuted,
   appTheme,
+  boardSkinId,
+  tokenSkinId,
+  diceSkinId,
 }) => {
   const { user } = useAuth();
   const [gameState, setGameState] = useState<HexGameState>(() =>
@@ -976,6 +982,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           >
             <HexagonalLudoBoardView
               appTheme={appTheme}
+              boardSkinId={boardSkinId}
+              tokenSkinId={tokenSkinId}
               tokens={gameState.tokens}
               players={gameState.players}
               currentTurnIndex={gameState.currentTurnIndex}
@@ -990,7 +998,6 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           </div>
         </div>
 
-        {/* Corners with PlayerCorners */}
         {/* Corners with PlayerCorners */}
         {(() => {
            const activePlayers = gameState.players.filter(p => p.isActive);
@@ -1035,6 +1042,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                  remainingMoves={remainingMoves}
                  onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
                  timer={timer}
+                 diceSkinId={p.type === 'human' ? diceSkinId : undefined}
                />
              );
            });

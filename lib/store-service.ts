@@ -25,6 +25,7 @@ export interface StoreItem {
   rarity: ItemRarity
   description: string
   icon: string
+  image?: string
   accentColor: string
   previewData?: {
     theme?: string
@@ -122,6 +123,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'common',
     description: 'El tablero insignia oficial de Sugar Ludo.',
     icon: '🏁',
+    image: '/store/board_classic.png',
     accentColor: 'var(--candy-cyan)',
     previewData: { theme: 'classic' }
   },
@@ -133,6 +135,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'rare',
     description: 'Estilo vibrante de confitería con colores pastel y destellos dulces.',
     icon: '🍭',
+    image: '/store/board_candy.png',
     accentColor: 'var(--candy-magenta)',
     previewData: { theme: 'sugar' }
   },
@@ -144,6 +147,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'epic',
     description: 'Fondo oscuro con circuitos y bordes holográficos luminiscentes.',
     icon: '🌌',
+    image: '/store/board_neon.png',
     accentColor: '#38bdf8',
     previewData: { theme: 'neon' }
   },
@@ -155,6 +159,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'legendary',
     description: 'Diseño de ultra lujo con acabados en oro pulido y piedras preciosas.',
     icon: '👑',
+    image: '/store/board_royal.png',
     accentColor: 'var(--candy-gold)',
     previewData: { theme: 'royal' }
   },
@@ -168,6 +173,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'common',
     description: 'Fichas tradicionales lisas con relieve 3D.',
     icon: '⚪',
+    image: '/store/token_classic.png',
     accentColor: 'var(--candy-cyan)',
     previewData: { style: 'classic' }
   },
@@ -179,6 +185,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'rare',
     description: 'Fichas talladas en diamante con reflejos prismáticos.',
     icon: '💎',
+    image: '/store/token_gem.png',
     accentColor: '#00ddff',
     previewData: { style: 'gem' }
   },
@@ -190,6 +197,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'epic',
     description: 'Fichas deliciosas de caramelo con chispas de azúcar.',
     icon: '🍬',
+    image: '/store/token_candy.png',
     accentColor: 'var(--candy-magenta)',
     previewData: { style: 'candy' }
   },
@@ -201,6 +209,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'legendary',
     description: 'Monedas macizas de oro con el sello real de Sugar Ludo.',
     icon: '🪙',
+    image: '/store/token_gold.png',
     accentColor: 'var(--candy-gold)',
     previewData: { style: 'gold' }
   },
@@ -214,6 +223,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'common',
     description: 'Dado cúbico estándar blanco y pulido.',
     icon: '🎲',
+    image: '/store/dice_classic.png',
     accentColor: '#ffffff',
     previewData: { effect: 'classic' }
   },
@@ -225,6 +235,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'rare',
     description: 'Dado futurista con estela de luz cian en cada giro.',
     icon: '💠',
+    image: '/store/dice_neon.png',
     accentColor: 'var(--candy-cyan)',
     previewData: { effect: 'neon' }
   },
@@ -236,6 +247,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'epic',
     description: 'Emite llamas ardientes y chispas al rodar en la mesa.',
     icon: '🔥',
+    image: '/store/dice_fire.png',
     accentColor: '#ff0055',
     previewData: { effect: 'fire' }
   },
@@ -247,6 +259,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'legendary',
     description: 'Dado fundido en oro macizo con números de rubí.',
     icon: '✨',
+    image: '/store/dice_gold.png',
     accentColor: 'var(--candy-gold)',
     previewData: { effect: 'gold' }
   }

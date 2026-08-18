@@ -10,6 +10,8 @@ import {
 } from '../HexBoardConstants';
 import { getCellIndexForToken } from '../HexGameEngine';
 import { Sparkles } from 'lucide-react';
+import { getBoardTheme } from '../themes/boardThemes';
+import { getTokenTheme } from '../themes/tokenThemes';
 
 interface HexagonalLudoBoardViewProps {
   tokens: HexToken[];
@@ -19,6 +21,8 @@ interface HexagonalLudoBoardViewProps {
   onTokenClick: (tokenId: number) => void;
   humanPlayerId: number;
   appTheme?: 'classic' | 'sugar';
+  boardSkinId?: string;
+  tokenSkinId?: string;
   explosionData?: { cellIndex: number | string, color: HexPlayerColor } | null;
   rotationOffset?: number;
   isAnimating?: boolean;
@@ -193,8 +197,9 @@ export function getTokenCoordinates(token: HexToken, allTokens?: HexToken[]): { 
 // Esto renderiza el 100% de la geometría, estrellas, casas y pasillos 1 sola vez.
 // Elimina el 95% de la carga de reconciliación DOM en GPU móvil durante las partidas.
 // -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-const HexBoardStaticSVG = React.memo(({ rotationOffset }: { rotationOffset: number }) => {
+const HexBoardStaticSVG = React.memo(({ rotationOffset, boardSkinId }: { rotationOffset: number, boardSkinId?: string }) => {
+  const boardTheme = getBoardTheme(boardSkinId);
+
   return (
     <g id="hex-static-layer">
           <defs>
@@ -219,37 +224,6 @@ const HexBoardStaticSVG = React.memo(({ rotationOffset }: { rotationOffset: numb
                 100% { transform: translate3d(var(--dx), var(--dy), 0) scale(0); opacity: 0; }
               }
             `}</style>
-            {/* Gradients for tokens matching the 4-player classic style */}
-            <radialGradient id="token-purple-grad" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#a78bfa" />
-              <stop offset="60%" stopColor="#8b5cf6" />
-              <stop offset="100%" stopColor="#581c87" />
-            </radialGradient>
-            <radialGradient id="token-green-grad" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#34d399" />
-              <stop offset="60%" stopColor="#22c55e" />
-              <stop offset="100%" stopColor="#14532d" />
-            </radialGradient>
-            <radialGradient id="token-blue-grad" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#38bdf8" />
-              <stop offset="60%" stopColor="#0ea5e9" />
-              <stop offset="100%" stopColor="#0c4a6e" />
-            </radialGradient>
-            <radialGradient id="token-orange-grad" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#fb923c" />
-              <stop offset="60%" stopColor="#f97316" />
-              <stop offset="100%" stopColor="#7c2d12" />
-            </radialGradient>
-            <radialGradient id="token-yellow-grad" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#fde047" />
-              <stop offset="60%" stopColor="#eab308" />
-              <stop offset="100%" stopColor="#713f12" />
-            </radialGradient>
-            <radialGradient id="token-red-grad" cx="30%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="#f87171" />
-              <stop offset="60%" stopColor="#ef4444" />
-              <stop offset="100%" stopColor="#7f1d1d" />
-            </radialGradient>
           </defs>
 
           {/* Base 12-gon Background perfectly matching outer edges and house bases */}
@@ -261,8 +235,8 @@ const HexBoardStaticSVG = React.memo(({ rotationOffset }: { rotationOffset: numb
               const p = getPolarPos(366.5, angle);
               return `${p.x},${p.y}`;
             }).join(' ')}
-            fill="#f8fafc"
-            stroke="#cbd5e1"
+            fill={boardTheme.svgBg}
+            stroke={boardTheme.gridStroke}
             strokeWidth="8"
             strokeLinejoin="round"
           />
@@ -444,10 +418,13 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
   playableTokenIds,
   onTokenClick,
   appTheme,
+  boardSkinId,
+  tokenSkinId,
   explosionData,
   rotationOffset,
 }) => {
   const activePlayer = players[currentTurnIndex];
+  const tokenTheme = getTokenTheme(tokenSkinId);
 
   return (
     <div className="relative w-full mx-auto select-none flex items-center justify-center p-0">
@@ -456,7 +433,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
         className="w-full h-auto block drop-shadow-[0_12px_24px_rgba(0,0,0,0.5)]"
         style={{ touchAction: 'none' }}
       >
-          <HexBoardStaticSVG rotationOffset={rotationOffset || 0} />
+          <HexBoardStaticSVG rotationOffset={rotationOffset || 0} boardSkinId={boardSkinId} />
 
       </svg>
 
@@ -494,12 +471,33 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
                   style={{ transform: `rotate(${-(rotationOffset || 0)}deg)` }}
                 >
                   <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-                    {/* Fast vector shadow */}
-                    <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
-                    <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" />
-                    <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                    <circle cx={0} cy={0} r={5} fill={tokenInfo.hexCode} />
-                    <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                    {tokenTheme.style === 'gem' ? (
+                      <>
+                        <polygon points="0,-18 16,-6 12,16 -12,16 -16,-6" fill={tokenInfo.hexCode} stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.5))" />
+                        <polygon points="0,-18 16,-6 0,0 -16,-6" fill="rgba(255,255,255,0.4)" stroke="#ffffff" strokeWidth="1" />
+                        <circle cx={-5} cy={-8} r={1.5} fill="#ffffff" />
+                      </>
+                    ) : tokenTheme.style === 'candy' ? (
+                      <>
+                        <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="#ffffff" strokeWidth="2.5" filter="drop-shadow(0px 2px 4px rgba(0,0,0,0.4))" />
+                        <circle cx={0} cy={0} r={12} fill="none" stroke="#fff0f5" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.9" />
+                        <circle cx={-6} cy={-6} r={2.5} fill="#ffffff" opacity="0.8" />
+                      </>
+                    ) : tokenTheme.style === 'gold' ? (
+                      <>
+                        <circle cx={0} cy={0} r={16} fill="#eab308" stroke="#fef08a" strokeWidth="2.5" filter="drop-shadow(0px 2px 4px rgba(0,0,0,0.5))" />
+                        <circle cx={0} cy={0} r={11} fill={tokenInfo.hexCode} stroke="#ca8a04" strokeWidth="1.5" />
+                        <circle cx={-5} cy={-5} r={2} fill="#ffffff" opacity="0.8" />
+                      </>
+                    ) : (
+                      <>
+                        <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
+                        <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" />
+                        <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                        <circle cx={0} cy={0} r={5} fill={tokenInfo.hexCode} />
+                        <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                      </>
+                    )}
                   </g>
 
                   {/* Token Number */}
@@ -511,7 +509,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
                     fontWeight="bold"
                     textAnchor="middle"
                     dominantBaseline="middle"
-                    opacity="0.9"
+                    opacity="0.95"
                   >
                     {token.id + 1}
                   </text>
