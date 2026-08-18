@@ -43,29 +43,6 @@
     --shadow-color: rgba(0, 0, 0, 0.5);
   }
 
-  .theme-sugar {
-    --radius-base: 1.5rem; /* Rounder corners */
-    --bg-root: #fff0f5; /* LavenderBlush */
-    --bg-panel: #ffffff;
-    --bg-board: #ffe4e1; /* MistyRose */
-    --border-color: #ffb6c1; /* LightPink */
-    --text-primary: #831843;
-    --text-muted: #db2777;
-    --color-red: #fb7185;
-    --color-green: #34d399;
-    --color-blue: #38bdf8;
-    --color-yellow: #facc15;
-    --color-red-light: rgba(251, 113, 133, 0.2);
-    --color-green-light: rgba(52, 211, 153, 0.2);
-    --color-blue-light: rgba(56, 189, 248, 0.2);
-    --color-yellow-light: rgba(250, 204, 21, 0.2);
-    --color-purple: #c084fc;
-    --color-orange: #fb923c;
-    --color-purple-light: rgba(192, 132, 252, 0.2);
-    --color-orange-light: rgba(251, 146, 60, 0.2);
-    --shadow-color: rgba(255, 182, 193, 0.5);
-  }
-
   .cyber-game-panel {
     --candy-magenta: #ff2277;
     --candy-cyan: #22dddd;

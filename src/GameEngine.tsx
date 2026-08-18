@@ -1121,7 +1121,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
   return (
     <div className={`min-h-screen w-full flex flex-col font-sans cyber-bg ${appTheme === 'sugar' ? 'theme-sugar' : ''}`}>
       {/* Upper Navigation & Sound controls */}
-      <header className="w-full bg-root/95 sm:bg-root/80 sm:backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-4 py-3 flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-sm">
+      <header className="w-full bg-card/95 sm:bg-card/85 sm:backdrop-blur-md border-b border-border px-4 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-2">
           <button 
             onClick={() => {
@@ -1131,13 +1131,13 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
                 onExit();
               }
             }}
-            className="p-1.5 -ml-2 rounded-xl text-t-muted hover:text-[var(--candy-cyan,oklch(0.82_0.15_200))] hover:bg-[var(--candy-cyan,oklch(0.82_0.15_200))/0.1] transition-colors cursor-pointer"
+            className="p-1.5 -ml-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
             title="Volver"
           >
             <ArrowLeft size={22} />
           </button>
-          <Sparkles className="text-[var(--candy-magenta,oklch(0.7_0.27_350))] animate-pulse shrink-0 drop-shadow-[0_0_8px_var(--candy-magenta,oklch(0.7_0.27_350))]" size={20} />
-          <span className="font-extrabold text-lg text-t-primary tracking-widest font-mono uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">Entrenamiento con IA</span>
+          <Sparkles className="text-[var(--candy-magenta)] animate-pulse shrink-0 drop-shadow-[0_0_8px_var(--candy-magenta)]" size={20} />
+          <span className="font-extrabold text-base sm:text-lg text-foreground tracking-widest font-mono uppercase">Entrenamiento con IA</span>
         </div>
 
         <div className="flex items-center gap-3 relative">
@@ -1288,8 +1288,8 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
               {/* Minimalist Log Ticker */}
               {logs.length > 0 && (
-                <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full text-center px-4">
-                  <span className="text-white/50 text-[10px] font-medium tracking-widest uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] animate-pulse">
+                <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full max-w-md text-center px-4">
+                  <span className="inline-block bg-card/90 sm:backdrop-blur-md border border-border px-4 py-1.5 rounded-full text-foreground text-xs font-black tracking-wide shadow-md">
                     {logs[logs.length - 1].message}
                   </span>
                 </div>

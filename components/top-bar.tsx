@@ -21,7 +21,7 @@ export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => 
         {/* Nivel */}
         <div className="relative flex size-12 shrink-0 items-center justify-center rounded-full bg-background shadow-[0_0_15px_var(--candy-magenta)] border-[3px] border-[var(--candy-magenta)]">
           <div className="flex flex-col items-center justify-center leading-none mt-0.5">
-            <span className="font-display text-[9px] font-bold text-white/80">NVL</span>
+            <span className="font-display text-[9px] font-bold text-muted-foreground">NVL</span>
             <span className="font-display text-lg font-extrabold text-[var(--candy-cyan)]">{level}</span>
           </div>
         </div>
@@ -29,8 +29,8 @@ export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => 
         {/* XP Bar */}
         <div className="flex flex-col gap-1.5 w-16 xs:w-24 sm:w-32 md:w-48 shrink">
           <div className="flex justify-between items-center px-1">
-            <span className="font-display text-[11px] font-bold text-white">XP</span>
-            <span className="font-display text-[10px] sm:text-[11px] font-semibold text-white/80 shrink truncate ml-1">{formatNumber(xp)} / {formatNumber(xpMax)}</span>
+            <span className="font-display text-[11px] font-bold text-foreground">XP</span>
+            <span className="font-display text-[10px] sm:text-[11px] font-semibold text-muted-foreground shrink truncate ml-1">{formatNumber(xp)} / {formatNumber(xpMax)}</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full border border-[oklch(1_1_1/0.1)] bg-[oklch(0_0_0/0.5)]">
             <div

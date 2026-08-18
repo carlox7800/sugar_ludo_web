@@ -493,26 +493,14 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
                   className="w-full h-full overflow-visible cursor-pointer"
                   style={{ transform: `rotate(${-(rotationOffset || 0)}deg)` }}
                 >
-                  {appTheme === 'sugar' ? (
-                    <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-                      <path d="M -15 0 L -24 -10 L -24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
-                      <path d="M 15 0 L 24 -10 L 24 10 Z" fill={tokenInfo.hexCode} opacity="0.9" />
-                      {/* Fast vector shadow */}
-                      <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
-                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="rgba(255,255,255,0.9)" strokeWidth="3" />
-                      <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
-                      <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
-                    </g>
-                  ) : (
-                    <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-                      {/* Fast vector shadow */}
-                      <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
-                      <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" />
-                      <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                      <circle cx={0} cy={0} r={5} fill={tokenInfo.hexCode} />
-                      <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
-                    </g>
-                  )}
+                  <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
+                    {/* Fast vector shadow */}
+                    <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
+                    <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" />
+                    <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                    <circle cx={0} cy={0} r={5} fill={tokenInfo.hexCode} />
+                    <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                  </g>
 
                   {/* Token Number */}
                   <text

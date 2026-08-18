@@ -58,6 +58,14 @@ function PageContent() {
       );
       const isElectron = window.navigator.userAgent.includes('Electron') || window.location.protocol === 'file:' || window.location.protocol === 'app:'
       setIsNative(!!isCapacitor || !!isElectron)
+
+      // Restore Visual Theme
+      const savedTheme = localStorage.getItem('sugar_app_theme')
+      if (savedTheme === 'sugar') {
+        document.documentElement.classList.add('theme-sugar')
+      } else {
+        document.documentElement.classList.remove('theme-sugar')
+      }
     }
   }, [])
   

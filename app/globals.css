@@ -186,3 +186,158 @@
     animation: slide-in-right 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
 }
+
+/* ==========================================================================
+   SUGAR LUDO THEME (PASTEL CANDY AAA / SUGAR RUSH REFERENCE PALETTE)
+   ========================================================================== */
+.theme-sugar {
+  color-scheme: light;
+  --background: #fff2f6;
+  --foreground: #381347;
+  --card: #ffffff;
+  --card-foreground: #381347;
+  --muted: #f7eafc;
+  --muted-foreground: #5b416d;
+  --border: #ddbfef;
+
+  --primary: #ff5e97;
+  --primary-foreground: #ffffff;
+
+  /* Pastel Candy Palette */
+  --candy-magenta: #ff5e97; /* Cotton Candy Pink */
+  --candy-cyan: #0284c7;    /* Sky Blue Contrast */
+  --candy-violet: #ba7bff;  /* Sweet Lavender */
+  --candy-orange: #fb923c;  /* Peach Candy Glaze */
+  --candy-gold: #d97706;    /* Deep Gold Contrast */
+}
+
+/* Cotton Candy Day Atmosphere */
+.theme-sugar .cyber-bg {
+  background-color: #fcebf2;
+  background-image:
+    radial-gradient(65% 55% at 8% 8%, rgba(255, 175, 195, 0.55), transparent 60%),
+    radial-gradient(60% 55% at 92% 10%, rgba(215, 190, 250, 0.55), transparent 60%),
+    radial-gradient(55% 55% at 85% 90%, rgba(185, 230, 255, 0.50), transparent 60%),
+    radial-gradient(50% 50% at 12% 92%, rgba(255, 215, 180, 0.50), transparent 60%),
+    linear-gradient(135deg, #fef2f6 0%, #f7e6f2 50%, #eff6ff 100%);
+}
+
+/* General Glass Surface */
+.theme-sugar .glass {
+  background: #ffffff;
+  border: 1.5px solid #ffd1dc;
+  box-shadow:
+    0 10px 30px -5px rgba(255, 94, 151, 0.10),
+    0 4px 14px rgba(0, 0, 0, 0.03);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.theme-sugar .glass-hover:hover {
+  border-color: #ffadc2;
+  box-shadow:
+    0 14px 36px -5px rgba(255, 94, 151, 0.18),
+    0 6px 18px rgba(0, 0, 0, 0.05);
+}
+
+/* Sidebar: Soft Lavender / Lilac */
+.theme-sugar aside {
+  background-color: #e8d5f5 !important;
+  border: 2px solid #ddbfef !important;
+  box-shadow: 0 12px 35px rgba(186, 123, 255, 0.15) !important;
+}
+.theme-sugar aside a,
+.theme-sugar aside button {
+  color: #4a2e65 !important;
+}
+.theme-sugar aside a:hover,
+.theme-sugar aside button:hover {
+  background-color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* TopBar: Soft Lavender / Lilac */
+.theme-sugar header.glass {
+  background-color: #e8d5f5 !important;
+  border: 2px solid #ddbfef !important;
+  box-shadow: 0 8px 25px rgba(186, 123, 255, 0.12) !important;
+}
+.theme-sugar header .bg-background {
+  background-color: #fff0f6 !important;
+}
+.theme-sugar header div[class*="bg-[oklch(0_0_0/"] {
+  background-color: #f7eafc !important;
+  border-color: #ddbfef !important;
+}
+
+/* Profile Card: Soft Mint Green */
+.theme-sugar section[aria-label="Ver Perfil de Jugador"] {
+  background-color: #d2f4e2 !important;
+  border: 2px solid #bdecd4 !important;
+  box-shadow: 0 10px 30px rgba(86, 227, 159, 0.15) !important;
+}
+.theme-sugar section[aria-label="Ver Perfil de Jugador"] p.text-xs {
+  color: #0d9488 !important;
+}
+.theme-sugar section[aria-label="Ver Perfil de Jugador"] div[class*="bg-[linear-gradient(120deg"] {
+  background: #c3eed7 !important;
+  border-color: #a8e3c3 !important;
+}
+.theme-sugar section[aria-label="Ver Perfil de Jugador"] .grid > div {
+  background-color: #c3eed7 !important;
+  border-color: #a8e3c3 !important;
+}
+
+/* Game Modes Cards: Soft Sky Blue */
+.theme-sugar article.glass-hover,
+.theme-sugar div.grid > div.glass,
+.theme-sugar div.grid > button.glass {
+  background-color: #d0e8fd !important;
+  border: 2px solid #bce0fc !important;
+  box-shadow: 0 10px 30px rgba(56, 189, 248, 0.12) !important;
+}
+
+/* Hero Play Button: 3D Pistachio Mint */
+.theme-sugar article.glass-hover button[aria-label="Jugar Entrenamiento con IA"] {
+  background: linear-gradient(145deg, #86efac, #4ade80) !important;
+  border: 2px solid #bbf7d0 !important;
+  box-shadow: inset 0 3px 0 rgba(255,255,255,0.7), 0 8px 0 #22c55e, 0 16px 25px rgba(34,197,94,0.35) !important;
+}
+.theme-sugar article.glass-hover button[aria-label="Jugar Entrenamiento con IA"] svg {
+  fill: #14532d !important;
+  color: #14532d !important;
+}
+
+/* Text glow adapted for light mode */
+.theme-sugar .neon-magenta {
+  text-shadow: 0 2px 8px rgba(255, 94, 151, 0.30);
+  color: #ff3377;
+}
+.theme-sugar .neon-cyan {
+  text-shadow: 0 2px 8px rgba(56, 189, 248, 0.30);
+  color: #0284c7;
+}
+
+/* Gummy 3D Candy Button */
+.theme-sugar .btn-3d {
+  box-shadow: 0 4px 0 rgba(180, 50, 90, 0.22);
+}
+
+/* In-game Modals & Dialogs */
+.theme-sugar .cyber-game-panel > div {
+  background-color: #ffffff !important;
+  border: 2px solid #ffc2da !important;
+  box-shadow: 0 20px 50px rgba(255, 94, 151, 0.25) !important;
+}
+.theme-sugar .cyber-game-panel h2 {
+  color: #381347 !important;
+  text-shadow: none !important;
+}
+.theme-sugar .cyber-game-panel p {
+  color: #5b416d !important;
+}
+.theme-sugar .cyber-game-panel button:first-of-type {
+  background-color: #ede1f4 !important;
+  border: 1.5px solid #ddbfef !important;
+  color: #381347 !important;
+}
+

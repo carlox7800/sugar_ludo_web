@@ -524,22 +524,10 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
             >
               <div className={`w-full h-full flex items-center justify-center ${isSelectable ? 'breathing-token' : ''}`}>
                 <svg viewBox="-25 -25 50 50" className="w-full h-full overflow-visible" style={{ transform: `rotate(${-rotationOffset}deg)` }}>
-                  {appTheme === 'sugar' ? (
-                    <>
-                      <path d="M -15 0 L -24 -10 L -24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
-                      <path d="M 15 0 L 24 -10 L 24 10 Z" fill={COLOR_HEX[token.color]} opacity="0.9" />
-                      <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="rgba(255,255,255,0.9)" strokeWidth="3" filter="drop-shadow(0px 3px 4px var(--shadow-color))" />
-                      <circle cx={0} cy={0} r={8} fill="rgba(255,255,255,0.45)" />
-                      <circle cx={-4} cy={-4} r={3} fill="rgba(255,255,255,0.8)" />
-                    </>
-                  ) : (
-                    <>
-                      <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
-                      <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                      <circle cx={0} cy={0} r={5} fill={COLOR_HEX[token.color]} />
-                      <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
-                    </>
-                  )}
+                  <circle cx={0} cy={0} r={16} fill={COLOR_HEX[token.color]} stroke="var(--color-border)" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.4))" />
+                  <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                  <circle cx={0} cy={0} r={5} fill={COLOR_HEX[token.color]} />
+                  <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
 
                   {/* Number centered to differentiate same-color tokens */}
                   <text

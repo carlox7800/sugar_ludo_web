@@ -643,9 +643,9 @@ export function OnlineTraining({
       {/* FLOATING LOBBY MODAL */}
       {(isSearching || lobbyData) && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/40 backdrop-blur-[3px] animate-in fade-in zoom-in-95">
-          <div className="glass w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-cyan)]/40 shadow-2xl flex flex-col items-center gap-6 bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl">
+          <div className="glass w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border border-[var(--candy-cyan)]/40 shadow-2xl flex flex-col items-center gap-6">
             <header className="text-center w-full">
-              <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase text-[var(--candy-cyan)] tracking-wider drop-shadow-md">
+              <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase text-[var(--candy-cyan)] tracking-wider drop-shadow-sm">
                 {isPrivateMatchRef.current ? `Batalla de Amigos` : `Partida Rápida`}
               </h2>
               <p className="mt-1 font-display text-xs font-bold uppercase tracking-[0.2em] text-[var(--candy-magenta)]">
@@ -655,7 +655,7 @@ export function OnlineTraining({
 
             {/* Room Code Card (Only for Private Rooms) */}
             {isPrivateMatchRef.current && lobbyData?.roomId && lobbyData.roomId !== 'Buscando...' && lobbyData.roomId !== 'Creando...' && (
-              <div className="w-full bg-[oklch(0_0_0/0.4)] rounded-2xl border border-[var(--candy-cyan)]/30 p-4 flex flex-col items-center gap-2 relative overflow-hidden">
+              <div className="w-full bg-card/80 rounded-2xl border border-[var(--candy-cyan)]/40 p-4 flex flex-col items-center gap-2 relative overflow-hidden shadow-inner">
                 <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[var(--candy-cyan)] to-transparent opacity-50" />
                 <span className="text-[10px] sm:text-xs font-bold uppercase text-muted-foreground tracking-widest">
                   Código de Invitación
@@ -670,10 +670,10 @@ export function OnlineTraining({
                       setCopiedCode(true)
                       setTimeout(() => setCopiedCode(false), 2000)
                     }}
-                    className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[oklch(1_0_0/0.1)] hover:bg-[var(--candy-cyan)] hover:text-black transition-all text-white shadow-md active:scale-95"
+                    className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[oklch(1_0_0/0.1)] hover:bg-[var(--candy-cyan)] hover:text-black transition-all text-foreground shadow-md active:scale-95"
                     title="Copiar código"
                   >
-                    {copiedCode ? <Check className="size-5" /> : <Copy className="size-5" />}
+                    {copiedCode ? <Check className="size-5 text-[var(--candy-cyan)]" /> : <Copy className="size-5" />}
                   </button>
                 </div>
               </div>
@@ -692,19 +692,19 @@ export function OnlineTraining({
                   return (
                     <div key={i} className={cn(
                       "flex items-center w-full rounded-xl px-4 py-3 border transition-colors",
-                      player ? "border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/10" : "border-dashed border-white/10 bg-white/5"
+                      player ? "border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/15" : "border-dashed border-border bg-muted/30"
                     )}>
                       <div className="flex items-center gap-3 truncate w-full">
                         {player ? (
                            <>
-                             <div className="size-2 shrink-0 rounded-full bg-[var(--candy-cyan)] shadow-[0_0_8px_var(--candy-cyan)]" />
-                             <span className="font-display text-sm font-bold text-white truncate">
-                               {name} <span className="text-muted-foreground ml-1">• NVL. 2</span>
+                             <div className="size-2.5 shrink-0 rounded-full bg-[var(--candy-cyan)] shadow-[0_0_8px_var(--candy-cyan)]" />
+                             <span className="font-display text-sm font-extrabold text-foreground truncate">
+                               {name} <span className="text-muted-foreground font-semibold ml-1">• NVL. 2</span>
                              </span>
                            </>
                         ) : (
                            <>
-                             <Loader2 className="size-4 text-white/30 animate-spin shrink-0" />
+                             <Loader2 className="size-4 text-muted-foreground animate-spin shrink-0" />
                              <span className="font-display text-sm font-bold text-muted-foreground truncate">
                                Esperando jugador...
                              </span>
@@ -718,7 +718,7 @@ export function OnlineTraining({
 
             {/* Timer */}
             <div className="mt-4 flex flex-col items-center gap-1">
-              <span className="font-mono text-4xl font-extrabold text-white tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
+              <span className="font-mono text-4xl font-extrabold text-foreground tracking-widest drop-shadow-sm">
                 00:{lobbyTimer.toString().padStart(2, '0')}
               </span>
               <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">
@@ -729,7 +729,7 @@ export function OnlineTraining({
             {/* Cancel Button */}
             <button
               onClick={handleCancelQuickMatch}
-              className="mt-4 w-full max-w-[240px] btn-3d rounded-xl border border-red-500/50 bg-red-500/10 py-3 font-display text-sm font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors shadow-lg active:scale-95"
+              className="mt-4 w-full max-w-[240px] btn-3d rounded-xl border border-red-500/50 bg-red-500/10 py-3 font-display text-sm font-bold uppercase tracking-wider text-red-500 hover:bg-red-500/20 transition-colors shadow-lg active:scale-95"
             >
               Cancelar y Salir
             </button>

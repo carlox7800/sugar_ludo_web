@@ -258,7 +258,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
           </div>
         )}
         
-        <div className={`w-12 h-12 md:w-20 md:h-20 rounded-full flex items-center justify-center bg-[oklch(0.12_0.02_285/0.95)] sm:bg-[oklch(0.12_0.02_285/0.8)] sm:backdrop-blur-md border border-[var(--panel-border,oklch(0.7_0.27_350/0.3))] shadow-lg transition-all duration-300 pointer-events-auto ${isActiveTurn ? `ring-4 ring-offset-2 ring-offset-[oklch(0.08_0.02_285)] ${ringColors[player.color] || ringColors['blue']} animate-pulse scale-105 md:scale-110` : 'opacity-70 grayscale-[0.3]'}`}>
+        <div className={`w-12 h-12 md:w-20 md:h-20 rounded-full flex items-center justify-center bg-card sm:backdrop-blur-md border-2 border-border shadow-lg transition-all duration-300 pointer-events-auto ${isActiveTurn ? `ring-4 ring-offset-2 ring-offset-background ${ringColors[player.color] || ringColors['blue']} animate-pulse scale-105 md:scale-110` : 'opacity-80 grayscale-[0.2]'}`}>
            {isHuman ? (
              <div 
                className="w-full h-full rounded-full flex items-center justify-center text-2xl md:text-4xl overflow-hidden"
@@ -273,17 +273,17 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
                )}
              </div>
            ) : (
-             <svg className="w-6 h-6 md:w-10 md:h-10 text-white opacity-80" viewBox="0 0 24 24" fill="currentColor">
+             <svg className="w-6 h-6 md:w-10 md:h-10 text-foreground/80" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
              </svg>
            )}
            {isActiveTurn && timer > 0 && (
-              <div className="absolute -bottom-1 -right-1 md:-bottom-2 md:-right-2 bg-black border border-white/20 text-white text-[9px] md:text-xs font-bold rounded-full w-5 h-5 md:w-7 md:h-7 flex items-center justify-center shadow-lg">
+              <div className="absolute -bottom-1 -right-1 md:-bottom-2 md:-right-2 bg-background border border-border text-foreground text-[9px] md:text-xs font-black rounded-full w-5 h-5 md:w-7 md:h-7 flex items-center justify-center shadow-lg">
                 {timer}
               </div>
            )}
         </div>
-        <span className={`text-[9px] md:text-xs mt-1 md:mt-2 font-bold font-mono tracking-wider drop-shadow-md ${isActiveTurn ? 'text-white' : 'text-white/60'}`}>
+        <span className={`text-[10px] md:text-xs mt-1 md:mt-2 font-black font-mono tracking-wider drop-shadow-sm ${isActiveTurn ? 'text-foreground font-black' : 'text-muted-foreground'}`}>
           {displayName}
         </span>
       </div>
