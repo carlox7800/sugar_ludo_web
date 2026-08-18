@@ -235,8 +235,8 @@ const HexBoardStaticSVG = React.memo(({ rotationOffset, boardSkinId }: { rotatio
               const p = getPolarPos(366.5, angle);
               return `${p.x},${p.y}`;
             }).join(' ')}
-            fill={boardTheme.svgBg}
-            stroke={boardTheme.gridStroke}
+            fill={boardSkinId && boardSkinId !== 'board_default' ? boardTheme.svgBg : "#f8fafc"}
+            stroke={boardSkinId && boardSkinId !== 'board_default' ? boardTheme.gridStroke : "#cbd5e1"}
             strokeWidth="8"
             strokeLinejoin="round"
           />

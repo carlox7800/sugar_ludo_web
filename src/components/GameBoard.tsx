@@ -415,48 +415,48 @@ export const GameBoard: React.FC<GameBoardProps> = memo(({
         {/* --- BASE QUADRANTS (Esquinas de Base) --- */}
         {/* 1. Green Base (Top-Left) */}
         <g filter="url(#shadow)">
-          <rect x={0} y={0} width={300} height={300} fill={boardTheme.colorHexMap.green || "#059669"} stroke={boardTheme.gridStroke} strokeWidth="2" />
-          <rect x={40} y={40} width={220} height={220} rx={15} ry={15} fill="rgba(0,0,0,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeDasharray="3" />
+          <rect x={0} y={0} width={300} height={300} fill={boardTheme.bases.green.fill} stroke={boardTheme.bases.green.stroke} strokeWidth="2.5" />
+          <rect x={40} y={40} width={220} height={220} rx={15} ry={15} fill={boardTheme.bases.green.innerFill} stroke={boardTheme.bases.green.innerStroke} strokeWidth="1.5" strokeDasharray="3" />
           {Array.from({ length: 4 }).map((_, i) => {
             const coord = getBaseSlotCoord('green', i);
             return (
-              <circle key={`slot-green-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.25)" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
+              <circle key={`slot-green-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.2)" stroke="#ffffff" strokeWidth="1.5" opacity="0.8" />
             );
           })}
         </g>
 
         {/* 2. Blue Base (Top-Right) */}
         <g filter="url(#shadow)">
-          <rect x={450} y={0} width={300} height={300} fill={boardTheme.colorHexMap.blue || "#0284c7"} stroke={boardTheme.gridStroke} strokeWidth="2" />
-          <rect x={490} y={40} width={220} height={220} rx={15} ry={15} fill="rgba(0,0,0,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeDasharray="3" />
+          <rect x={450} y={0} width={300} height={300} fill={boardTheme.bases.blue.fill} stroke={boardTheme.bases.blue.stroke} strokeWidth="2.5" />
+          <rect x={490} y={40} width={220} height={220} rx={15} ry={15} fill={boardTheme.bases.blue.innerFill} stroke={boardTheme.bases.blue.innerStroke} strokeWidth="1.5" strokeDasharray="3" />
           {Array.from({ length: 4 }).map((_, i) => {
             const coord = getBaseSlotCoord('blue', i);
             return (
-              <circle key={`slot-blue-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.25)" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
+              <circle key={`slot-blue-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.2)" stroke="#ffffff" strokeWidth="1.5" opacity="0.8" />
             );
           })}
         </g>
 
         {/* 3. Red Base (Bottom-Left) */}
         <g filter="url(#shadow)">
-          <rect x={0} y={450} width={300} height={300} fill={boardTheme.colorHexMap.red || "#ff0055"} stroke={boardTheme.gridStroke} strokeWidth="2" />
-          <rect x={40} y={490} width={220} height={220} rx={15} ry={15} fill="rgba(0,0,0,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeDasharray="3" />
+          <rect x={0} y={450} width={300} height={300} fill={boardTheme.bases.red.fill} stroke={boardTheme.bases.red.stroke} strokeWidth="2.5" />
+          <rect x={40} y={490} width={220} height={220} rx={15} ry={15} fill={boardTheme.bases.red.innerFill} stroke={boardTheme.bases.red.innerStroke} strokeWidth="1.5" strokeDasharray="3" />
           {Array.from({ length: 4 }).map((_, i) => {
             const coord = getBaseSlotCoord('red', i);
             return (
-              <circle key={`slot-red-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.25)" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
+              <circle key={`slot-red-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.2)" stroke="#ffffff" strokeWidth="1.5" opacity="0.8" />
             );
           })}
         </g>
 
         {/* 4. Yellow Base (Bottom-Right) */}
         <g filter="url(#shadow)">
-          <rect x={450} y={450} width={300} height={300} fill={boardTheme.colorHexMap.yellow || "#ca8a04"} stroke={boardTheme.gridStroke} strokeWidth="2" />
-          <rect x={490} y={490} width={220} height={220} rx={15} ry={15} fill="rgba(0,0,0,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeDasharray="3" />
+          <rect x={450} y={450} width={300} height={300} fill={boardTheme.bases.yellow.fill} stroke={boardTheme.bases.yellow.stroke} strokeWidth="2.5" />
+          <rect x={490} y={490} width={220} height={220} rx={15} ry={15} fill={boardTheme.bases.yellow.innerFill} stroke={boardTheme.bases.yellow.innerStroke} strokeWidth="1.5" strokeDasharray="3" />
           {Array.from({ length: 4 }).map((_, i) => {
             const coord = getBaseSlotCoord('yellow', i);
             return (
-              <circle key={`slot-yellow-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.25)" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
+              <circle key={`slot-yellow-${i}`} cx={coord.x} cy={coord.y} r={22} fill="rgba(255, 255, 255, 0.2)" stroke="#ffffff" strokeWidth="1.5" opacity="0.8" />
             );
           })}
         </g>

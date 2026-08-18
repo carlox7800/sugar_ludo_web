@@ -21,6 +21,12 @@ export interface BoardThemeConfig {
   homeRunStroke: string
   centerBg: string
   centerBorder: string
+  bases: {
+    green: { fill: string; stroke: string; innerFill: string; innerStroke: string }
+    blue: { fill: string; stroke: string; innerFill: string; innerStroke: string }
+    yellow: { fill: string; stroke: string; innerFill: string; innerStroke: string }
+    red: { fill: string; stroke: string; innerFill: string; innerStroke: string }
+  }
   colorHexMap: {
     red: string
     green: string
@@ -50,12 +56,18 @@ export const BOARD_THEMES: Record<string, BoardThemeConfig> = {
     starStartStroke: '#dc2626',
     homeRunStroke: '#ffffff',
     centerBg: '#ffffff',
-    centerBorder: '#94a3b8',
+    centerBorder: '#cbd5e1',
+    bases: {
+      green: { fill: '#059669', stroke: '#047857', innerFill: '#047857', innerStroke: '#065f46' },
+      blue: { fill: '#0284c7', stroke: '#0369a1', innerFill: '#0369a1', innerStroke: '#075985' },
+      yellow: { fill: '#ca8a04', stroke: '#a16207', innerFill: '#a16207', innerStroke: '#854d0e' },
+      red: { fill: '#ff0055', stroke: '#e11d48', innerFill: '#e11d48', innerStroke: '#be123c' },
+    },
     colorHexMap: {
       red: '#ff0055',
-      green: '#00cc66',
-      yellow: '#ffcc00',
-      blue: '#00ddff',
+      green: '#059669',
+      yellow: '#ca8a04',
+      blue: '#0284c7',
       purple: '#a855f7',
       orange: '#f97316',
       cyan: '#06b6d4',
@@ -80,6 +92,12 @@ export const BOARD_THEMES: Record<string, BoardThemeConfig> = {
     homeRunStroke: '#ffffff',
     centerBg: '#ffe4e6',
     centerBorder: '#ec4899',
+    bases: {
+      green: { fill: '#10b981', stroke: '#059669', innerFill: '#059669', innerStroke: '#047857' },
+      blue: { fill: '#38bdf8', stroke: '#0284c7', innerFill: '#0284c7', innerStroke: '#0369a1' },
+      yellow: { fill: '#facc15', stroke: '#ca8a04', innerFill: '#ca8a04', innerStroke: '#a16207' },
+      red: { fill: '#f43f5e', stroke: '#e11d48', innerFill: '#e11d48', innerStroke: '#be123c' },
+    },
     colorHexMap: {
       red: '#f43f5e',
       green: '#10b981',
@@ -109,6 +127,12 @@ export const BOARD_THEMES: Record<string, BoardThemeConfig> = {
     homeRunStroke: '#00f2ff',
     centerBg: '#082f49',
     centerBorder: '#00f2ff',
+    bases: {
+      green: { fill: '#059669', stroke: '#00ff88', innerFill: '#064e3b', innerStroke: '#00ff88' },
+      blue: { fill: '#0284c7', stroke: '#00f2ff', innerFill: '#082f49', innerStroke: '#00f2ff' },
+      yellow: { fill: '#ca8a04', stroke: '#ffcc00', innerFill: '#451a03', innerStroke: '#ffcc00' },
+      red: { fill: '#e11d48', stroke: '#ff0055', innerFill: '#4c0519', innerStroke: '#ff0055' },
+    },
     colorHexMap: {
       red: '#ff0055',
       green: '#00ff88',
@@ -138,6 +162,12 @@ export const BOARD_THEMES: Record<string, BoardThemeConfig> = {
     homeRunStroke: '#ffd700',
     centerBg: '#2a163d',
     centerBorder: '#ffd700',
+    bases: {
+      green: { fill: '#059669', stroke: '#ffd700', innerFill: '#064e3b', innerStroke: '#ffd700' },
+      blue: { fill: '#0284c7', stroke: '#ffd700', innerFill: '#0c4a6e', innerStroke: '#ffd700' },
+      yellow: { fill: '#ca8a04', stroke: '#ffd700', innerFill: '#451a03', innerStroke: '#ffd700' },
+      red: { fill: '#e11d48', stroke: '#ffd700', innerFill: '#4c0519', innerStroke: '#ffd700' },
+    },
     colorHexMap: {
       red: '#e11d48',
       green: '#059669',
@@ -157,3 +187,4 @@ export function getBoardTheme(themeId?: string): BoardThemeConfig {
   }
   return BOARD_THEMES.board_default
 }
+
