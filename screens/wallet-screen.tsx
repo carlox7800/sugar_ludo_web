@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { fetchWalletTransactions, recordWalletTransaction, WalletTransaction } from '@/lib/wallet-service'
 
@@ -103,18 +103,24 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <section className="animate-slide-in mx-auto flex w-full max-w-5xl flex-col gap-6 p-4">
-      {/* Header Full Width */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      {/* Top Header Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
           <button
             onClick={onBack}
             className="btn-3d flex size-10 items-center justify-center rounded-xl border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground hover:text-foreground"
+            aria-label="Volver al Lobby"
           >
             <ArrowLeft className="size-5" />
           </button>
-          <h2 className="font-display text-2xl font-extrabold uppercase tracking-wide text-foreground">
-            Billetera
-          </h2>
+          <div>
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold uppercase tracking-wide text-foreground flex items-center gap-2">
+              Billetera Oficial <Wallet className="size-6 text-emerald-400" />
+            </h1>
+            <p className="text-xs text-muted-foreground font-medium hidden sm:block">
+              Gestiona tus depósitos, retiros USDT y consulta tu balance de Sugar Coins.
+            </p>
+          </div>
         </div>
       </div>
 

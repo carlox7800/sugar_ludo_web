@@ -54,7 +54,7 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-col gap-2 overflow-y-auto no-scrollbar" aria-label="Menú principal">
+      <nav className="flex flex-col gap-2" aria-label="Menú principal">
         {NAV_ITEMS.map((item) => (
           <NavButton 
             key={item.label} 
@@ -64,16 +64,6 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
           />
         ))}
       </nav>
-
-      <div className="mt-auto rounded-2xl border border-border bg-[oklch(1_0_0/0.04)] p-4">
-        <p className="font-display text-sm font-bold text-foreground">Pase Dulce</p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          Desbloquea recompensas exclusivas cada semana.
-        </p>
-        <button className="btn-3d mt-3 w-full rounded-xl bg-[var(--candy-gold)] py-2 font-display text-sm font-bold text-[oklch(0.25_0.08_60)] shadow-[0_4px_0_oklch(0.6_0.14_80)]">
-          Reclamar
-        </button>
-      </div>
     </aside>
   )
 }

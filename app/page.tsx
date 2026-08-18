@@ -204,7 +204,7 @@ function PageContent() {
       case 'correo':
         return <MailScreen onBack={() => setScreen('lobby')} />
       case 'coleccion':
-        return <CollectionScreen onBack={() => setScreen('lobby')} />
+        return <CollectionScreen onBack={() => setScreen('lobby')} onNavigate={(s) => setScreen(s as Screen)} />
       default:
         return null
     }
