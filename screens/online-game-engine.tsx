@@ -266,7 +266,7 @@ export function OnlineGameEngine({
   const lastMovedTokenGlobalIdRef = useRef<number | null>(null)
   const barrierLifetimesRef = useRef<Record<number, number>>({})
   const finishedPlayerIndicesRef = useRef<number[]>([])
-  const moveQueueRef = useRef<{ playerId: string; tokenId: number; newPathIndex: number }[]>([])
+  const moveQueueRef = useRef<{ playerId: string; tokenId: number; newPathIndex: number; isPenalty?: boolean; captureCell?: number }[]>([])
   const pendingMoveRef = useRef<{ data: any; timeout: NodeJS.Timeout | null }>({ data: null, timeout: null })
   // Prevenir cierre accidental de pestaña (F5 / Cierre)
   useEffect(() => {
@@ -950,13 +950,13 @@ export function OnlineGameEngine({
     }
 
     // 3. Token Moved (with Step-by-Step animation & Rules checking)
-    const handleTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number; isPenalty?: boolean }) => {
+    const handleTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number; isPenalty?: boolean; captureCell?: number }) => {
       globalLogger.log('SOCKET', 'Recibido event_token_moved', data)
       moveQueueRef.current.push(data)
       processNextQueuedMove()
     }
 
-    const processTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number; isPenalty?: boolean }) => {
+    const processTokenMoved = (data: { playerId: string; tokenId: number; newPathIndex: number; isPenalty?: boolean; captureCell?: number }) => {
       if (isAnimatingMoveRef.current) {
         // Re-queue if an animation is currently running
         moveQueueRef.current.unshift(data)
@@ -985,24 +985,39 @@ export function OnlineGameEngine({
         const activePlayerIdx = dynamicPlayers.findIndex(p => p.playerId === currentTurnPlayerIdRef.current)
         const isPenalty = data.isPenalty === true || (serverPlayerIdx === activePlayerIdx)
 
-        // Calcular casilla de origen para activar la explosión visual
-        let explosionCell = startStep
-        if (explosionCell < 0) explosionCell = 0
-        
+        // Calcular casilla de colisión para activar la explosión visual
         let cellIndex: number | null = null
-        if (isHexGame) {
-           cellIndex = getCellIndexForToken(currentToken?.color as any, explosionCell)
-           if (typeof cellIndex !== 'number') cellIndex = explosionCell
-        } else {
-           const perimeter = getTotalPerimeter(isHexGame)
-           cellIndex = (getStartOffset(currentToken?.color || 'red', isHexGame) + explosionCell) % perimeter
-           cellIndex += 1 // UI uses 1-based index for explosion
+        if (data.captureCell !== undefined && data.captureCell >= 0) {
+          const capStep = data.captureCell
+          const attackerPlayer = activePlayerIdx >= 0 ? formattedPlayersRef.current[activePlayerIdx] : null
+          const attackerColor = attackerPlayer?.color || 'yellow'
+
+          if (isHexGame) {
+            const idx = getCellIndexForToken(attackerColor as any, capStep)
+            cellIndex = typeof idx === 'number' ? idx : capStep
+          } else {
+            const perimeter = getTotalPerimeter(isHexGame)
+            const pIdx = (getStartOffset(attackerColor, isHexGame) + capStep) % perimeter
+            cellIndex = pIdx + 1 // UI uses 1-based index (1..52) for explosion
+          }
+        } else if (startStep >= 0) {
+          if (isHexGame) {
+            const idx = getCellIndexForToken(currentToken?.color as any, startStep)
+            cellIndex = typeof idx === 'number' ? idx : startStep
+          } else {
+            const perimeter = getTotalPerimeter(isHexGame)
+            const pIdx = (getStartOffset(currentToken?.color || 'yellow', isHexGame) + startStep) % perimeter
+            cellIndex = pIdx + 1
+          }
         }
-        
+
         // Efecto visual de explosión (para AMBOS: capturas y penalizaciones)
-        if (!mutedRef.current) audio.playFireworks()
-        setExplosionData({ cellIndex: cellIndex || 1, color: currentToken?.color || 'red' })
-        setTimeout(() => setExplosionData(null), 3500)
+        if (cellIndex !== null) {
+          if (!mutedRef.current) audio.playFireworks()
+          setExplosionData({ cellIndex: cellIndex, color: currentToken?.color || 'red' })
+          setTimeout(() => setExplosionData(null), 3500)
+        }
+
         if (isPenalty) {
           showToast('🚫 ¡Penalización por 3 dobles consecutivos! Ficha devuelta a la base')
           globalLogger.log('GAME-FLOW', '¡Penalización por 3 dobles consecutivos recibida del servidor!')
@@ -1023,7 +1038,7 @@ export function OnlineGameEngine({
           pendingExtraTurnsRef.current = 0
           emitEndTurnIfNeeded([])
         }
-        setTimeout(processNextQueuedMove, 100)
+        setTimeout(processNextQueuedMove, 50)
         return
       }
 
