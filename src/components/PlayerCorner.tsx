@@ -3,6 +3,8 @@ import { Player, PlayerColor } from '../types';
 import { useAuth } from '@/lib/auth-context';
 import { PRESET_AVATARS } from '@/components/avatar-selector-modal';
 import { getDiceTheme } from '../themes/diceThemes';
+import { AnimatedEmote } from './AnimatedEmote';
+import { EMOTE_ITEMS, fetchUserInventory } from '@/lib/store-service';
 
 interface PlayerCornerProps {
   player: Player;
@@ -39,11 +41,25 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
 }) => {
   const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
+  const [userEmotes, setUserEmotes] = useState(EMOTE_ITEMS);
 
   // Sync external reaction or use local
   const currentMessage = reactionMessage !== undefined ? reactionMessage : localMessage;
   
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (isLocalUser) {
+      fetchUserInventory(user?.uid).then((inv) => {
+        if (inv && inv.ownedItems) {
+          const available = EMOTE_ITEMS.filter(e => inv.ownedItems.includes(e.id) || e.priceSC === 0);
+          if (available.length > 0) {
+            setUserEmotes(available);
+          }
+        }
+      }).catch(() => {});
+    }
+  }, [isLocalUser, user]);
   
   const getActiveAvatar = () => {
     if (isLocalUser && user) {
@@ -153,6 +169,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
 
   const isTopPosition = position?.startsWith('top-');
   const isRightPosition = position?.endsWith('-right');
+  const isEmoteMessage = currentMessage ? (currentMessage.startsWith('emote_') || ['🤣', '😡', '🥺', '😎', '😴'].includes(currentMessage)) : false;
 
   return (
     <div className={`absolute z-40 flex items-center gap-2 md:gap-4 pointer-events-none ${posClass}`}>
@@ -167,15 +184,19 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
           } ${
             isRightPosition ? 'right-0' : 'left-0'
           }`}>
-            <div className="relative bg-white text-gray-900 font-extrabold text-xs md:text-sm px-3.5 py-1.5 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.5)] border border-gray-200 whitespace-nowrap flex items-center gap-1.5">
-              <span>{currentMessage}</span>
+            <div className="relative bg-[#0f172a]/95 text-white font-extrabold text-xs md:text-sm px-3.5 py-2 rounded-2xl shadow-[0_10px_25px_rgba(0,0,0,0.6)] border border-white/20 whitespace-nowrap flex items-center justify-center gap-1.5">
+              {isEmoteMessage ? (
+                <AnimatedEmote emoteId={currentMessage} emoji={currentMessage} size={42} />
+              ) : (
+                <span>{currentMessage}</span>
+              )}
               {/* Speech bubble tail */}
               {isTopPosition ? (
-                <div className={`absolute -top-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[7px] border-b-white ${
+                <div className={`absolute -top-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[7px] border-b-[#0f172a] ${
                   isRightPosition ? 'right-4' : 'left-4'
                 }`} />
               ) : (
-                <div className={`absolute -bottom-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-white ${
+                <div className={`absolute -bottom-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-[#0f172a] ${
                   isRightPosition ? 'right-4' : 'left-4'
                 }`} />
               )}
@@ -203,7 +224,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
              {activeMenu && (
                <>
                  <div className="fixed inset-0 z-40 cursor-default pointer-events-auto" onClick={() => setActiveMenu(null)} />
-                 <div className={`absolute z-50 duration-200 bg-[#0f172a]/95 sm:backdrop-blur-xl border border-white/20 rounded-2xl p-2 shadow-2xl min-w-[170px] pointer-events-auto ${
+                 <div className={`absolute z-50 duration-200 bg-[#0f172a]/95 sm:backdrop-blur-xl border border-white/20 rounded-2xl p-2.5 shadow-2xl min-w-[200px] pointer-events-auto ${
                    isTopPosition 
                      ? 'top-[100%] mt-2 animate-in fade-in zoom-in slide-in-from-top-2' 
                      : 'bottom-[100%] mb-2 animate-in fade-in zoom-in slide-in-from-bottom-2'
@@ -213,21 +234,22 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
                      : (isTopPosition ? 'left-0 origin-top-left' : 'left-0 origin-bottom-left')
                  }`}>
                    {activeMenu === 'emoji' ? (
-                     <div className="flex gap-2 justify-center p-1">
-                       {['🤣', '😡', '🥺', '😎', '😴'].map((emoji) => (
+                     <div className="flex gap-2 justify-center items-center flex-wrap p-1">
+                       {userEmotes.map((em) => (
                          <button
-                           key={emoji}
+                           key={em.id}
                            onClick={() => {
                              if (onSendReaction) {
-                               onSendReaction(emoji);
+                               onSendReaction(em.id);
                              } else {
-                               setLocalMessage(emoji);
+                               setLocalMessage(em.id);
                              }
                              setActiveMenu(null);
                            }}
-                           className="text-xl md:text-2xl hover:scale-125 transition-transform active:scale-95 p-1 hover:bg-white/10 rounded-xl cursor-pointer"
+                           title={em.name}
+                           className="hover:scale-125 transition-transform active:scale-95 p-1.5 hover:bg-white/15 rounded-xl cursor-pointer flex items-center justify-center"
                          >
-                           {emoji}
+                           <AnimatedEmote emoteId={em.id} emoji={em.icon} size={28} />
                          </button>
                        ))}
                      </div>

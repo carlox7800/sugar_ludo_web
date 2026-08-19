@@ -341,3 +341,85 @@
   color: #381347 !important;
 }
 
+/* ==========================================================================
+   AAA ANIMATED EMOTES KEYFRAMES
+   ========================================================================== */
+
+@keyframes emote-lol-head {
+  0%, 100% { transform: rotate(-6deg) scale(1); }
+  25% { transform: rotate(8deg) scale(1.08, 0.94); }
+  50% { transform: rotate(-8deg) scale(0.95, 1.06); }
+  75% { transform: rotate(6deg) scale(1.05, 0.95); }
+}
+
+@keyframes emote-lol-tear-l {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  30% { opacity: 1; }
+  80% { transform: translate(-14px, 10px) scale(1.2); opacity: 0.9; }
+  100% { transform: translate(-20px, 16px) scale(0.6); opacity: 0; }
+}
+
+@keyframes emote-lol-tear-r {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  30% { opacity: 1; }
+  80% { transform: translate(14px, 10px) scale(1.2); opacity: 0.9; }
+  100% { transform: translate(20px, 16px) scale(0.6); opacity: 0; }
+}
+
+@keyframes emote-flame-core {
+  0%, 100% { transform: scale(1) translateY(0); filter: drop-shadow(0 0 12px rgba(255, 119, 34, 0.8)); }
+  33% { transform: scale(1.06, 1.12) translateY(-2px) skewX(2deg); filter: drop-shadow(0 0 18px rgba(255, 34, 119, 0.9)); }
+  66% { transform: scale(0.96, 1.04) translateY(1px) skewX(-2deg); filter: drop-shadow(0 0 14px rgba(255, 204, 34, 0.85)); }
+}
+
+@keyframes emote-spark-rise {
+  0% { transform: translateY(0) scale(0.8); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(-24px) translateX(var(--drift, 4px)) scale(0.2); opacity: 0; }
+}
+
+@keyframes emote-cry-tear {
+  0% { transform: translateY(0) scaleY(0.4); opacity: 0; }
+  20% { opacity: 1; }
+  80% { transform: translateY(18px) scaleY(1.3); opacity: 0.9; }
+  100% { transform: translateY(26px) scaleY(0.6); opacity: 0; }
+}
+
+@keyframes emote-cry-puddle {
+  0%, 100% { transform: scaleX(1) scaleY(1); opacity: 0.7; }
+  50% { transform: scaleX(1.25) scaleY(0.85); opacity: 0.95; }
+}
+
+@keyframes emote-heart-thump {
+  0% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(255, 34, 119, 0.6)); }
+  14% { transform: scale(1.22); filter: drop-shadow(0 0 20px rgba(255, 34, 119, 0.95)); }
+  28% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(255, 34, 119, 0.6)); }
+  42% { transform: scale(1.15); filter: drop-shadow(0 0 16px rgba(255, 34, 119, 0.85)); }
+  70% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(255, 34, 119, 0.6)); }
+  100% { transform: scale(1); }
+}
+
+@keyframes emote-trophy-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes emote-glint {
+  0%, 100% { transform: scale(0.4) rotate(0deg); opacity: 0; }
+  50% { transform: scale(1.2) rotate(45deg); opacity: 1; }
+}
+
+.anim-lol-head { animation: emote-lol-head 1.2s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.anim-lol-tear-l { animation: emote-lol-tear-l 0.8s ease-out infinite; }
+.anim-lol-tear-r { animation: emote-lol-tear-r 0.8s ease-out 0.2s infinite; }
+.anim-flame { animation: emote-flame-core 0.9s ease-in-out infinite alternate; }
+.anim-spark-1 { --drift: -6px; animation: emote-spark-rise 1.1s ease-out infinite; }
+.anim-spark-2 { --drift: 8px; animation: emote-spark-rise 1.3s ease-out 0.4s infinite; }
+.anim-spark-3 { --drift: -2px; animation: emote-spark-rise 0.9s ease-out 0.7s infinite; }
+.anim-cry-tear-l { animation: emote-cry-tear 0.9s linear infinite; }
+.anim-cry-tear-r { animation: emote-cry-tear 0.9s linear 0.45s infinite; }
+.anim-cry-puddle { animation: emote-cry-puddle 0.9s ease-in-out infinite; }
+.anim-heartbeat { animation: emote-heart-thump 1.2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; }
+.anim-trophy-rays { animation: emote-trophy-spin 8s linear infinite; transform-origin: center; }
+.anim-glint-1 { animation: emote-glint 1.4s ease-in-out infinite; transform-origin: center; }
+.anim-glint-2 { animation: emote-glint 1.4s ease-in-out 0.7s infinite; transform-origin: center; }

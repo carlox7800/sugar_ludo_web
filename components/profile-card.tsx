@@ -1,6 +1,6 @@
 'use client'
 
-import { Crown, Sparkles } from 'lucide-react'
+import { Crown, Sparkles, Zap } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { PRESET_AVATARS } from './avatar-selector-modal'
 
@@ -48,6 +48,19 @@ export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
         </p>
         <h2 className="font-display text-2xl font-extrabold text-foreground">{nickname}</h2>
       </div>
+
+      {/* Active XP Booster Badge */}
+      {(() => {
+        const activeBooster = (user as any)?.activeBoosters?.find((b: any) => b && Number(b.expiresAt) > Date.now())
+        if (!activeBooster) return null
+        const remainingHours = Math.max(0, Math.ceil((Number(activeBooster.expiresAt) - Date.now()) / (3600 * 1000)))
+        return (
+          <div className="flex items-center gap-1.5 rounded-full border border-[var(--candy-gold)]/50 bg-[var(--candy-gold)]/15 px-3 py-1 text-[11px] font-black text-[var(--candy-gold)] shadow-[0_0_12px_rgba(255,215,0,0.25)] animate-pulse">
+            <Zap className="size-3.5 fill-current" />
+            <span>XP x{activeBooster.multiplier} Activo (~{remainingHours}h)</span>
+          </div>
+        )
+      })()}
 
       {/* Status badge */}
       <div className="flex items-center gap-2 rounded-full border border-border bg-[linear-gradient(120deg,oklch(0.7_0.27_350/0.25),oklch(0.62_0.22_300/0.25))] px-4 py-2">

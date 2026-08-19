@@ -32,6 +32,7 @@ import {
   purchaseStoreItem,
   equipStoreItem
 } from '@/lib/store-service'
+import { AnimatedEmote } from '@/src/components/AnimatedEmote'
 import confetti from 'canvas-confetti'
 
 export function StoreScreen({ onBack }: { onBack: () => void }) {
@@ -494,8 +495,8 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
                   className="glass flex flex-col justify-between p-5 rounded-3xl border border-border/60 bg-[oklch(1_0_0/0.02)] shadow-lg hover:border-[var(--candy-magenta)]/50 transition-all"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="size-16 rounded-2xl bg-black/40 border border-[var(--candy-magenta)]/40 flex items-center justify-center text-4xl shadow-[0_0_15px_rgba(255,34,119,0.2)] animate-bounce">
-                      {emote.icon}
+                    <div className="size-16 rounded-2xl bg-black/40 border border-[var(--candy-magenta)]/40 flex items-center justify-center p-2 shadow-[0_0_15px_rgba(255,34,119,0.2)]">
+                      <AnimatedEmote emoteId={emote.id} emoji={emote.icon} size={46} />
                     </div>
                     <div>
                       <span className="rounded-full bg-[var(--candy-magenta)]/20 px-2 py-0.5 text-[9px] font-black uppercase text-[var(--candy-magenta)]">
@@ -534,6 +535,30 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
       {/* TAB 4: POTENCIADORES DE XP (BOOSTERS) */}
       {activeTab === 'boosters' && (
         <div className="flex flex-col gap-4 animate-in fade-in">
+          {/* Active Booster Status Banner */}
+          {(() => {
+            const activeBooster = inventory.activeBoosters?.find(b => b.expiresAt > Date.now());
+            if (!activeBooster) return null;
+            const remainingHours = Math.max(0, Math.ceil((activeBooster.expiresAt - Date.now()) / (3600 * 1000)));
+
+            return (
+              <div className="rounded-2xl border border-[var(--candy-gold)]/60 bg-[linear-gradient(135deg,oklch(0.18_0.05_55/0.8),oklch(0.12_0.02_285/0.9))] p-4 shadow-lg flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-xl bg-[var(--candy-gold)]/20 border border-[var(--candy-gold)]/40 flex items-center justify-center text-xl shadow-[0_0_12px_rgba(255,215,0,0.3)]">
+                    ⚡
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-[var(--candy-gold)] tracking-wider">Potenciador Activo</span>
+                    <h3 className="font-display text-sm font-extrabold text-white">Multiplicador {activeBooster.multiplier}X Habilitado</h3>
+                  </div>
+                </div>
+                <span className="font-mono text-xs font-bold text-[var(--candy-gold)] bg-black/40 px-3 py-1.5 rounded-xl border border-[var(--candy-gold)]/30">
+                  ~{remainingHours}h restantes
+                </span>
+              </div>
+            );
+          })()}
+
           <div className="glass rounded-3xl p-4 sm:p-5 border border-[var(--candy-orange)]/30 bg-[linear-gradient(135deg,oklch(0.14_0.04_45/0.4),oklch(0.12_0.02_285/0.8))]">
             <h2 className="font-display text-lg font-black text-foreground flex items-center gap-2">
               <Zap className="size-5 text-[var(--candy-orange)]" /> Aceleradores de Nivel
@@ -631,8 +656,12 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
       {itemToBuy && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 backdrop-blur-md bg-black/15 animate-in fade-in">
           <div className="bg-card max-w-sm w-full rounded-3xl p-6 border-2 border-[var(--candy-cyan)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col gap-4 text-center">
-            <div className="size-16 rounded-full bg-[var(--candy-cyan)]/20 text-4xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(0,242,255,0.3)]">
-              {itemToBuy.icon}
+            <div className="size-16 rounded-full bg-[var(--candy-cyan)]/20 text-4xl flex items-center justify-center mx-auto p-1 shadow-[0_0_20px_rgba(0,242,255,0.3)]">
+              {itemToBuy.category === 'emote' ? (
+                <AnimatedEmote emoteId={itemToBuy.id} emoji={itemToBuy.icon} size={50} />
+              ) : (
+                itemToBuy.icon
+              )}
             </div>
 
             <h3 className="font-display text-xl font-black text-foreground">

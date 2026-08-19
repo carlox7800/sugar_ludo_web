@@ -29,6 +29,7 @@ import {
   fetchUserInventory, 
   equipStoreItem 
 } from '@/lib/store-service'
+import { AnimatedEmote } from '@/src/components/AnimatedEmote'
 import confetti from 'canvas-confetti'
 
 export interface Achievement {
@@ -293,6 +294,8 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
                     >
                       {item.image ? (
                         <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-sm" loading="eager" decoding="async" />
+                      ) : item.category === 'emote' ? (
+                        <AnimatedEmote emoteId={item.id} emoji={item.icon} size={38} />
                       ) : (
                         <span className="text-3xl">{item.icon}</span>
                       )}
@@ -374,6 +377,8 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
                 >
                   {selectedItem.image ? (
                     <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-md animate-in zoom-in-95" loading="eager" decoding="async" />
+                  ) : selectedItem.category === 'emote' ? (
+                    <AnimatedEmote emoteId={selectedItem.id} emoji={selectedItem.icon} size={76} />
                   ) : (
                     <span className="text-6xl">{selectedItem.icon}</span>
                   )}

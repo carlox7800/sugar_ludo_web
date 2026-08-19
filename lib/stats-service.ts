@@ -47,13 +47,18 @@ export async function recordMatchResult(userId: string, matchData: Omit<MatchRec
 
     const isWin = matchData.rank === 1
     const newWins = currentWins + (isWin ? 1 : 0)
-    const newLosses = currentLosses + (isWin ? 0 : 1)
-    const newGames = currentGames + 1
-    const newWinStreak = isWin ? currentWinStreak + 1 : 0
-    const newCoins = currentCoins + matchData.coinsEarned
+    // Check active XP Boosters
+    let xpMultiplier = 1
+    if (Array.isArray(userData.activeBoosters)) {
+      const validBoosters = userData.activeBoosters.filter((b: any) => b && Number(b.expiresAt) > Date.now())
+      if (validBoosters.length > 0) {
+        xpMultiplier = Math.max(...validBoosters.map((b: any) => Number(b.multiplier) || 1), 1)
+      }
+    }
 
-    // XP calculation: +150 for win, +40 for playing
-    const gainedXp = matchData.xpGained || (isWin ? 150 : 40)
+    // XP calculation: +150 for win, +40 for playing (multiplied by active booster)
+    const baseXp = matchData.xpGained || (isWin ? 150 : 40)
+    const gainedXp = Math.round(baseXp * xpMultiplier)
     let newXp = currentXp + gainedXp
     let newLevel = currentLevel
     
