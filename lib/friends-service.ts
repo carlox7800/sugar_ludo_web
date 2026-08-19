@@ -75,6 +75,7 @@ const activePeerConnections = new Map<string, any>()
 const incomingInviteCallbacks = new Set<(challenge: DuelChallengeItem | null) => void>()
 const presenceUpdateCallbacks = new Set<(presence: Map<string, 'online' | 'in_game' | 'busy' | 'offline'>) => void>()
 const duelResultCallbacks = new Map<string, (status: 'pending' | 'accepted' | 'rejected' | 'canceled') => void>()
+const customDataCallbacks = new Set<(data: any) => void>()
 
 // Local BroadcastChannel for instant local coordination
 let localBroadcastChannel: BroadcastChannel | null = null
@@ -94,6 +95,9 @@ function getLocalChannel(): BroadcastChannel | null {
 
 function handleIncomingData(data: any) {
   if (!data || typeof data !== 'object') return
+
+  // Generic custom data broadcast
+  customDataCallbacks.forEach(cb => cb(data))
 
   if (data.type === 'presence') {
     if (data.uid && data.status) {
@@ -703,3 +707,33 @@ export async function cancelSentFriendRequest(
     return { success: false, message: 'Error al cancelar solicitud.' }
   }
 }
+
+// ================= CAPA 3: GENERIC P2P DATA (LOBBIES Y M�S) =================
+export function sendP2PData(targetUid: string, payload: any) {
+  const targetPeerId = getPeerIdForUser(targetUid)
+  
+  // Local channel (if same device testing)
+  const ch = getLocalChannel()
+  ch?.postMessage(payload)
+
+  let conn = activePeerConnections.get(targetPeerId)
+  if (conn && conn.open) {
+    try { conn.send(payload) } catch {}
+  } else if (peerInstance && !peerInstance.destroyed) {
+    try {
+      const newConn = peerInstance.connect(targetPeerId, { reliable: true })
+      newConn.on('open', () => { newConn.send(payload) })
+      // Keep track of this new connection
+      activePeerConnections.set(targetPeerId, newConn)
+      newConn.on('data', handleIncomingData)
+      newConn.on('close', () => activePeerConnections.delete(targetPeerId))
+      newConn.on('error', () => activePeerConnections.delete(targetPeerId))
+    } catch {}
+  }
+}
+
+export function subscribeToP2PData(cb: (data: any) => void): () => void {
+  customDataCallbacks.add(cb)
+  return () => customDataCallbacks.delete(cb)
+}
+

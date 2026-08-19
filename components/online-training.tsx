@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils'
 import { useSocket } from '@/lib/useSocket'
 import { useAuth } from '@/lib/auth-context'
 import { GameGuideModal } from '@/components/game-guide-modal'
+import { BatallaLobby } from '@/components/batalla-lobby'
+import { searchUsersInFirestore } from '@/lib/friends-service'
 
 const PLAYER_OPTIONS = [2, 3, 4, 5, 6]
 
@@ -20,6 +22,9 @@ export function OnlineTraining({
 }) {
   const { connect, status, getSocketInstance } = useSocket()
   const { user } = useAuth()
+
+  // P2P Lobby State
+  const [p2pLobbyConfig, setP2pLobbyConfig] = useState<{ mode: 'host' | 'guest', capacity?: number, hostUid?: string } | null>(null)
 
   // Tabs: 'quick' | 'friends'
   const [mainTab, setMainTab] = useState<'quick' | 'friends'>('quick')
@@ -105,6 +110,9 @@ export function OnlineTraining({
       const baseCode = data.roomCode || data.id || ''
       const code = `${baseCode}-${createPlayersRef.current}`
       
+      // Dispatch custom event so the P2P Lobby can pick it up
+      window.dispatchEvent(new CustomEvent('p2p_lobby_socket_created', { detail: { roomCode: baseCode } }))
+
       setCreatedRoomCode(code)
       setLobbyData({ roomId: code, players: [{ playerId, playerName: user?.photoURL ? `${user?.nickname || 'Jugador'}|||${user?.photoURL}` : (user?.nickname || 'Jugador') }], targetPlayers: createPlayersRef.current })
       showToast(`¡Sala ${code} creada con éxito!`)
@@ -184,13 +192,21 @@ export function OnlineTraining({
     }
   }, [connect, onMatchFound, user])
 
-  // Auto-unión directa a Duelo Privado 1 vs 1 con código oficial de sala
+  // Auto-unión directa a Duelo Privado 1 vs 1 con código oficial de sala o Lobby P2P
   useEffect(() => {
     if (!autoJoinCode) return
+    const code = autoJoinCode.trim()
+
+    if (code.startsWith('LOBBY-')) {
+      const hostUid = code.replace('LOBBY-', '')
+      isPrivateMatchRef.current = true
+      setP2pLobbyConfig({ mode: 'guest', hostUid })
+      return
+    }
+
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
     const playerName = user?.nickname || user?.displayName || 'Jugador'
-    const code = autoJoinCode.trim()
     const baseCode = code.replace(/[^0-9]/g, '') || code.replace('DUEL-', '')
 
     isPrivateMatchRef.current = true
@@ -253,19 +269,7 @@ export function OnlineTraining({
 
   const handleCreateRoom = () => {
     isPrivateMatchRef.current = true
-    const socket = getSocketInstance()
-    const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
-    const playerName = user?.nickname || user?.displayName || 'Jugador'
-
-    targetPlayersRef.current = isDevSandbox ? 2 : createPlayers
-    hasLobbyIntentRef.current = true
-    showToast(isDevSandbox ? 'Creando sala Dev Sandbox...' : 'Creando sala privada en el servidor...')
-    setLobbyData({ roomId: 'Creando...', players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: isDevSandbox ? 2 : createPlayers })
-    socket.emit('create_private_room', {
-      playerId,
-      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
-      targetPlayers: isDevSandbox ? 2 : createPlayers, // Force 2 real players for sandbox
-    })
+    setP2pLobbyConfig({ mode: 'host', capacity: isDevSandbox ? 2 : createPlayers })
   }
 
   const handleCopyCode = () => {
@@ -276,15 +280,28 @@ export function OnlineTraining({
     }
   }
 
-  const handleJoinRoom = (e: React.FormEvent) => {
+  const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!roomCode.trim()) return
+
+    const code = roomCode.trim()
+
+    // 1. Check if it's a 6-character Host ID for a P2P Lobby
+    if (code.length === 6) {
+      showToast('Buscando anfitrión en la red...')
+      const users = await searchUsersInFirestore(code.toUpperCase())
+      const hostUser = users[0]
+      if (hostUser) {
+        isPrivateMatchRef.current = true
+        setP2pLobbyConfig({ mode: 'guest', hostUid: hostUser.id })
+        return
+      }
+    }
 
     isPrivateMatchRef.current = true
     const socket = getSocketInstance()
     const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
     const playerName = user?.nickname || user?.displayName || 'Jugador'
-    const code = roomCode.trim()
     
     // Extract capacity if exists
     const parts = code.split('-')
@@ -297,23 +314,64 @@ export function OnlineTraining({
 
     showToast(`Uniéndose a la sala ${code}...`)
     setLobbyData({ roomId: code, players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], targetPlayers: targetPlayersRef.current })
+    
     socket.emit('join_private_room', {
       playerId,
       playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
-      targetPlayers: isDevSandbox ? 2 : capacity,
+      targetPlayers: targetPlayersRef.current,
       roomCode: baseCode,
       code: baseCode,
     })
   }
 
   const handleBackToMenu = () => {
-    hasLobbyIntentRef.current = false
-    const socket = getSocketInstance()
-    const playerId = user?.uid || socket.id
-    if (socket) {
+    if (isSearching || lobbyData) {
+      const socket = getSocketInstance()
+      const playerId = user?.uid || socket.id
       socket.emit('leave_matchmaking', { playerId })
     }
     onBack()
+  }
+
+  // ==== NUEVO LOBBY P2P: INTERCEPTAR RENDERIZADO ====
+  if (p2pLobbyConfig) {
+    return (
+      <BatallaLobby 
+        mode={p2pLobbyConfig.mode}
+        capacity={p2pLobbyConfig.capacity}
+        hostUid={p2pLobbyConfig.hostUid}
+        onBack={() => setP2pLobbyConfig(null)}
+        onStartGame={(roomCode, finalCount) => {
+          if (roomCode === 'CREATE_NOW') {
+            const socket = getSocketInstance()
+            const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
+            const playerName = user?.nickname || user?.displayName || 'Jugador'
+            targetPlayersRef.current = finalCount
+            hasLobbyIntentRef.current = true
+            showToast('Iniciando partida en servidor...')
+            socket.emit('create_private_room', {
+              playerId,
+              playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
+              targetPlayers: finalCount,
+            })
+          } else {
+            const socket = getSocketInstance()
+            const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
+            const playerName = user?.nickname || user?.displayName || 'Jugador'
+            targetPlayersRef.current = finalCount
+            hasLobbyIntentRef.current = true
+            setIsSearching(true)
+            socket.emit('join_private_room', {
+              playerId,
+              playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
+              targetPlayers: finalCount,
+              roomCode: roomCode,
+              code: roomCode,
+            })
+          }
+        }}
+      />
+    )
   }
 
   return (
