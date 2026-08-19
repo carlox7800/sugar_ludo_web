@@ -1,5 +1,6 @@
 'use client'
 
+import React, { useState, useEffect } from 'react'
 import {
   Store,
   Wallet,
@@ -11,6 +12,9 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/auth-context'
+import { getUnreadMailCount } from '@/lib/mail-service'
+import { subscribeToFriendRequests, subscribeToIncomingDuelInvites } from '@/lib/friends-service'
 
 type NavItem = {
   label: string
@@ -19,13 +23,13 @@ type NavItem = {
   badge?: string
 }
 
-const NAV_ITEMS: NavItem[] = [
+const BASE_NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Tienda', screen: 'tienda', icon: Store },
   { label: 'Billetera', screen: 'billetera', icon: Wallet },
   { label: 'Amigos', screen: 'amigos', icon: Users },
   { label: 'Inicio', screen: 'lobby', icon: Home },
   { label: 'Eventos', screen: 'eventos', icon: CalendarDays },
-  { label: 'Correo', screen: 'correo', icon: Mail, badge: '2' },
+  { label: 'Correo', screen: 'correo', icon: Mail },
   { label: 'Colección', screen: 'coleccion', icon: LayoutGrid },
 ]
 
@@ -36,6 +40,57 @@ interface SidebarProps {
 
 /* ---------- Desktop: fixed left sidebar ---------- */
 export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
+  const { user } = useAuth()
+  const [unreadCount, setUnreadCount] = useState<number>(0)
+  const [friendsBadgeCount, setFriendsBadgeCount] = useState<number>(0)
+
+  useEffect(() => {
+    const updateCount = () => {
+      getUnreadMailCount(user?.uid).then(setUnreadCount).catch(() => {})
+    }
+    updateCount()
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('sugar_inbox_updated', updateCount)
+    }
+
+    // Subscribe to Friend Requests & Challenges (WebSocket)
+    let unsubFriends = () => {}
+    let unsubChallenges = () => {}
+    if (user?.uid) {
+      let pendingReqs = 0
+      let pendingChallenges = 0
+
+      unsubFriends = subscribeToFriendRequests(user.uid, (received) => {
+        pendingReqs = received.length
+        setFriendsBadgeCount(pendingReqs + pendingChallenges)
+      })
+
+      unsubChallenges = subscribeToIncomingDuelInvites(user.uid, (challenge) => {
+        pendingChallenges = challenge ? 1 : 0
+        setFriendsBadgeCount(pendingReqs + pendingChallenges)
+      })
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('sugar_inbox_updated', updateCount)
+      }
+      unsubFriends()
+      unsubChallenges()
+    }
+  }, [user])
+
+  const navItems: NavItem[] = BASE_NAV_ITEMS.map(item => {
+    let badge: string | undefined
+    if (item.screen === 'correo' && unreadCount > 0) {
+      badge = unreadCount.toString()
+    } else if (item.screen === 'amigos' && friendsBadgeCount > 0) {
+      badge = friendsBadgeCount.toString()
+    }
+    return { ...item, badge }
+  })
+
   return (
     <aside className="glass fixed inset-y-4 left-4 z-30 hidden w-72 flex-col gap-6 rounded-3xl p-5 md:flex">
       {/* Logo */}
@@ -55,7 +110,7 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex flex-col gap-2" aria-label="Menú principal">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavButton 
             key={item.label} 
             item={item} 
@@ -74,19 +129,20 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
     <button
       onClick={onClick}
       aria-current={isActive ? 'page' : undefined}
+      aria-label={item.label}
       className={cn(
-        'group relative flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-300',
+        'group flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left transition-all cursor-pointer select-none',
         isActive
-          ? 'bg-[linear-gradient(120deg,oklch(0.7_0.27_350/0.9),oklch(0.62_0.22_300/0.9))] text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.35),0_8px_22px_oklch(0.7_0.27_350/0.45)]'
-          : 'text-muted-foreground hover:bg-[oklch(1_0_0/0.06)] hover:text-foreground',
+          ? 'bg-[linear-gradient(120deg,oklch(0.7_0.27_350),oklch(0.62_0.22_300))] text-primary-foreground shadow-[0_8px_20px_oklch(0.7_0.27_350/0.4)] ring-1 ring-white/30'
+          : 'text-foreground/80 hover:bg-[oklch(1_0_0/0.06)] hover:text-foreground hover:translate-x-1',
       )}
     >
       <span
         className={cn(
           'flex size-9 items-center justify-center rounded-xl transition-all',
           isActive
-            ? 'bg-[oklch(1_0_0/0.2)] text-primary-foreground'
-            : 'bg-[oklch(1_0_0/0.05)] text-[var(--candy-cyan)] group-hover:bg-[oklch(1_0_0/0.1)]',
+            ? 'bg-white/20 text-white'
+            : 'bg-[oklch(1_0_0/0.05)] text-muted-foreground group-hover:bg-[oklch(1_0_0/0.1)] group-hover:text-foreground',
         )}
       >
         <Icon className="size-5" strokeWidth={2.4} />
@@ -94,7 +150,7 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
       <span className="font-display text-[15px] font-bold">{item.label}</span>
 
       {item.badge && (
-        <span className="ml-auto flex size-6 items-center justify-center rounded-full bg-[var(--candy-orange)] font-display text-xs font-extrabold text-[oklch(0.2_0.05_40)] shadow-[0_0_12px_oklch(0.78_0.18_55/0.9)]">
+        <span className="ml-auto flex size-6 items-center justify-center rounded-full bg-[var(--candy-orange)] font-display text-xs font-extrabold text-[oklch(0.2_0.05_40)] shadow-[0_0_12px_oklch(0.78_0.18_55/0.9)] animate-pulse">
           {item.badge}
         </span>
       )}
@@ -104,12 +160,62 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
 
 /* ---------- Mobile: fixed bottom navigation bar ---------- */
 export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
+  const { user } = useAuth()
+  const [unreadCount, setUnreadCount] = useState<number>(0)
+  const [friendsBadgeCount, setFriendsBadgeCount] = useState<number>(0)
+
+  useEffect(() => {
+    const updateCount = () => {
+      getUnreadMailCount(user?.uid).then(setUnreadCount).catch(() => {})
+    }
+    updateCount()
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('sugar_inbox_updated', updateCount)
+    }
+
+    let unsubFriends = () => {}
+    let unsubChallenges = () => {}
+    if (user?.uid) {
+      let pendingReqs = 0
+      let pendingChallenges = 0
+
+      unsubFriends = subscribeToFriendRequests(user.uid, (received) => {
+        pendingReqs = received.length
+        setFriendsBadgeCount(pendingReqs + pendingChallenges)
+      })
+
+      unsubChallenges = subscribeToIncomingDuelInvites(user.uid, (challenge) => {
+        pendingChallenges = challenge ? 1 : 0
+        setFriendsBadgeCount(pendingReqs + pendingChallenges)
+      })
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('sugar_inbox_updated', updateCount)
+      }
+      unsubFriends()
+      unsubChallenges()
+    }
+  }, [user])
+
+  const navItems: NavItem[] = BASE_NAV_ITEMS.map(item => {
+    let badge: string | undefined
+    if (item.screen === 'correo' && unreadCount > 0) {
+      badge = unreadCount.toString()
+    } else if (item.screen === 'amigos' && friendsBadgeCount > 0) {
+      badge = friendsBadgeCount.toString()
+    }
+    return { ...item, badge }
+  })
+
   return (
     <nav
       aria-label="Menú principal"
       className="fixed inset-x-2 bottom-2 z-40 flex items-center justify-between gap-0.5 rounded-2xl border border-border bg-card px-1 py-1.5 shadow-[inset_0_1px_0_oklch(1_0_0/0.12),0_-4px_24px_oklch(0_0_0/0.5)] md:hidden"
     >
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const Icon = item.icon
         const isActive = currentScreen === item.screen
         return (
@@ -127,7 +233,7 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
           >
             <Icon className="size-[18px]" strokeWidth={2.4} />
             {item.badge && (
-              <span className="absolute right-0.5 top-0 flex size-3.5 items-center justify-center rounded-full bg-[var(--candy-orange)] font-display text-[9px] font-extrabold text-[oklch(0.2_0.05_40)]">
+              <span className="absolute right-0.5 top-0 flex size-3.5 items-center justify-center rounded-full bg-[var(--candy-orange)] font-display text-[9px] font-extrabold text-[oklch(0.2_0.05_40)] animate-pulse">
                 {item.badge}
               </span>
             )}

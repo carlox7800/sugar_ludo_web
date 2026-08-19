@@ -1,0 +1,263 @@
+import { db } from './firebase'
+import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import { recordWalletTransaction } from './wallet-service'
+
+export interface MailItem {
+  id: string
+  title: string
+  sender: string
+  date: string
+  category: 'rewards' | 'system'
+  isRead: boolean
+  claimed?: boolean
+  rewardSC?: number
+  content: string
+  badge?: string
+  timestamp: number
+}
+
+export const DEFAULT_INITIAL_MAILS: MailItem[] = [
+  {
+    id: 'mail_welcome_bonus',
+    title: '¡Bono de Bienvenida Oficial!',
+    sender: 'Equipo Sugar Ludo',
+    date: 'Hoy',
+    category: 'rewards',
+    isRead: false,
+    claimed: false,
+    rewardSC: 500,
+    badge: 'Regalo VIP',
+    content: '¡Te damos la bienvenida al Arena oficial de Sugar Ludo! Recibe este paquete inicial de 500 Sugar Coins para participar en tus primeras partidas competitivas y desbloquear aspectos en la Tienda Oficial.',
+    timestamp: Date.now()
+  },
+  {
+    id: 'mail_patch_v852',
+    title: 'Notas de Actualización v8.5.2',
+    sender: 'Dirección de Desarrollo',
+    date: 'Hoy',
+    category: 'system',
+    isRead: false,
+    content: 'Hemos desplegado la versión v8.5.2 con Emotes Animados Vectoriales AAA a 60 FPS, Reacciones de chat en burbujas flotantes, y el motor de Potenciadores XP con multiplicador real en partidas.',
+    timestamp: Date.now() - 3600000
+  },
+  {
+    id: 'mail_calibration_prize',
+    title: 'Premio por Calibración y Rendimiento',
+    sender: 'Soporte Técnico',
+    date: 'Ayer',
+    category: 'rewards',
+    isRead: false,
+    claimed: false,
+    rewardSC: 200,
+    badge: 'Compensación',
+    content: 'Gracias por tu preferencia durante la calibración de nuestros servidores y optimizaciones de carga visual en la Tienda. Te enviamos 200 Sugar Coins de agradecimiento.',
+    timestamp: Date.now() - 86400000
+  },
+  {
+    id: 'mail_fair_play_tips',
+    title: 'Consejos de Seguridad y Juego Limpio',
+    sender: 'Seguridad Sugar Ludo',
+    date: '16 Ago, 2026',
+    category: 'system',
+    isRead: true,
+    content: 'Recuerda que nunca te solicitaremos tus claves privadas ni información confidencial por canales no oficiales. Juega seguro y disfruta del juego limpio en el Arena.',
+    timestamp: Date.now() - 172800000
+  }
+]
+
+export async function fetchUserInbox(userId?: string): Promise<MailItem[]> {
+  if (userId && !userId.startsWith('dev_')) {
+    try {
+      const userRef = doc(db, 'users', userId)
+      const snap = await getDoc(userRef)
+      if (snap.exists()) {
+        const data = snap.data()
+        if (Array.isArray(data.inbox) && data.inbox.length > 0) {
+          return data.inbox
+        }
+        // Initialize default inbox for new user in Firestore
+        await updateDoc(userRef, { inbox: DEFAULT_INITIAL_MAILS })
+        return DEFAULT_INITIAL_MAILS
+      }
+    } catch (error) {
+      console.warn('Error fetching inbox from Firestore:', error)
+    }
+  }
+
+  // LocalStorage Fallback
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem('sugar_user_inbox')
+    if (local) {
+      try {
+        return JSON.parse(local)
+      } catch {}
+    }
+    localStorage.setItem('sugar_user_inbox', JSON.stringify(DEFAULT_INITIAL_MAILS))
+  }
+  return DEFAULT_INITIAL_MAILS
+}
+
+export async function claimMailReward(
+  userId: string | undefined, 
+  mailId: string,
+  addCoinsDirectFn?: (amount: number) => void
+): Promise<{ success: boolean; coinsAdded: number; message: string }> {
+  const inbox = await fetchUserInbox(userId)
+  const mailIndex = inbox.findIndex(m => m.id === mailId)
+  if (mailIndex === -1) {
+    return { success: false, coinsAdded: 0, message: 'Correo no encontrado.' }
+  }
+
+  const mail = inbox[mailIndex]
+  if (mail.claimed) {
+    return { success: false, coinsAdded: 0, message: 'Esta recompensa ya fue reclamada.' }
+  }
+
+  const reward = Number(mail.rewardSC || 0)
+  if (reward <= 0) {
+    return { success: false, coinsAdded: 0, message: 'Este correo no contiene recompensas.' }
+  }
+
+  // Update in-memory
+  inbox[mailIndex].claimed = true
+  inbox[mailIndex].isRead = true
+
+  // Record in Firestore or LocalStorage
+  if (userId && !userId.startsWith('dev_')) {
+    try {
+      const userRef = doc(db, 'users', userId)
+      await updateDoc(userRef, { inbox })
+      await recordWalletTransaction(userId, {
+        type: 'bonus',
+        amount: reward,
+        description: 'Buzon de Recompensas: ' + mail.title
+      })
+    } catch (e) {
+      console.warn('Firestore claim reward error:', e)
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+    if (!userId || userId.startsWith('dev_')) {
+      const cur = parseInt(localStorage.getItem('sugar_player_coins') || '200', 10)
+      localStorage.setItem('sugar_player_coins', (cur + reward).toString())
+    }
+    window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+  }
+
+  if (addCoinsDirectFn) {
+    addCoinsDirectFn(reward)
+  }
+
+  return {
+    success: true,
+    coinsAdded: reward,
+    message: 'Has reclamado ' + reward + ' Sugar Coins con exito!'
+  }
+}
+
+export async function claimAllRewards(
+  userId: string | undefined,
+  addCoinsDirectFn?: (amount: number) => void
+): Promise<{ success: boolean; totalCoins: number; count: number }> {
+  const inbox = await fetchUserInbox(userId)
+  let totalCoins = 0
+  let count = 0
+
+  inbox.forEach(mail => {
+    if (!mail.claimed && (mail.rewardSC || 0) > 0) {
+      mail.claimed = true
+      mail.isRead = true
+      totalCoins += Number(mail.rewardSC)
+      count++
+    }
+  })
+
+  if (count === 0) {
+    return { success: false, totalCoins: 0, count: 0 }
+  }
+
+  // Persist
+  if (userId && !userId.startsWith('dev_')) {
+    try {
+      const userRef = doc(db, 'users', userId)
+      await updateDoc(userRef, { inbox })
+      await recordWalletTransaction(userId, {
+        type: 'bonus',
+        amount: totalCoins,
+        description: 'Reclamo total de buzon (' + count + ' recompensas)'
+      })
+    } catch (e) {
+      console.warn('Firestore claim all error:', e)
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+    if (!userId || userId.startsWith('dev_')) {
+      const cur = parseInt(localStorage.getItem('sugar_player_coins') || '200', 10)
+      localStorage.setItem('sugar_player_coins', (cur + totalCoins).toString())
+    }
+    window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+  }
+
+  if (addCoinsDirectFn) {
+    addCoinsDirectFn(totalCoins)
+  }
+
+  return { success: true, totalCoins, count }
+}
+
+export async function markMailAsRead(userId: string | undefined, mailId: string): Promise<void> {
+  const inbox = await fetchUserInbox(userId)
+  const target = inbox.find(m => m.id === mailId)
+  if (target && !target.isRead) {
+    target.isRead = true
+    if (userId && !userId.startsWith('dev_')) {
+      try {
+        const userRef = doc(db, 'users', userId)
+        await updateDoc(userRef, { inbox })
+      } catch {}
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
+  }
+}
+
+export async function markAllMailsAsRead(userId: string | undefined): Promise<void> {
+  const inbox = await fetchUserInbox(userId)
+  inbox.forEach(m => { m.isRead = true })
+  if (userId && !userId.startsWith('dev_')) {
+    try {
+      const userRef = doc(db, 'users', userId)
+      await updateDoc(userRef, { inbox })
+    } catch {}
+  }
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+    window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+  }
+}
+
+export async function deleteMail(userId: string | undefined, mailId: string): Promise<void> {
+  let inbox = await fetchUserInbox(userId)
+  inbox = inbox.filter(m => m.id !== mailId)
+  if (userId && !userId.startsWith('dev_')) {
+    try {
+      const userRef = doc(db, 'users', userId)
+      await updateDoc(userRef, { inbox })
+    } catch {}
+  }
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+    window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+  }
+}
+
+export async function getUnreadMailCount(userId?: string): Promise<number> {
+  const inbox = await fetchUserInbox(userId)
+  return inbox.filter(m => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
+}

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   ArrowLeft, 
   CalendarDays, 
@@ -22,18 +22,24 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
 import confetti from 'canvas-confetti'
+import { PRESET_AVATARS } from '@/components/avatar-selector-modal'
+import { 
+  Mission, 
+  LeaderboardUser, 
+  fetchUserMissions, 
+  claimMissionReward, 
+  getLeaderboardData, 
+  getMissionResetTimes 
+} from '@/lib/missions-service'
 
-export interface Mission {
-  id: string
-  title: string
-  description: string
-  rewardSC: number
-  rewardXP: number
-  current: number
-  target: number
-  category: 'daily' | 'weekly'
-  claimed: boolean
-  icon: string
+function renderAvatar(avatar?: string, className = "size-full object-cover rounded-full") {
+  if (!avatar) return '🎲'
+  if (avatar.startsWith('http') || avatar.startsWith('data:')) {
+    return <img src={avatar} alt="Avatar" className={className} />
+  }
+  const preset = PRESET_AVATARS.find(a => a.id === avatar)
+  if (preset) return preset.emoji
+  return avatar
 }
 
 export interface Tournament {
@@ -50,79 +56,6 @@ export interface Tournament {
   accentColor: string
   rules: string
 }
-
-export interface LeaderboardEntry {
-  rank: number
-  name: string
-  avatar: string
-  avatarColor: string
-  trophies: number
-  winRate: string
-  league: string
-}
-
-const MOCK_MISSIONS: Mission[] = [
-  {
-    id: 'mis_1',
-    title: 'Victoria Imparable',
-    description: 'Gana 2 partidas en Modo Competitivo o Entrenamiento Online.',
-    rewardSC: 150,
-    rewardXP: 100,
-    current: 2,
-    target: 2,
-    category: 'daily',
-    claimed: false,
-    icon: '🏆'
-  },
-  {
-    id: 'mis_2',
-    title: 'Cazador de Fichas',
-    description: 'Captura 5 fichas rivales en cualquier modo de juego.',
-    rewardSC: 200,
-    rewardXP: 120,
-    current: 3,
-    target: 5,
-    category: 'daily',
-    claimed: false,
-    icon: '⚔️'
-  },
-  {
-    id: 'mis_3',
-    title: 'Tirada Perfecta',
-    description: 'Saca tres números 6 consecutivos con los dados.',
-    rewardSC: 100,
-    rewardXP: 80,
-    current: 1,
-    target: 1,
-    category: 'daily',
-    claimed: true,
-    icon: '🎲'
-  },
-  {
-    id: 'mis_4',
-    title: 'Maestría Hexagonal',
-    description: 'Juega 3 partidas en el tablero de 6 jugadores.',
-    rewardSC: 350,
-    rewardXP: 250,
-    current: 2,
-    target: 3,
-    category: 'weekly',
-    claimed: false,
-    icon: '🔷'
-  },
-  {
-    id: 'mis_5',
-    title: 'Racha Dorada',
-    description: 'Acumula un total de 1.000 Sugar Coins ganadas en partidas.',
-    rewardSC: 500,
-    rewardXP: 400,
-    current: 750,
-    target: 1000,
-    category: 'weekly',
-    claimed: false,
-    icon: '💰'
-  }
-]
 
 const MOCK_TOURNAMENTS: Tournament[] = [
   {
@@ -155,23 +88,16 @@ const MOCK_TOURNAMENTS: Tournament[] = [
   }
 ]
 
-const MOCK_LEADERBOARD: LeaderboardEntry[] = [
-  { rank: 1, name: 'SugarKing_X', avatar: '👑', avatarColor: 'var(--candy-gold)', trophies: 4850, winRate: '78%', league: 'Gran Maestro' },
-  { rank: 2, name: 'CyberQueen', avatar: '🍭', avatarColor: 'var(--candy-magenta)', trophies: 4520, winRate: '74%', league: 'Maestro I' },
-  { rank: 3, name: 'DiceLord_99', avatar: '🎲', avatarColor: 'var(--candy-cyan)', trophies: 4210, winRate: '71%', league: 'Maestro II' },
-  { rank: 4, name: 'NeonViper', avatar: '⚡', avatarColor: 'oklch(0.7 0.27 350)', trophies: 3890, winRate: '68%', league: 'Diamante I' },
-  { rank: 5, name: 'SweetWarrior', avatar: '🍬', avatarColor: 'var(--candy-orange)', trophies: 3650, winRate: '65%', league: 'Diamante II' },
-  { rank: 6, name: 'StarGamer_RD', avatar: '🦄', avatarColor: 'var(--candy-violet)', trophies: 3420, winRate: '63%', league: 'Platino I' },
-  { rank: 7, name: 'LudoTitan', avatar: '🛡️', avatarColor: 'var(--candy-cyan)', trophies: 3180, winRate: '61%', league: 'Platino II' },
-]
-
 export function EventsScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const { coins, setCoins } = usePlayer()
 
   const [activeTab, setActiveTab] = useState<'missions' | 'tournaments' | 'leaderboard'>('missions')
   const [missionFilter, setMissionFilter] = useState<'all' | 'daily' | 'weekly'>('all')
-  const [missions, setMissions] = useState<Mission[]>(MOCK_MISSIONS)
+  const [missions, setMissions] = useState<Mission[]>([])
+  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([])
+  const [myRank, setMyRank] = useState<number>(1)
+  const [resetTimes, setResetTimes] = useState(getMissionResetTimes())
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null)
 
@@ -180,19 +106,39 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
     setTimeout(() => setToastMessage(null), 3500)
   }
 
-  const handleClaimMission = (missionId: string) => {
+  // Load real missions & leaderboard
+  useEffect(() => {
+    fetchUserMissions(user?.uid, user).then(setMissions).catch(() => {})
+    getLeaderboardData(user).then((res) => {
+      setLeaderboard(res.leaderboard)
+      setMyRank(res.myRank)
+    }).catch(() => {})
+
+    const timer = setInterval(() => {
+      setResetTimes(getMissionResetTimes())
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [user])
+
+  const handleClaimMission = async (missionId: string) => {
     const target = missions.find(m => m.id === missionId)
     if (!target || target.claimed || target.current < target.target) return
 
-    setMissions(prev => prev.map(m => m.id === missionId ? { ...m, claimed: true } : m))
-    setCoins(coins + target.rewardSC)
-
-    showToast(`🎉 ¡Recompensa reclamada! +${target.rewardSC} Sugar Coins`)
-    confetti({
-      particleCount: 90,
-      spread: 65,
-      origin: { y: 0.6 }
+    const res = await claimMissionReward(user?.uid, target, (added) => {
+      setCoins(coins + added)
     })
+
+    if (res.success) {
+      setMissions(prev => prev.map(m => m.id === missionId ? { ...m, claimed: true } : m))
+      showToast(res.message)
+      confetti({
+        particleCount: 90,
+        spread: 65,
+        origin: { y: 0.6 }
+      })
+    } else {
+      showToast(res.message)
+    }
   }
 
   const filteredMissions = missions.filter(m => missionFilter === 'all' || m.category === missionFilter)
@@ -231,9 +177,9 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
         {/* Season Timer Badge */}
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-2xl border border-[var(--candy-orange)]/40 bg-[oklch(0_0_0/0.4)] px-3 py-1.5 shadow-inner">
-            <Clock className="size-4 text-[var(--candy-orange)]" />
+            <Clock className="size-4 text-[var(--candy-orange)] animate-pulse" />
             <span className="font-display text-xs sm:text-sm font-black text-[var(--candy-orange)]">
-              Temporada 1: 5d 14h
+              Temporada 1: {resetTimes.weeklyFormatted}
             </span>
           </div>
         </div>
@@ -253,7 +199,7 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
           <Target className="size-4" />
           <span>Misiones</span>
           {claimableCount > 0 && (
-            <span className="size-5 rounded-full bg-emerald-500 text-[10px] font-black text-white flex items-center justify-center shadow-md">
+            <span className="size-5 rounded-full bg-emerald-500 text-[10px] font-black text-white flex items-center justify-center shadow-md animate-pulse">
               {claimableCount}
             </span>
           )}
@@ -490,95 +436,201 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
       {/* TAB 3: CLASIFICACIÓN (LEADERBOARD) */}
       {activeTab === 'leaderboard' && (
         <div className="flex flex-col gap-6 animate-in fade-in">
-          {/* PODIO TOP 3 */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 items-end pt-8 pb-4">
-            {/* Top 2 (Plata) */}
-            <div className="glass flex flex-col items-center p-3 sm:p-5 rounded-3xl border border-slate-400/40 bg-[linear-gradient(180deg,rgba(148,163,184,0.15),transparent)] text-center relative order-1">
-              <span className="absolute -top-4 rounded-full bg-slate-300 text-slate-900 font-display text-xs font-black px-2.5 py-0.5 shadow-md">
-                2° Plata
-              </span>
-              <div className="size-14 sm:size-16 rounded-full bg-slate-400/20 text-3xl flex items-center justify-center border-2 border-slate-300 shadow-lg mt-2">
-                {MOCK_LEADERBOARD[1].avatar}
+          {/* Tarjeta de Posición del Jugador */}
+          {(() => {
+            const userTrophies = Number(user?.rankPoints !== undefined ? user.rankPoints : (Number(user?.totalWins || 0) * 25))
+
+            return (
+              <div className="glass rounded-2xl p-4 border border-[var(--candy-gold)]/50 bg-[linear-gradient(135deg,oklch(0.18_0.05_55/0.5),oklch(0.12_0.02_285/0.8))] flex items-center justify-between shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-xl bg-[var(--candy-gold)]/20 border border-[var(--candy-gold)]/40 flex items-center justify-center font-display text-sm font-black text-[var(--candy-gold)]">
+                    #{myRank}
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-[var(--candy-gold)] tracking-wider">Tu Posición Global</span>
+                    <h3 className="font-display text-sm sm:text-base font-extrabold text-white">{user?.nickname || 'Jugador'}</h3>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 font-display text-sm font-black text-[var(--candy-gold)] bg-black/40 px-3 py-1.5 rounded-xl border border-[var(--candy-gold)]/30">
+                  <Trophy className="size-4 text-[var(--candy-gold)]" />
+                  <span>{userTrophies.toLocaleString()} Copas</span>
+                </div>
               </div>
-              <h4 className="font-display text-xs sm:text-sm font-extrabold text-white mt-2 truncate w-full">
-                {MOCK_LEADERBOARD[1].name}
-              </h4>
-              <span className="font-display text-xs font-bold text-[var(--candy-gold)] mt-1 flex items-center gap-1">
-                <Trophy className="size-3" /> {MOCK_LEADERBOARD[1].trophies}
-              </span>
-            </div>
+            )
+          })()}
+
+          {/* PODIO TOP 3 (ADAPTATIVO REAL) */}
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 items-end pt-6 pb-2">
+            {/* Top 2 (Plata) */}
+            {leaderboard[1] ? (
+              <div className="glass flex flex-col items-center p-3 sm:p-5 rounded-3xl border border-slate-400/40 bg-[linear-gradient(180deg,rgba(148,163,184,0.15),transparent)] text-center relative order-1 animate-in fade-in">
+                <span className="absolute -top-4 rounded-full bg-slate-300 text-slate-900 font-display text-xs font-black px-2.5 py-0.5 shadow-md">
+                  2° Plata
+                </span>
+                <div className="size-14 sm:size-16 rounded-full bg-slate-400/20 text-3xl flex items-center justify-center border-2 border-slate-300 shadow-lg mt-2 overflow-hidden">
+                  {renderAvatar(leaderboard[1].avatar)}
+                </div>
+                <h4 className="font-display text-xs sm:text-sm font-extrabold text-white mt-2 truncate w-full flex items-center justify-center gap-1">
+                  {leaderboard[1].name}
+                  {leaderboard[1].isCurrentUser && (
+                    <span className="rounded-full bg-[var(--candy-gold)]/20 text-[9px] font-black uppercase text-[var(--candy-gold)] px-1.5 py-0.2">Tú</span>
+                  )}
+                </h4>
+                <span className="font-display text-xs font-bold text-[var(--candy-gold)] mt-1 flex items-center gap-1">
+                  <Trophy className="size-3" /> {leaderboard[1].trophies.toLocaleString()} Copas
+                </span>
+              </div>
+            ) : (
+              <div className="glass flex flex-col items-center p-3 sm:p-5 rounded-3xl border border-dashed border-slate-400/25 bg-[oklch(1_0_0/0.02)] text-center relative order-1 opacity-60">
+                <span className="absolute -top-4 rounded-full bg-slate-500/40 text-slate-300 font-display text-[10px] font-bold px-2 py-0.5">
+                  2° Plata
+                </span>
+                <div className="size-14 sm:size-16 rounded-full bg-slate-500/10 text-2xl flex items-center justify-center border border-dashed border-slate-400/30 text-muted-foreground mt-2">
+                  🥈
+                </div>
+                <h4 className="font-display text-xs font-bold text-muted-foreground mt-2">
+                  Esperando retador
+                </h4>
+                <span className="text-[10px] text-muted-foreground/60 mt-0.5">
+                  Vacante
+                </span>
+              </div>
+            )}
 
             {/* Top 1 (Oro - Centro y más alto) */}
-            <div className="glass flex flex-col items-center p-4 sm:p-6 rounded-3xl border-2 border-[var(--candy-gold)] bg-[linear-gradient(180deg,rgba(255,215,0,0.25),transparent)] text-center relative order-2 scale-105 shadow-[0_0_30px_rgba(255,215,0,0.2)]">
-              <span className="absolute -top-5 rounded-full bg-[var(--candy-gold)] text-[oklch(0.18_0.03_285)] font-display text-xs font-black px-3 py-1 shadow-lg flex items-center gap-1">
-                <Crown className="size-3.5" /> 1° Oro
-              </span>
-              <div className="size-16 sm:size-20 rounded-full bg-[var(--candy-gold)]/20 text-4xl flex items-center justify-center border-2 border-[var(--candy-gold)] shadow-[0_0_15px_rgba(255,215,0,0.4)] mt-2">
-                {MOCK_LEADERBOARD[0].avatar}
+            {leaderboard[0] ? (
+              <div className="glass flex flex-col items-center p-4 sm:p-6 rounded-3xl border-2 border-[var(--candy-gold)] bg-[linear-gradient(180deg,rgba(255,215,0,0.25),transparent)] text-center relative order-2 scale-105 shadow-[0_0_30px_rgba(255,215,0,0.2)] animate-in fade-in">
+                <span className="absolute -top-5 rounded-full bg-[var(--candy-gold)] text-[oklch(0.18_0.03_285)] font-display text-xs font-black px-3 py-1 shadow-lg flex items-center gap-1">
+                  <Crown className="size-3.5" /> 1° Oro
+                </span>
+                <div className="size-16 sm:size-20 rounded-full bg-[var(--candy-gold)]/20 text-4xl flex items-center justify-center border-2 border-[var(--candy-gold)] shadow-[0_0_15px_rgba(255,215,0,0.4)] mt-2 overflow-hidden">
+                  {renderAvatar(leaderboard[0].avatar)}
+                </div>
+                <h4 className="font-display text-sm sm:text-base font-black text-white mt-2 truncate w-full flex items-center justify-center gap-1.5">
+                  {leaderboard[0].name}
+                  {leaderboard[0].isCurrentUser && (
+                    <span className="rounded-full bg-[var(--candy-gold)]/20 text-[9px] font-black uppercase text-[var(--candy-gold)] px-1.5 py-0.2">Tú</span>
+                  )}
+                </h4>
+                <span className="font-display text-sm font-black text-[var(--candy-gold)] mt-1 flex items-center gap-1">
+                  <Trophy className="size-3.5" /> {leaderboard[0].trophies.toLocaleString()} Copas
+                </span>
+                <span className="text-[10px] font-bold text-emerald-400 mt-0.5">
+                  {leaderboard[0].league}
+                </span>
               </div>
-              <h4 className="font-display text-sm sm:text-base font-black text-white mt-2 truncate w-full">
-                {MOCK_LEADERBOARD[0].name}
-              </h4>
-              <span className="font-display text-sm font-black text-[var(--candy-gold)] mt-1 flex items-center gap-1">
-                <Trophy className="size-3.5" /> {MOCK_LEADERBOARD[0].trophies}
-              </span>
-              <span className="text-[10px] font-bold text-emerald-400 mt-0.5">
-                {MOCK_LEADERBOARD[0].league}
-              </span>
-            </div>
+            ) : (
+              <div className="glass flex flex-col items-center p-4 sm:p-6 rounded-3xl border border-dashed border-[var(--candy-gold)]/30 bg-[oklch(1_0_0/0.02)] text-center relative order-2 opacity-60">
+                <span className="absolute -top-4 rounded-full bg-[var(--candy-gold)]/30 text-[var(--candy-gold)] font-display text-[10px] font-bold px-2 py-0.5">
+                  1° Oro
+                </span>
+                <div className="size-16 sm:size-20 rounded-full bg-[var(--candy-gold)]/10 text-3xl flex items-center justify-center border border-dashed border-[var(--candy-gold)]/30 text-muted-foreground mt-2">
+                  👑
+                </div>
+                <h4 className="font-display text-xs font-bold text-muted-foreground mt-2">
+                  Esperando retador
+                </h4>
+                <span className="text-[10px] text-muted-foreground/60 mt-0.5">
+                  Vacante
+                </span>
+              </div>
+            )}
 
             {/* Top 3 (Bronce) */}
-            <div className="glass flex flex-col items-center p-3 sm:p-5 rounded-3xl border border-amber-700/40 bg-[linear-gradient(180deg,rgba(180,83,9,0.15),transparent)] text-center relative order-3">
-              <span className="absolute -top-4 rounded-full bg-amber-600 text-white font-display text-xs font-black px-2.5 py-0.5 shadow-md">
-                3° Bronce
-              </span>
-              <div className="size-14 sm:size-16 rounded-full bg-amber-700/20 text-3xl flex items-center justify-center border-2 border-amber-600 shadow-lg mt-2">
-                {MOCK_LEADERBOARD[2].avatar}
+            {leaderboard[2] ? (
+              <div className="glass flex flex-col items-center p-3 sm:p-5 rounded-3xl border border-amber-700/40 bg-[linear-gradient(180deg,rgba(180,83,9,0.15),transparent)] text-center relative order-3 animate-in fade-in">
+                <span className="absolute -top-4 rounded-full bg-amber-600 text-white font-display text-xs font-black px-2.5 py-0.5 shadow-md">
+                  3° Bronce
+                </span>
+                <div className="size-14 sm:size-16 rounded-full bg-amber-700/20 text-3xl flex items-center justify-center border-2 border-amber-600 shadow-lg mt-2 overflow-hidden">
+                  {renderAvatar(leaderboard[2].avatar)}
+                </div>
+                <h4 className="font-display text-xs sm:text-sm font-extrabold text-white mt-2 truncate w-full flex items-center justify-center gap-1">
+                  {leaderboard[2].name}
+                  {leaderboard[2].isCurrentUser && (
+                    <span className="rounded-full bg-[var(--candy-gold)]/20 text-[9px] font-black uppercase text-[var(--candy-gold)] px-1.5 py-0.2">Tú</span>
+                  )}
+                </h4>
+                <span className="font-display text-xs font-bold text-[var(--candy-gold)] mt-1 flex items-center gap-1">
+                  <Trophy className="size-3" /> {leaderboard[2].trophies.toLocaleString()} Copas
+                </span>
               </div>
-              <h4 className="font-display text-xs sm:text-sm font-extrabold text-white mt-2 truncate w-full">
-                {MOCK_LEADERBOARD[2].name}
-              </h4>
-              <span className="font-display text-xs font-bold text-[var(--candy-gold)] mt-1 flex items-center gap-1">
-                <Trophy className="size-3" /> {MOCK_LEADERBOARD[2].trophies}
-              </span>
-            </div>
+            ) : (
+              <div className="glass flex flex-col items-center p-3 sm:p-5 rounded-3xl border border-dashed border-amber-700/25 bg-[oklch(1_0_0/0.02)] text-center relative order-3 opacity-60">
+                <span className="absolute -top-4 rounded-full bg-amber-700/30 text-amber-300 font-display text-[10px] font-bold px-2 py-0.5">
+                  3° Bronce
+                </span>
+                <div className="size-14 sm:size-16 rounded-full bg-amber-700/10 text-2xl flex items-center justify-center border border-dashed border-amber-600/30 text-muted-foreground mt-2">
+                  🥉
+                </div>
+                <h4 className="font-display text-xs font-bold text-muted-foreground mt-2">
+                  Esperando retador
+                </h4>
+                <span className="text-[10px] text-muted-foreground/60 mt-0.5">
+                  Vacante
+                </span>
+              </div>
+            )}
           </div>
 
           {/* LISTA DEL RESTO DEL RANKING (4° en adelante) */}
           <div className="flex flex-col gap-2">
-            {MOCK_LEADERBOARD.slice(3).map((player) => (
-              <div
-                key={player.rank}
-                className="glass flex items-center justify-between p-3.5 sm:p-4 rounded-2xl border border-border/80 bg-[oklch(1_0_0/0.02)] hover:border-[var(--candy-orange)]/40 transition-all"
-              >
-                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                  <span className="font-display text-sm sm:text-base font-black text-muted-foreground w-6 text-center">
-                    #{player.rank}
-                  </span>
+            {leaderboard.length > 3 ? (
+              leaderboard.slice(3).map((player) => (
+                <div
+                  key={player.uid || player.rank}
+                  className={cn(
+                    "glass flex items-center justify-between p-3.5 sm:p-4 rounded-2xl border transition-all",
+                    player.isCurrentUser
+                      ? "border-[var(--candy-gold)]/60 bg-[oklch(1_0_0/0.06)] shadow-[0_0_15px_rgba(255,215,0,0.15)] ring-1 ring-[var(--candy-gold)]/40"
+                      : "border-border/80 bg-[oklch(1_0_0/0.02)] hover:border-[var(--candy-orange)]/40"
+                  )}
+                >
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <span className={cn(
+                      "font-display text-sm sm:text-base font-black w-6 text-center",
+                      player.isCurrentUser ? "text-[var(--candy-gold)]" : "text-muted-foreground"
+                    )}>
+                      #{player.rank}
+                    </span>
 
-                  <div 
-                    className="size-10 rounded-xl flex items-center justify-center text-xl border border-white/10 shrink-0"
-                    style={{ backgroundColor: `${player.avatarColor}20` }}
-                  >
-                    {player.avatar}
+                    <div 
+                      className="size-10 rounded-xl flex items-center justify-center text-xl border border-white/10 shrink-0 overflow-hidden"
+                      style={{ backgroundColor: `${player.avatarColor}20` }}
+                    >
+                      {renderAvatar(player.avatar)}
+                    </div>
+
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-display text-xs sm:text-sm font-extrabold text-foreground truncate flex items-center gap-1.5">
+                        {player.name}
+                        {player.isCurrentUser && (
+                          <span className="rounded-full bg-[var(--candy-gold)]/20 text-[9px] font-black uppercase text-[var(--candy-gold)] px-1.5 py-0.2">Tú</span>
+                        )}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium">
+                        {player.league} • Victorias: {player.totalWins} ({player.winRate})
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-display text-xs sm:text-sm font-extrabold text-foreground truncate">
-                      {player.name}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground font-medium">
-                      {player.league} • Win Rate: {player.winRate}
-                    </span>
+                  <div className="flex items-center gap-1 font-display text-xs sm:text-sm font-black text-[var(--candy-gold)]">
+                    <Trophy className="size-3.5" />
+                    <span>{player.trophies.toLocaleString()} Copas</span>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-1 font-display text-xs sm:text-sm font-black text-[var(--candy-gold)]">
-                  <Trophy className="size-3.5" />
-                  <span>{player.trophies.toLocaleString()}</span>
-                </div>
+              ))
+            ) : (
+              <div className="glass rounded-2xl p-6 border border-border/40 text-center flex flex-col items-center gap-2 bg-[oklch(1_0_0/0.01)] mt-2">
+                <Sparkles className="size-6 text-[var(--candy-gold)] animate-pulse" />
+                <h4 className="font-display text-sm font-bold text-foreground">
+                  ¡Compite en partidas para clasificar en el Top Global!
+                </h4>
+                <p className="text-xs text-muted-foreground max-w-sm">
+                  Gana partidas en Modo Competitivo y acumula Copas para subir de liga y asegurar tu puesto en el podio.
+                </p>
               </div>
-            ))}
+            )}
           </div>
         </div>
       )}

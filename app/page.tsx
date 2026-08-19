@@ -29,7 +29,16 @@ import { PlayerProvider } from '@/lib/player-context'
 import { AuthProvider, useAuth } from '@/lib/auth-context'
 import { LoginModal } from '@/components/login-modal'
 import { NicknameSetupModal } from '@/components/nickname-setup-modal'
+import { DuelChallengeModal } from '@/components/duel-challenge-modal'
+import { getSocket } from '@/lib/socket'
 import { preloadStoreAssets } from '@/lib/store-service'
+import { 
+  DuelChallengeItem, 
+  registerSocialSocket,
+  sendSocialStatusChange,
+  subscribeToIncomingDuelInvites, 
+  respondToRealtimeDuelInvite 
+} from '@/lib/friends-service'
 
 export type Screen =
   | 'landing'
@@ -83,6 +92,9 @@ function PageContent() {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+  const [incomingChallenge, setIncomingChallenge] = useState<DuelChallengeItem | null>(null)
+
+  const [duelAutoJoinCode, setDuelAutoJoinCode] = useState<string | null>(null)
 
   const [forceWebMode, setForceWebMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -90,6 +102,46 @@ function PageContent() {
     }
     return false
   })
+
+  // Register on social WebSocket & synchronize presence (0 Firestore cost)
+  useEffect(() => {
+    if (!user?.uid) return
+    registerSocialSocket(user)
+    const isPlaying = screen === 'game' || screen === 'online-game' || screen === 'training' || screen === 'competitive'
+    sendSocialStatusChange(isPlaying ? 'in_game' : 'online')
+  }, [user, screen])
+
+  // Listen to incoming duel challenges in real time via WebSockets
+  useEffect(() => {
+    if (!user?.uid) return
+    const unsub = subscribeToIncomingDuelInvites(user.uid, (challenge) => {
+      setIncomingChallenge(challenge)
+    })
+    return () => unsub()
+  }, [user])
+
+  // Listener global de match_found para entrada simultánea e instantánea al tablero
+  useEffect(() => {
+    const socket = getSocket()
+    const handleGlobalMatchFound = (gameData: any) => {
+      setDuelAutoJoinCode(null)
+      const finalPlayers = [...(gameData.players || [])]
+      const enrichedGameData: OnlineGameData = {
+        ...gameData,
+        players: finalPlayers,
+        roomId: gameData.roomId || gameData.id,
+        myPlayerId: user?.uid || socket.id,
+      }
+      setOnlineGameData(enrichedGameData)
+      setOnlineGameOrigin('online-training')
+      setScreen('online-game')
+    }
+
+    socket.on('match_found', handleGlobalMatchFound)
+    return () => {
+      socket.off('match_found', handleGlobalMatchFound)
+    }
+  }, [user])
 
   // Auth & Native routing logic
   useEffect(() => {
@@ -130,6 +182,18 @@ function PageContent() {
     setScreen('online-game')
   }
 
+  const handleAcceptDuel = (challenge: DuelChallengeItem) => {
+    respondToRealtimeDuelInvite(challenge.senderUid, 'accepted', challenge.roomCode, challenge.id)
+    setIncomingChallenge(null)
+    setDuelAutoJoinCode(challenge.roomCode)
+    setScreen('online-training')
+  }
+
+  const handleRejectDuel = (challenge: DuelChallengeItem) => {
+    respondToRealtimeDuelInvite(challenge.senderUid, 'rejected', challenge.roomCode, challenge.id)
+    setIncomingChallenge(null)
+  }
+
   const handleLoginGoogle = () => {
     loginWithGoogle()
   }
@@ -159,11 +223,6 @@ function PageContent() {
   }
 
   const handleNavigateToLanding = () => {
-    setIsSettingsOpen(false)
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('sugar_force_web_mode')
-    }
-    setForceWebMode(false)
     setScreen('landing')
   }
 
@@ -191,8 +250,15 @@ function PageContent() {
         return (
           <div className="mx-auto w-full max-w-3xl flex-1">
             <OnlineTraining 
-              onBack={() => setScreen('lobby')} 
-              onMatchFound={(data) => handleMatchFound(data, 'online-training')}
+              onBack={() => {
+                setDuelAutoJoinCode(null)
+                setScreen('lobby')
+              }} 
+              autoJoinCode={duelAutoJoinCode}
+              onMatchFound={(data) => {
+                setDuelAutoJoinCode(null)
+                handleMatchFound(data, 'online-training')
+              }}
             />
           </div>
         )
@@ -208,7 +274,15 @@ function PageContent() {
       case 'billetera':
         return <WalletScreen onBack={() => setScreen('lobby')} />
       case 'amigos':
-        return <FriendsScreen onBack={() => setScreen('lobby')} />
+        return (
+          <FriendsScreen 
+            onBack={() => setScreen('lobby')} 
+            onStartDuel={(code) => {
+              setDuelAutoJoinCode(code)
+              setScreen('online-training')
+            }} 
+          />
+        )
       case 'tienda':
         return <StoreScreen onBack={() => setScreen('lobby')} />
       case 'eventos':
@@ -307,6 +381,15 @@ function PageContent() {
           onLoginGoogle={handleLoginGoogle}
           onLoginDev={handleLoginDev}
         />
+
+        {/* Modal de Desafío a Duelo Entrante en Tiempo Real */}
+        {incomingChallenge && (
+          <DuelChallengeModal 
+            challenge={incomingChallenge}
+            onAccept={handleAcceptDuel}
+            onReject={handleRejectDuel}
+          />
+        )}
       </main>
     </PlayerProvider>
   )

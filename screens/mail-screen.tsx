@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   ArrowLeft, 
   Mail, 
@@ -21,121 +21,93 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
 import confetti from 'canvas-confetti'
-
-export interface MailItem {
-  id: string
-  title: string
-  sender: string
-  date: string
-  category: 'rewards' | 'system'
-  isRead: boolean
-  claimed?: boolean
-  rewardSC?: number
-  content: string
-  badge?: string
-}
-
-const MOCK_MAILS: MailItem[] = [
-  {
-    id: 'mail_1',
-    title: '¡Bono de Bienvenida Oficial!',
-    sender: 'Equipo Sugar Ludo',
-    date: 'Hoy, 10:30 AM',
-    category: 'rewards',
-    isRead: false,
-    claimed: false,
-    rewardSC: 500,
-    badge: 'Regalo VIP',
-    content: '¡Te damos la bienvenida al Arena oficial de Sugar Ludo! Recibe este paquete inicial de 500 Sugar Coins para participar en tus primeras partidas competitivas y desbloquear aspectos en la Tienda.'
-  },
-  {
-    id: 'mail_2',
-    title: 'Premio por Mantenimiento y Calibración',
-    sender: 'Soporte Técnico',
-    date: 'Ayer, 04:15 PM',
-    category: 'rewards',
-    isRead: false,
-    claimed: false,
-    rewardSC: 200,
-    badge: 'Compensación',
-    content: 'Gracias por tu paciencia durante la calibración de nuestros servidores y optimizaciones visuales. Te enviamos 200 Sugar Coins de agradecimiento.'
-  },
-  {
-    id: 'mail_3',
-    title: 'Notas de Actualización v8.4.5',
-    sender: 'Dirección de Desarrollo',
-    date: '18 Ago, 2026',
-    category: 'system',
-    isRead: true,
-    content: 'Hemos desplegado la versión v8.4.5 con la integración de la Tienda Oficial, Billetera homologada, optimización en la animación de captura instantánea y refinamiento de interfaces para toda la comunidad.'
-  },
-  {
-    id: 'mail_4',
-    title: 'Consejos de Seguridad para tu Cuenta',
-    sender: 'Seguridad Sugar Ludo',
-    date: '16 Ago, 2026',
-    category: 'system',
-    isRead: true,
-    content: 'Recuerda que nunca te solicitaremos tus claves privadas ni información sensible por canales no oficiales. Juega seguro y disfruta del juego limpio en el Arena.'
-  }
-]
+import { 
+  MailItem, 
+  fetchUserInbox, 
+  claimMailReward, 
+  claimAllRewards, 
+  markMailAsRead 
+} from '@/lib/mail-service'
 
 export function MailScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const { coins, setCoins } = usePlayer()
 
   const [activeTab, setActiveTab] = useState<'rewards' | 'system'>('rewards')
-  const [mailList, setMailList] = useState<MailItem[]>(MOCK_MAILS)
+  const [mailList, setMailList] = useState<MailItem[]>([])
   const [selectedMail, setSelectedMail] = useState<MailItem | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
     setTimeout(() => setToastMessage(null), 3500)
   }
 
+  // Load real inbox
+  const loadInbox = async () => {
+    try {
+      const inbox = await fetchUserInbox(user?.uid)
+      setMailList(inbox)
+    } catch (e) {
+      console.warn('Error loading inbox:', e)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadInbox()
+  }, [user])
+
   const handleOpenMail = (mail: MailItem) => {
+    markMailAsRead(user?.uid, mail.id)
     setMailList(prev => prev.map(m => m.id === mail.id ? { ...m, isRead: true } : m))
     setSelectedMail(mail)
   }
 
-  const handleClaimSingle = (mailId: string, e?: React.MouseEvent) => {
+  const handleClaimSingle = async (mailId: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     const target = mailList.find(m => m.id === mailId)
     if (!target || target.claimed || !target.rewardSC) return
 
-    setMailList(prev => prev.map(m => m.id === mailId ? { ...m, claimed: true, isRead: true } : m))
-    setCoins(coins + target.rewardSC)
-
-    if (selectedMail?.id === mailId) {
-      setSelectedMail(prev => prev ? { ...prev, claimed: true, isRead: true } : null)
-    }
-
-    showToast(`✨ ¡Reclamado con éxito! +${target.rewardSC} Sugar Coins`)
-    confetti({
-      particleCount: 80,
-      spread: 60,
-      origin: { y: 0.6 }
+    const res = await claimMailReward(user?.uid, mailId, (added) => {
+      setCoins(coins + added)
     })
+
+    if (res.success) {
+      setMailList(prev => prev.map(m => m.id === mailId ? { ...m, claimed: true, isRead: true } : m))
+      if (selectedMail?.id === mailId) {
+        setSelectedMail(prev => prev ? { ...prev, claimed: true, isRead: true } : null)
+      }
+
+      showToast(`✨ ¡Reclamado con éxito! +${res.coinsAdded} Sugar Coins`)
+      confetti({
+        particleCount: 80,
+        spread: 60,
+        origin: { y: 0.6 }
+      })
+    } else {
+      showToast(res.message)
+    }
   }
 
-  const handleClaimAll = () => {
-    const unclaimed = mailList.filter(m => m.category === 'rewards' && !m.claimed && m.rewardSC)
-    if (unclaimed.length === 0) {
-      showToast('No hay recompensas pendientes para reclamar.')
-      return
-    }
-
-    const totalCoins = unclaimed.reduce((acc, m) => acc + (m.rewardSC || 0), 0)
-    setMailList(prev => prev.map(m => (m.category === 'rewards' && m.rewardSC) ? { ...m, claimed: true, isRead: true } : m))
-    setCoins(coins + totalCoins)
-
-    showToast(`🎉 ¡Reclamaste todas las recompensas! +${totalCoins} Sugar Coins`)
-    confetti({
-      particleCount: 120,
-      spread: 80,
-      origin: { y: 0.6 }
+  const handleClaimAll = async () => {
+    const res = await claimAllRewards(user?.uid, (added) => {
+      setCoins(coins + added)
     })
+
+    if (res.success && res.totalCoins > 0) {
+      setMailList(prev => prev.map(m => (m.category === 'rewards' && m.rewardSC) ? { ...m, claimed: true, isRead: true } : m))
+      showToast(`🎉 ¡Reclamaste todas las recompensas! +${res.totalCoins} Sugar Coins`)
+      confetti({
+        particleCount: 120,
+        spread: 80,
+        origin: { y: 0.6 }
+      })
+    } else {
+      showToast('No hay recompensas pendientes para reclamar.')
+    }
   }
 
   const filteredMails = mailList.filter(m => m.category === activeTab)
