@@ -292,7 +292,7 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
                       style={{ backgroundColor: `${item.accentColor}20` }}
                     >
                       {item.image ? (
-                        <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-sm" />
+                        <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-sm" loading="eager" decoding="async" />
                       ) : (
                         <span className="text-3xl">{item.icon}</span>
                       )}
@@ -373,7 +373,7 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
                   style={{ backgroundColor: `${selectedItem.accentColor}30` }}
                 >
                   {selectedItem.image ? (
-                    <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-md animate-in zoom-in-95" />
+                    <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-md animate-in zoom-in-95" loading="eager" decoding="async" />
                   ) : (
                     <span className="text-6xl">{selectedItem.icon}</span>
                   )}

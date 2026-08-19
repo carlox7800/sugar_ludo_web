@@ -642,7 +642,7 @@ export function OnlineTraining({
       <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} showEconomy={false} />
       {/* FLOATING LOBBY MODAL */}
       {(isSearching || lobbyData) && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/75 sm:backdrop-blur-sm animate-in fade-in zoom-in-95">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 backdrop-blur-md bg-black/15 animate-in fade-in zoom-in-95">
           <div className="bg-card w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border-2 border-[var(--candy-cyan)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col items-center gap-6">
             <header className="text-center w-full">
               <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase text-[var(--candy-cyan)] tracking-wider drop-shadow-sm">

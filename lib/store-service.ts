@@ -517,3 +517,37 @@ export async function equipStoreItem(
 
   return { success: true }
 }
+
+/**
+ * Precarga en memoria los 17 assets gráficos de la Tienda en segundo plano.
+ * Permite que al entrar a la Tienda o Colección, las imágenes se muestren en 0ms desde la caché.
+ */
+export function preloadStoreAssets() {
+  if (typeof window === 'undefined') return
+  const assets = [
+    '/sugar-coin.png',
+    '/store/bolsa_dulce.png',
+    '/store/frasco_dorado.png',
+    '/store/cofre_imperial.png',
+    '/store/cofre_sugar.png',
+    '/store/cofre_titan.png',
+    '/store/board_classic.png',
+    '/store/board_candy.png',
+    '/store/board_neon.png',
+    '/store/board_royal.png',
+    '/store/token_classic.png',
+    '/store/token_gem.png',
+    '/store/token_candy.png',
+    '/store/token_gold.png',
+    '/store/dice_classic.png',
+    '/store/dice_neon.png',
+    '/store/dice_fire.png',
+    '/store/dice_gold.png'
+  ]
+  assets.forEach((src) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = src
+  })
+}
+

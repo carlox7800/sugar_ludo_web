@@ -29,6 +29,7 @@ import { PlayerProvider } from '@/lib/player-context'
 import { AuthProvider, useAuth } from '@/lib/auth-context'
 import { LoginModal } from '@/components/login-modal'
 import { NicknameSetupModal } from '@/components/nickname-setup-modal'
+import { preloadStoreAssets } from '@/lib/store-service'
 
 export type Screen =
   | 'landing'
@@ -51,6 +52,9 @@ function PageContent() {
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // Pre-warm Store & Collection Assets Cache
+      preloadStoreAssets()
+
       const capacitor = (window as any).Capacitor;
       const isCapacitor = capacitor && (
         (capacitor.isNativePlatform && capacitor.isNativePlatform()) || 

@@ -259,7 +259,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-4 text-center sm:text-left">
                 <div className="flex size-14 sm:size-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--candy-gold)]/20 p-1.5 shadow-[0_0_20px_rgba(255,215,0,0.3)]">
-                  <img src="/store/cofre_sugar.png" alt="Cofre Sugar" className="size-full object-contain rounded-xl drop-shadow-md" />
+                  <img src="/store/cofre_sugar.png" alt="Cofre Sugar" className="size-full object-contain rounded-xl drop-shadow-md" loading="eager" decoding="async" />
                 </div>
                 <div>
                   <span className="inline-block rounded-md bg-[var(--candy-gold)]/20 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-[var(--candy-gold)] mb-1">
@@ -304,7 +304,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
                   <div className="flex items-center gap-4 mb-4">
                     {pkg.image ? (
                       <div className="size-16 sm:size-20 shrink-0 rounded-2xl overflow-hidden bg-black/20 border border-white/10 flex items-center justify-center p-1 shadow-inner group">
-                        <img src={pkg.image} alt={pkg.name} className="size-full object-contain drop-shadow-md transition-transform duration-300 group-hover:scale-105" />
+                        <img src={pkg.image} alt={pkg.name} className="size-full object-contain drop-shadow-md transition-transform duration-300 group-hover:scale-105" loading="eager" decoding="async" />
                       </div>
                     ) : (
                       <span className="text-3xl p-2 rounded-2xl bg-black/30 border border-white/10">{pkg.icon}</span>
@@ -319,7 +319,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
                   <div className="flex items-center justify-between border-t border-border/40 pt-4 mt-2">
                     <div className="flex items-center gap-1.5">
-                      <img src="/sugar-coin.png" alt="Coin" className="size-6 object-contain" />
+                      <img src="/sugar-coin.png" alt="Coin" className="size-6 object-contain" loading="eager" decoding="async" />
                       <span className="font-display text-2xl font-black text-[var(--candy-gold)]">
                         {pkg.totalCoins.toLocaleString()}
                       </span>
@@ -379,7 +379,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
               <div className="flex items-center gap-5">
                 <div className="size-20 sm:size-24 rounded-2xl bg-black/30 border border-[var(--candy-cyan)]/50 flex items-center justify-center p-1.5 shadow-[0_0_20px_rgba(0,242,255,0.2)]">
                   {selectedItem.image ? (
-                    <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-md" />
+                    <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-md" loading="eager" decoding="async" />
                   ) : (
                     <span className="text-4xl sm:text-5xl">{selectedItem.icon}</span>
                   )}
@@ -448,7 +448,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
                   <div className="size-16 sm:size-20 rounded-2xl bg-black/20 border border-white/10 flex items-center justify-center p-1 mb-3 mt-1 shadow-inner transition-transform group-hover:scale-105">
                     {item.image ? (
-                      <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-md" />
+                      <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-md" loading="eager" decoding="async" />
                     ) : (
                       <span className="text-3xl">{item.icon}</span>
                     )}
@@ -580,11 +580,11 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
       {/* MODAL 1: CONFIRMAR COMPRA DE PAQUETE USDT */}
       {packageToBuy && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/75 sm:backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 backdrop-blur-md bg-black/15 animate-in fade-in">
           <div className="bg-card max-w-sm w-full rounded-3xl p-6 border-2 border-[var(--candy-gold)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col gap-4 text-center">
             {packageToBuy.image ? (
               <div className="size-24 rounded-2xl overflow-hidden bg-black/20 border border-white/10 p-1 mx-auto shadow-inner flex items-center justify-center">
-                <img src={packageToBuy.image} alt={packageToBuy.name} className="size-full object-contain drop-shadow-md" />
+                <img src={packageToBuy.image} alt={packageToBuy.name} className="size-full object-contain drop-shadow-md" loading="eager" decoding="async" />
               </div>
             ) : (
               <div className="size-16 rounded-full bg-[var(--candy-gold)]/20 text-4xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(255,215,0,0.3)]">
@@ -603,7 +603,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
             <div className="bg-muted/40 rounded-2xl p-3 border border-border flex items-center justify-between shadow-inner">
               <span className="text-xs text-muted-foreground font-semibold">Total a Recibir:</span>
               <span className="font-display text-base font-black text-[var(--candy-gold)] flex items-center gap-1">
-                +{packageToBuy.totalCoins.toLocaleString()} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
+                +{packageToBuy.totalCoins.toLocaleString()} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" loading="eager" decoding="async" />
               </span>
             </div>
 
@@ -629,7 +629,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
       {/* MODAL 2: CONFIRMAR COMPRA CON SUGAR COINS */}
       {itemToBuy && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/75 sm:backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 backdrop-blur-md bg-black/15 animate-in fade-in">
           <div className="bg-card max-w-sm w-full rounded-3xl p-6 border-2 border-[var(--candy-cyan)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col gap-4 text-center">
             <div className="size-16 rounded-full bg-[var(--candy-cyan)]/20 text-4xl flex items-center justify-center mx-auto shadow-[0_0_20px_rgba(0,242,255,0.3)]">
               {itemToBuy.icon}
