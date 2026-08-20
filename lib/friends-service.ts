@@ -59,38 +59,110 @@ export function getSugarId(uid?: string): string {
   return 'SL-' + uid.substring(0, 6).toUpperCase()
 }
 
-// Convert Firestore UID to a safe WebRTC Peer ID
-export function getPeerIdForUser(uid: string): string {
-  return 'sugar_' + uid.toLowerCase().replace(/[^a-z0-9]/g, '_')
-}
+// ================= CANAL SOCIAL Y RETOS EN MEMORIA (SSE / $0.00 FIRESTORE) =================
 
-// ================= CAPA 2: CANAL WEBRTC P2P DIRECTO (CERO BASE DE DATOS) =================
-
-let peerInstance: any = null
 let currentActiveUid: string | null = null
 let currentStatus: 'online' | 'in_game' | 'busy' | 'offline' = 'online'
 
 const livePresenceMap = new Map<string, 'online' | 'in_game' | 'busy' | 'offline'>()
-const activePeerConnections = new Map<string, any>()
 const incomingInviteCallbacks = new Set<(challenge: DuelChallengeItem | null) => void>()
 const presenceUpdateCallbacks = new Set<(presence: Map<string, 'online' | 'in_game' | 'busy' | 'offline'>) => void>()
 const duelResultCallbacks = new Map<string, (status: 'pending' | 'accepted' | 'rejected' | 'canceled') => void>()
 const customDataCallbacks = new Set<(data: any) => void>()
+const duelAckCallbacks = new Map<string, () => void>()
 
-// Local BroadcastChannel for instant local coordination
+// Local Channel Sync (BroadcastChannel + SSE EventSource)
 let localBroadcastChannel: BroadcastChannel | null = null
+let activeEventSource: any = null
+let activeEventSourceUid: string | null = null
+
+export function clearIncomingDuelInvite() {
+  incomingInviteCallbacks.forEach(cb => cb(null))
+}
+
+export function initSocialRelayStream(uid: string) {
+  if (typeof window === 'undefined' || !uid) return
+
+  // Query immediate in-memory presence snapshot
+  fetch('/api/social/presence')
+    .then(r => r.json())
+    .then(data => {
+      if (data?.presence) {
+        for (const [k, v] of Object.entries(data.presence)) {
+          livePresenceMap.set(k, v as any)
+        }
+        presenceUpdateCallbacks.forEach(cb => cb(new Map(livePresenceMap)))
+      }
+    })
+    .catch(() => {})
+
+  // If already connected for this UID, don't recreate
+  if (activeEventSource && activeEventSourceUid === uid.toLowerCase()) {
+    return
+  }
+
+  // Start Server-Sent Events stream for instant cross-browser delivery
+  if (typeof EventSource !== 'undefined') {
+    if (activeEventSource) {
+      try { activeEventSource.close() } catch {}
+    }
+
+    try {
+      const es = new EventSource(`/api/social/stream?uid=${encodeURIComponent(uid)}`)
+      activeEventSourceUid = uid.toLowerCase()
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          if (data?.type === 'presence_batch' && data.presence) {
+            for (const [k, v] of Object.entries(data.presence)) {
+              livePresenceMap.set(k, v as any)
+            }
+            presenceUpdateCallbacks.forEach(cb => cb(new Map(livePresenceMap)))
+          } else {
+            handleIncomingData(data)
+          }
+        } catch {}
+      }
+      activeEventSource = es
+    } catch {}
+  }
+}
+
+export function initLocalChannels() {
+  if (typeof window === 'undefined') return
+
+  if ('BroadcastChannel' in window && !localBroadcastChannel) {
+    try {
+      localBroadcastChannel = new BroadcastChannel('sugar_ludo_social_channel')
+      localBroadcastChannel.onmessage = (e) => {
+        handleIncomingData(e.data)
+      }
+    } catch {}
+  }
+}
 
 function getLocalChannel(): BroadcastChannel | null {
-  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-    if (!localBroadcastChannel) {
-      localBroadcastChannel = new BroadcastChannel('sugar_ludo_p2p_channel')
-      localBroadcastChannel.addEventListener('message', (e) => {
-        handleIncomingData(e.data)
-      })
-    }
-    return localBroadcastChannel
-  }
-  return null
+  initLocalChannels()
+  return localBroadcastChannel
+}
+
+export function broadcastLocalMessage(payload: any) {
+  if (typeof window === 'undefined') return
+
+  // 1. Broadcast via local BroadcastChannel (same browser multi-tab)
+  try {
+    const ch = getLocalChannel()
+    ch?.postMessage(payload)
+  } catch {}
+
+  // 2. Broadcast via In-Memory Server Relay (server.js - $0.00 Firestore)
+  try {
+    fetch('/api/social/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {})
+  } catch {}
 }
 
 function handleIncomingData(data: any) {
@@ -104,9 +176,39 @@ function handleIncomingData(data: any) {
       livePresenceMap.set(data.uid, data.status)
       presenceUpdateCallbacks.forEach(cb => cb(new Map(livePresenceMap)))
     }
+  } else if (data.type === 'presence_query') {
+    if (currentActiveUid && data.fromUid !== currentActiveUid) {
+      broadcastLocalMessage({
+        type: 'presence',
+        uid: currentActiveUid,
+        status: currentStatus,
+        timestamp: Date.now()
+      })
+    }
   } else if (data.type === 'duel_invite') {
-    if (data.challenge && data.challenge.targetUid === currentActiveUid) {
+    const isForMe = data.challenge && (
+      !currentActiveUid ||
+      data.challenge.targetUid?.toLowerCase() === currentActiveUid?.toLowerCase() ||
+      data.challenge.targetUid === currentActiveUid
+    )
+
+    if (isForMe && data.challenge) {
+      // Enviar ACK inmediato de recepción para confirmar entrega instantánea
+      const ackPayload = {
+        type: 'duel_ack',
+        challengeId: data.challenge.id,
+        targetUid: data.challenge.senderUid,
+        receiverUid: currentActiveUid || data.challenge.targetUid
+      }
+      broadcastLocalMessage(ackPayload)
+
+      // Disparar modal de reto
       incomingInviteCallbacks.forEach(cb => cb(data.challenge))
+    }
+  } else if (data.type === 'duel_ack') {
+    if (data.challengeId && duelAckCallbacks.has(data.challengeId)) {
+      const cb = duelAckCallbacks.get(data.challengeId)
+      cb?.()
     }
   } else if (data.type === 'duel_response') {
     if (data.challengeId && duelResultCallbacks.has(data.challengeId)) {
@@ -116,19 +218,20 @@ function handleIncomingData(data: any) {
       duelResultCallbacks.forEach(cb => cb(data.status))
     }
   } else if (data.type === 'duel_cancel') {
-    if (data.targetUid === currentActiveUid) {
+    if (!currentActiveUid || data.targetUid?.toLowerCase() === currentActiveUid?.toLowerCase()) {
       incomingInviteCallbacks.forEach(cb => cb(null))
     }
   }
 }
 
 /**
- * Inicializa el nodo WebRTC PeerJS para comunicación P2P directa entre cuentas y dispositivos.
+ * Registra al usuario en el canal de presencia social y WebSocket del servidor.
  */
-export async function registerSocialSocket(user: any) {
+export function registerSocialSocket(user: any) {
   if (!user?.uid || typeof window === 'undefined') return
   currentActiveUid = user.uid
-  getLocalChannel()
+  initLocalChannels()
+  initSocialRelayStream(user.uid)
 
   // Sockets matchmaking registration
   const socket = getSocket()
@@ -141,71 +244,13 @@ export async function registerSocialSocket(user: any) {
     socket.connect()
   }
 
-  // PeerJS WebRTC Initialization
-  const myPeerId = getPeerIdForUser(user.uid)
-
-  if (peerInstance && !peerInstance.destroyed && peerInstance.id === myPeerId) {
-    return
-  }
-
-  try {
-    const { default: Peer } = await import('peerjs')
-
-    if (peerInstance && !peerInstance.destroyed) {
-      peerInstance.destroy()
-    }
-
-    const peer = new Peer(myPeerId, {
-      debug: 0,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
-        ]
-      }
-    })
-
-    peerInstance = peer
-
-    peer.on('open', (id) => {
-      console.log('✅ WebRTC P2P activo. Peer ID:', id)
-      // Broadcast presence on local channel
-      const ch = getLocalChannel()
-      ch?.postMessage({ type: 'presence', uid: user.uid, status: currentStatus })
-    })
-
-    peer.on('connection', (conn) => {
-      activePeerConnections.set(conn.peer, conn)
-
-      conn.on('open', () => {
-        // Send current presence to newly connected peer
-        conn.send({ type: 'presence', uid: user.uid, status: currentStatus })
-      })
-
-      conn.on('data', (data) => {
-        handleIncomingData(data)
-      })
-
-      conn.on('close', () => {
-        activePeerConnections.delete(conn.peer)
-      })
-
-      conn.on('error', () => {
-        activePeerConnections.delete(conn.peer)
-      })
-    })
-
-    peer.on('error', (err) => {
-      console.warn('WebRTC Peer warning:', err?.type || err)
-    })
-  } catch (e) {
-    console.warn('Could not initialize WebRTC PeerJS:', e)
-  }
+  // Broadcast initial presence
+  broadcastLocalMessage({ type: 'presence', uid: user.uid, status: currentStatus })
+  broadcastLocalMessage({ type: 'presence_query', fromUid: user.uid })
 }
 
 /**
- * Notifica cambio de estado en tiempo real (🟢 'online' / 🟠 'in_game') vía WebRTC P2P DataChannels.
+ * Notifica cambio de estado en tiempo real (🟢 'online' / 🟠 'in_game').
  */
 export function sendSocialStatusChange(status: 'online' | 'in_game' | 'busy') {
   currentStatus = status
@@ -214,35 +259,27 @@ export function sendSocialStatusChange(status: 'online' | 'in_game' | 'busy') {
   livePresenceMap.set(currentActiveUid, status)
   presenceUpdateCallbacks.forEach(cb => cb(new Map(livePresenceMap)))
 
-  const payload = {
+  broadcastLocalMessage({
     type: 'presence',
     uid: currentActiveUid,
     status,
     timestamp: Date.now()
-  }
-
-  // 1. Broadcast via local channel
-  const ch = getLocalChannel()
-  ch?.postMessage(payload)
-
-  // 2. Broadcast to all connected P2P peers
-  activePeerConnections.forEach((conn) => {
-    if (conn && conn.open) {
-      try {
-        conn.send(payload)
-      } catch {}
-    }
   })
 }
 
 /**
- * Escucha actualizaciones de presencia en tiempo real de amigos vía WebRTC.
+ * Escucha actualizaciones de presencia en tiempo real de amigos.
  */
 export function subscribeToLivePresence(
   onPresenceUpdate: (presence: Map<string, 'online' | 'in_game' | 'busy' | 'offline'>) => void
 ): () => void {
+  initLocalChannels()
   presenceUpdateCallbacks.add(onPresenceUpdate)
   onPresenceUpdate(new Map(livePresenceMap))
+
+  if (currentActiveUid) {
+    broadcastLocalMessage({ type: 'presence_query', fromUid: currentActiveUid })
+  }
 
   return () => {
     presenceUpdateCallbacks.delete(onPresenceUpdate)
@@ -250,14 +287,18 @@ export function subscribeToLivePresence(
 }
 
 /**
- * Envía un reto a duelo 1 vs 1 directamente al peer del amigo retado por WebRTC DataChannel.
+ * Envía un reto a duelo 1 vs 1 en tiempo real al amigo retado.
  */
 export function sendRealtimeDuelInvite(
   currentUser: any,
   targetFriend: FriendItem,
-  roomCode: string
+  roomCode: string,
+  onTimeoutOrError?: () => void
 ): { success: boolean; challengeId: string } {
   if (!currentUser?.uid) return { success: false, challengeId: '' }
+
+  currentActiveUid = currentUser.uid
+  initLocalChannels()
 
   const challengeId = `duel_${currentUser.uid}_${targetFriend.id}_${Date.now()}`
   const challenge: DuelChallengeItem = {
@@ -279,42 +320,43 @@ export function sendRealtimeDuelInvite(
     challenge
   }
 
-  // 1. Local channel
-  const ch = getLocalChannel()
-  ch?.postMessage(payload)
+  let isDelivered = false
+  let timeoutTimer: any = null
 
-  // 2. WebRTC P2P direct connection
-  const targetPeerId = getPeerIdForUser(targetFriend.id)
-
-  if (peerInstance && !peerInstance.destroyed) {
-    let conn = activePeerConnections.get(targetPeerId)
-    if (!conn || !conn.open) {
-      conn = peerInstance.connect(targetPeerId, { reliable: true })
-      activePeerConnections.set(targetPeerId, conn)
-
-      conn.on('open', () => {
-        conn.send(payload)
-      })
-
-      conn.on('data', (data: any) => {
-        handleIncomingData(data)
-      })
-    } else {
-      conn.send(payload)
-    }
+  const markDelivered = () => {
+    isDelivered = true
+    if (timeoutTimer) clearTimeout(timeoutTimer)
+    duelAckCallbacks.delete(challengeId)
   }
+
+  duelAckCallbacks.set(challengeId, markDelivered)
+
+  // Timeout de seguridad: Si no hay entrega en 10s, notificar error
+  timeoutTimer = setTimeout(() => {
+    duelAckCallbacks.delete(challengeId)
+    if (!isDelivered) {
+      console.warn(`[Social] Timeout de 10s enviando invitación a ${targetFriend.name}`)
+      onTimeoutOrError?.()
+    }
+  }, 10000)
+
+  // Emitir por canal social
+  broadcastLocalMessage(payload)
 
   return { success: true, challengeId }
 }
 
 /**
- * Escucha retos a duelo entrantes en tiempo real vía WebRTC.
+ * Escucha retos a duelo entrantes en tiempo real.
  */
 export function subscribeToIncomingDuelInvites(
   currentUid: string,
   onInviteReceived: (challenge: DuelChallengeItem | null) => void
 ): () => void {
   if (!currentUid) return () => {}
+
+  currentActiveUid = currentUid
+  initLocalChannels()
 
   incomingInviteCallbacks.add(onInviteReceived)
 
@@ -324,7 +366,7 @@ export function subscribeToIncomingDuelInvites(
 }
 
 /**
- * Responde a un reto a duelo (Aceptar / Rechazar) directamente por WebRTC DataChannel.
+ * Responde a un reto a duelo (Aceptar / Rechazar).
  */
 export function respondToRealtimeDuelInvite(
   senderUid: string,
@@ -332,7 +374,6 @@ export function respondToRealtimeDuelInvite(
   roomCode: string,
   challengeId?: string
 ) {
-  // Limpiar inmediatamente la invitación pendiente local para resetear el badge numérico a 0
   incomingInviteCallbacks.forEach(cb => cb(null))
 
   const payload = {
@@ -345,30 +386,11 @@ export function respondToRealtimeDuelInvite(
     respondedAt: new Date().toISOString()
   }
 
-  // 1. Local channel
-  const ch = getLocalChannel()
-  ch?.postMessage(payload)
-
-  // 2. WebRTC P2P channel
-  const senderPeerId = getPeerIdForUser(senderUid)
-  let conn = activePeerConnections.get(senderPeerId)
-
-  if (conn && conn.open) {
-    try {
-      conn.send(payload)
-    } catch {}
-  } else if (peerInstance && !peerInstance.destroyed) {
-    try {
-      const newConn = peerInstance.connect(senderPeerId, { reliable: true })
-      newConn.on('open', () => {
-        newConn.send(payload)
-      })
-    } catch {}
-  }
+  broadcastLocalMessage(payload)
 }
 
 /**
- * Cancela una invitación a duelo enviada y limpia el estado local y remoto.
+ * Cancela una invitación a duelo enviada y limpia el estado.
  */
 export function cancelRealtimeDuelInvite(targetFriendUid?: string) {
   incomingInviteCallbacks.forEach(cb => cb(null))
@@ -381,16 +403,7 @@ export function cancelRealtimeDuelInvite(targetFriendUid?: string) {
     senderUid: currentActiveUid
   }
 
-  const ch = getLocalChannel()
-  ch?.postMessage(payload)
-
-  const targetPeerId = getPeerIdForUser(targetFriendUid)
-  const conn = activePeerConnections.get(targetPeerId)
-  if (conn && conn.open) {
-    try {
-      conn.send(payload)
-    } catch {}
-  }
+  broadcastLocalMessage(payload)
 }
 
 /**
@@ -432,7 +445,7 @@ export async function fetchUserFriends(userId?: string): Promise<FriendItem[]> {
             const fd = fSnap.data()
             const wins = Number(fd.totalWins || 0)
             const trophies = Number(fd.rankPoints !== undefined ? fd.rankPoints : (wins * 25))
-            const liveStatus = livePresenceMap.get(fUid) || (fd.activityStatus as any) || 'online'
+            const liveStatus = livePresenceMap.get(fUid) || (fd.activityStatus === 'online' || fd.activityStatus === 'in_game' ? fd.activityStatus : 'offline')
 
             return {
               id: fUid,
@@ -488,7 +501,7 @@ export async function searchUsersInFirestore(queryText: string, currentUid?: str
             avatarColor: trophies >= 2000 ? '#facc15' : '#38bdf8',
             level: Number(data.level || 1),
             trophies,
-            status: livePresenceMap.get(directSnap.id) || (data.activityStatus as any) || 'online'
+            status: livePresenceMap.get(directSnap.id) || (data.activityStatus === 'online' || data.activityStatus === 'in_game' ? data.activityStatus : 'offline')
           }]
         }
       } catch {}
@@ -534,7 +547,7 @@ export async function searchUsersInFirestore(queryText: string, currentUid?: str
           avatarColor: trophies >= 2000 ? '#facc15' : '#38bdf8',
           level: Number(data.level || 1),
           trophies,
-          status: livePresenceMap.get(d.id) || (data.activityStatus as any) || 'online'
+          status: livePresenceMap.get(d.id) || (data.activityStatus === 'online' || data.activityStatus === 'in_game' ? data.activityStatus : 'offline')
         })
       }
     })
@@ -708,32 +721,20 @@ export async function cancelSentFriendRequest(
   }
 }
 
-// ================= CAPA 3: GENERIC P2P DATA (LOBBIES Y M�S) =================
+// ================= DATOS SOCIALES GENÉRICOS (LOBBIES Y MÁS) =================
 export function sendP2PData(targetUid: string, payload: any) {
-  const targetPeerId = getPeerIdForUser(targetUid)
-  
-  // Local channel (if same device testing)
-  const ch = getLocalChannel()
-  ch?.postMessage(payload)
-
-  let conn = activePeerConnections.get(targetPeerId)
-  if (conn && conn.open) {
-    try { conn.send(payload) } catch {}
-  } else if (peerInstance && !peerInstance.destroyed) {
-    try {
-      const newConn = peerInstance.connect(targetPeerId, { reliable: true })
-      newConn.on('open', () => { newConn.send(payload) })
-      // Keep track of this new connection
-      activePeerConnections.set(targetPeerId, newConn)
-      newConn.on('data', handleIncomingData)
-      newConn.on('close', () => activePeerConnections.delete(targetPeerId))
-      newConn.on('error', () => activePeerConnections.delete(targetPeerId))
-    } catch {}
-  }
+  broadcastLocalMessage({
+    type: 'p2p_data',
+    targetUid,
+    senderUid: currentActiveUid,
+    payload
+  })
 }
 
 export function subscribeToP2PData(cb: (data: any) => void): () => void {
   customDataCallbacks.add(cb)
-  return () => customDataCallbacks.delete(cb)
+  return () => {
+    customDataCallbacks.delete(cb)
+  }
 }
 

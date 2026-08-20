@@ -38,7 +38,8 @@ import {
   cancelSentFriendRequest,
   sendRealtimeDuelInvite,
   cancelRealtimeDuelInvite,
-  subscribeToSentDuelResult
+  subscribeToSentDuelResult,
+  initSocialRelayStream
 } from '@/lib/friends-service'
 
 function renderAvatar(avatar?: string, className = "size-full object-cover rounded-full") {
@@ -91,9 +92,12 @@ export function FriendsScreen({
     if (!user?.uid) return
 
     // Carga puntual de amigos bajo demanda (1 sola lectura)
-    fetchUserFriends(user.uid).then(setFriendsList).catch(() => {})
+    fetchUserFriends(user.uid).then((list) => {
+      initSocialRelayStream(user.uid)
+      setFriendsList(list)
+    }).catch(() => {})
 
-    // Presencia en vivo vía WebSockets (0 lecturas Firestore)
+    // Presencia en vivo vía WebSockets y Relay In-Memory (0 lecturas Firestore)
     const unsubPresence = subscribeToLivePresence((presenceMap) => {
       setFriendsList(prev => prev.map(f => {
         const live = presenceMap.get(f.id)
@@ -119,12 +123,10 @@ export function FriendsScreen({
 
     const unsub = subscribeToSentDuelResult(activeChallengeId, (status) => {
       if (status === 'accepted') {
-        showToast(`⚔️ ¡${challengingFriend?.name || 'El rival'} aceptó el reto! Iniciando partida...`)
-        const roomToJoin = duelRoomCode
+        showToast(`⚔️ ¡${challengingFriend?.name || 'El rival'} aceptó el reto! Conectando a la mesa...`)
         setChallengingFriend(null)
         setIsWaitingResponse(false)
         setActiveChallengeId(null)
-        onStartDuel?.(roomToJoin)
       } else if (status === 'rejected') {
         showToast(`❌ ${challengingFriend?.name || 'El rival'} rechazó el duelo.`)
         setChallengingFriend(null)
@@ -201,11 +203,28 @@ export function FriendsScreen({
       const officialCode = data.roomCode || data.id || ''
       setDuelRoomCode(officialCode)
 
-      const res = sendRealtimeDuelInvite(user, challengingFriend, officialCode)
+      const res = sendRealtimeDuelInvite(user, challengingFriend, officialCode, () => {
+        setIsSendingChallenge(false)
+        setIsWaitingResponse(false)
+        showToast(`No se pudo conectar con ${challengingFriend.name}. Asegúrate de que tenga el juego abierto.`)
+      })
       setIsSendingChallenge(false)
       if (res.success && res.challengeId) {
         setActiveChallengeId(res.challengeId)
         showToast(`⚔️ ¡Invitación enviada a ${challengingFriend.name}! Esperando respuesta...`)
+
+        // Timeout de seguridad de 15s si el amigo no contesta
+        setTimeout(() => {
+          setIsWaitingResponse((prev) => {
+            if (prev) {
+              showToast(`El jugador ${challengingFriend.name} no respondió a tiempo.`)
+              setActiveChallengeId(null)
+              setChallengingFriend(null)
+              return false
+            }
+            return false
+          })
+        }, 15000)
       } else {
         setIsWaitingResponse(false)
         showToast('No se pudo enviar el reto a duelo.')

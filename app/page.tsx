@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Sidebar, MobileNav } from '@/components/sidebar'
 import { TopBar } from '@/components/top-bar'
 import { ProfileCard } from '@/components/profile-card'
@@ -37,7 +37,8 @@ import {
   registerSocialSocket,
   sendSocialStatusChange,
   subscribeToIncomingDuelInvites, 
-  respondToRealtimeDuelInvite 
+  respondToRealtimeDuelInvite,
+  clearIncomingDuelInvite
 } from '@/lib/friends-service'
 
 export type Screen =
@@ -84,9 +85,14 @@ function PageContent() {
   
   // Decide initial screen based on PWA environment and Auth
   const [screen, setScreen] = useState<Screen>('landing')
+  const screenRef = useRef<Screen>('landing')
+  const setScreenAndRef = (s: Screen) => {
+    screenRef.current = s
+    setScreen(s)
+  }
   const [config, setConfig] = useState<GameConfig | null>(null)
   const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
-  const [onlineGameOrigin, setOnlineGameOrigin] = useState<Screen>('online-training')
+  const [onlineGameOrigin, setOnlineGameOrigin] = useState<Screen>('lobby')
   
   // UI States
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -103,13 +109,18 @@ function PageContent() {
     return false
   })
 
-  // Register on social WebSocket & synchronize presence (0 Firestore cost)
+  // Register on social WebSocket & initialize stream once per user
   useEffect(() => {
     if (!user?.uid) return
     registerSocialSocket(user)
+  }, [user?.uid])
+
+  // Synchronize presence on status / screen change
+  useEffect(() => {
+    if (!user?.uid) return
     const isPlaying = screen === 'game' || screen === 'online-game' || screen === 'training' || screen === 'competitive'
     sendSocialStatusChange(isPlaying ? 'in_game' : 'online')
-  }, [user, screen])
+  }, [user?.uid, screen])
 
   // Listen to incoming duel challenges in real time via WebSockets
   useEffect(() => {
@@ -124,7 +135,10 @@ function PageContent() {
   useEffect(() => {
     const socket = getSocket()
     const handleGlobalMatchFound = (gameData: any) => {
+      clearIncomingDuelInvite()
+      setIncomingChallenge(null)
       setDuelAutoJoinCode(null)
+      const currentScreen = screenRef.current
       const finalPlayers = [...(gameData.players || [])]
       const enrichedGameData: OnlineGameData = {
         ...gameData,
@@ -133,8 +147,9 @@ function PageContent() {
         myPlayerId: user?.uid || socket.id,
       }
       setOnlineGameData(enrichedGameData)
-      setOnlineGameOrigin('online-training')
-      setScreen('online-game')
+      // Use ref to read current screen value — avoids stale closure bug
+      setOnlineGameOrigin(currentScreen === 'amigos' ? 'amigos' : (currentScreen === 'online-training' ? 'online-training' : 'lobby'))
+      setScreenAndRef('online-game')
     }
 
     socket.on('match_found', handleGlobalMatchFound)
@@ -152,7 +167,7 @@ function PageContent() {
 
     // REGLA 1: Si se está accediendo desde un navegador web normal y no se ha activado modo web, se fuerza la Landing Page informativa
     if (!isNative && !forceWebMode) {
-      setScreen('landing')
+      setScreenAndRef('landing')
       return
     }
 
@@ -161,7 +176,7 @@ function PageContent() {
       if (user.nickname) {
         // Usuario logueado con nickname -> Ir al Lobby (salvo que ya esté en partida o pantalla específica)
         if (screen === 'landing') {
-          setScreen('lobby')
+          setScreenAndRef('lobby')
         }
         setIsLoginModalOpen(false)
       }
@@ -173,24 +188,46 @@ function PageContent() {
 
   const handleStartGame = (gameConfig: GameConfig) => {
     setConfig(gameConfig)
-    setScreen('game')
+    setScreenAndRef('game')
   }
 
   const handleMatchFound = (gameData: OnlineGameData, origin: Screen = 'online-training') => {
     setOnlineGameData(gameData)
     setOnlineGameOrigin(origin)
-    setScreen('online-game')
+    setScreenAndRef('online-game')
   }
 
   const handleAcceptDuel = (challenge: DuelChallengeItem) => {
     respondToRealtimeDuelInvite(challenge.senderUid, 'accepted', challenge.roomCode, challenge.id)
+    clearIncomingDuelInvite()
     setIncomingChallenge(null)
-    setDuelAutoJoinCode(challenge.roomCode)
-    setScreen('online-training')
+    setDuelAutoJoinCode(null)
+    // Capture current screen synchronously from ref
+    const originAtAccept = screenRef.current === 'amigos' ? 'amigos' : 'lobby'
+    setOnlineGameOrigin(originAtAccept)
+
+    // Unirse directamente a la sala en el socket del servidor
+    const socket = getSocket()
+    const playerId = user?.uid || socket.id
+    const playerName = user?.photoURL ? `${user.nickname || 'Jugador'}|||${user.photoURL}` : (user?.nickname || 'Jugador')
+    const baseCode = challenge.roomCode.replace(/[^0-9]/g, '') || challenge.roomCode.replace('DUEL-', '')
+
+    if (!socket.connected) {
+      socket.connect()
+    }
+
+    socket.emit('join_private_room', {
+      playerId,
+      playerName,
+      targetPlayers: 2,
+      roomCode: baseCode,
+      code: baseCode,
+    })
   }
 
   const handleRejectDuel = (challenge: DuelChallengeItem) => {
     respondToRealtimeDuelInvite(challenge.senderUid, 'rejected', challenge.roomCode, challenge.id)
+    clearIncomingDuelInvite()
     setIncomingChallenge(null)
   }
 
@@ -218,12 +255,12 @@ function PageContent() {
         localStorage.setItem('sugar_force_web_mode', 'true')
       }
       setForceWebMode(true)
-      setScreen('lobby')
+      setScreenAndRef('lobby')
     }} />
   }
 
   const handleNavigateToLanding = () => {
-    setScreen('landing')
+    setScreenAndRef('landing')
   }
 
   // Render the active screen (Lobby-related)
@@ -234,16 +271,16 @@ function PageContent() {
           <div className="grid flex-1 gap-5 lg:gap-6 xl:grid-cols-[340px_1fr]">
             <ProfileCard onOpen={() => setIsProfileOpen(true)} />
             <GameModes 
-              onStartTraining={() => setScreen('training')} 
-              onStartOnlineTraining={() => setScreen('online-training')} 
-              onStartCompetitive={() => setScreen('competitive')}
+              onStartTraining={() => setScreenAndRef('training')} 
+              onStartOnlineTraining={() => setScreenAndRef('online-training')} 
+              onStartCompetitive={() => setScreenAndRef('competitive')}
             />
           </div>
         )
       case 'training':
         return (
           <div className="mx-auto w-full max-w-3xl flex-1">
-            <AiTraining onBack={() => setScreen('lobby')} onStartGame={handleStartGame} />
+            <AiTraining onBack={() => setScreenAndRef('lobby')} onStartGame={handleStartGame} />
           </div>
         )
       case 'online-training':
@@ -252,7 +289,7 @@ function PageContent() {
             <OnlineTraining 
               onBack={() => {
                 setDuelAutoJoinCode(null)
-                setScreen('lobby')
+                setScreenAndRef('lobby')
               }} 
               autoJoinCode={duelAutoJoinCode}
               onMatchFound={(data) => {
@@ -266,31 +303,30 @@ function PageContent() {
         return (
           <div className="mx-auto w-full max-w-3xl flex-1">
             <CompetitiveTraining 
-              onBack={() => setScreen('lobby')} 
+              onBack={() => setScreenAndRef('lobby')} 
               onMatchFound={(data) => handleMatchFound(data, 'competitive')}
             />
           </div>
         )
       case 'billetera':
-        return <WalletScreen onBack={() => setScreen('lobby')} />
+        return <WalletScreen onBack={() => setScreenAndRef('lobby')} />
       case 'amigos':
         return (
           <FriendsScreen 
-            onBack={() => setScreen('lobby')} 
-            onStartDuel={(code) => {
-              setDuelAutoJoinCode(code)
-              setScreen('online-training')
+            onBack={() => setScreenAndRef('lobby')} 
+            onStartDuel={() => {
+              setDuelAutoJoinCode(null)
             }} 
           />
         )
       case 'tienda':
-        return <StoreScreen onBack={() => setScreen('lobby')} />
+        return <StoreScreen onBack={() => setScreenAndRef('lobby')} />
       case 'eventos':
-        return <EventsScreen onBack={() => setScreen('lobby')} />
+        return <EventsScreen onBack={() => setScreenAndRef('lobby')} />
       case 'correo':
-        return <MailScreen onBack={() => setScreen('lobby')} />
+        return <MailScreen onBack={() => setScreenAndRef('lobby')} />
       case 'coleccion':
-        return <CollectionScreen onBack={() => setScreen('lobby')} onNavigate={(s) => setScreen(s as Screen)} />
+        return <CollectionScreen onBack={() => setScreenAndRef('lobby')} onNavigate={(s) => setScreenAndRef(s as Screen)} />
       default:
         return null
     }
@@ -298,7 +334,7 @@ function PageContent() {
 
   // Offline Game Engine runs independently outside the Lobby layout
   if (screen === 'game' && config) {
-    return <GameEngine initialConfig={config} onExit={() => setScreen('training')} />
+    return <GameEngine initialConfig={config} onExit={() => setScreenAndRef('training')} />
   }
 
   // Online Game Engine runs independently outside the Lobby layout
@@ -308,8 +344,13 @@ function PageContent() {
         gameData={onlineGameData} 
         modeType={onlineGameOrigin === 'competitive' ? 'competitive' : 'training'}
         onExit={() => {
+          clearIncomingDuelInvite()
+          setIncomingChallenge(null)
           setOnlineGameData(null)
-          setScreen(onlineGameOrigin)
+          setDuelAutoJoinCode(null)
+          const targetScreen = (onlineGameOrigin === 'amigos') ? 'amigos' : (onlineGameOrigin === 'competitive' ? 'competitive' : (onlineGameOrigin === 'online-training' ? 'online-training' : 'lobby'))
+          setOnlineGameOrigin('lobby')
+          setScreenAndRef(targetScreen)
         }} 
       />
     )
@@ -354,19 +395,19 @@ function PageContent() {
     <PlayerProvider>
       <main className="cyber-bg min-h-screen w-full">
         {/* Fixed left sidebar (desktop) */}
-        <Sidebar currentScreen={screen} onNavigate={(s) => setScreen(s as Screen)} />
+        <Sidebar currentScreen={screen} onNavigate={(s) => setScreenAndRef(s as Screen)} />
 
         {/* Content area: offset for the fixed sidebar on desktop */}
         <div className="flex min-h-screen flex-col gap-5 px-4 pb-24 pt-4 sm:px-6 md:gap-6 md:pb-6 md:pl-[19.5rem] md:pr-6">
           {screen === 'lobby' && (
-            <TopBar onSettingsOpen={() => setIsSettingsOpen(true)} onStoreOpen={() => setScreen('tienda')} />
+            <TopBar onSettingsOpen={() => setIsSettingsOpen(true)} onStoreOpen={() => setScreenAndRef('tienda')} />
           )}
 
           {renderScreen()}
         </div>
 
         {/* Bottom navigation (mobile) */}
-        <MobileNav currentScreen={screen} onNavigate={(s) => setScreen(s as Screen)} />
+        <MobileNav currentScreen={screen} onNavigate={(s) => setScreenAndRef(s as Screen)} />
 
         {/* Modals */}
         <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />

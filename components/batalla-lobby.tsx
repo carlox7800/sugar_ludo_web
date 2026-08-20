@@ -159,7 +159,14 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
     if (invitedUids.has(friend.id)) return
     
     // We send a duel invite, but the roomCode tells the guest it's a Lobby
-    const { challengeId } = sendRealtimeDuelInvite(user, friend, `LOBBY-${me.uid}`)
+    const { challengeId } = sendRealtimeDuelInvite(user, friend, `LOBBY-${me.uid}`, () => {
+      showToast(`No se pudo conectar con ${friend.name}. Verifica que tenga la app abierta.`)
+      setInvitedUids(prev => {
+        const next = new Set(prev)
+        next.delete(friend.id)
+        return next
+      })
+    })
     
     setInvitedUids(prev => new Set(prev).add(friend.id))
 

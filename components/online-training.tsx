@@ -192,7 +192,7 @@ export function OnlineTraining({
     }
   }, [connect, onMatchFound, user])
 
-  // Auto-unión directa a Duelo Privado 1 vs 1 con código oficial de sala o Lobby P2P
+  // Auto-unión a Lobby P2P personalizado si aplica
   useEffect(() => {
     if (!autoJoinCode) return
     const code = autoJoinCode.trim()
@@ -201,34 +201,8 @@ export function OnlineTraining({
       const hostUid = code.replace('LOBBY-', '')
       isPrivateMatchRef.current = true
       setP2pLobbyConfig({ mode: 'guest', hostUid })
-      return
     }
-
-    const socket = getSocketInstance()
-    const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
-    const playerName = user?.nickname || user?.displayName || 'Jugador'
-    const baseCode = code.replace(/[^0-9]/g, '') || code.replace('DUEL-', '')
-
-    isPrivateMatchRef.current = true
-    targetPlayersRef.current = 2
-    createPlayersRef.current = 2
-    hasLobbyIntentRef.current = true
-    setIsSearching(true)
-    setLobbyData({ 
-      roomId: `DUEL-${baseCode}`, 
-      players: [{ playerId, playerName: user?.photoURL ? `${playerName}|||${user?.photoURL}` : playerName }], 
-      targetPlayers: 2 
-    })
-
-    // Unirse a la sala oficial creada por el retador
-    socket.emit('join_private_room', {
-      playerId,
-      playerName: user?.photoURL ? `${playerName}|||${user.photoURL}` : playerName,
-      targetPlayers: 2,
-      roomCode: baseCode,
-      code: baseCode,
-    })
-  }, [autoJoinCode, getSocketInstance, user])
+  }, [autoJoinCode])
 
   const showToast = (msg: string) => {
     setNotification(msg)
@@ -435,63 +409,38 @@ export function OnlineTraining({
             </div>
           )}
 
-          {/* Duelo Privado 1 vs 1 Directo o Pestañas Normales */}
-          {autoJoinCode ? (
-            <div className="flex flex-col items-center justify-center p-8 rounded-3xl border border-[var(--candy-cyan)]/40 bg-[oklch(0_0_0/0.4)] text-center gap-5 animate-in fade-in">
-              <div className="size-20 rounded-3xl bg-[linear-gradient(135deg,var(--candy-magenta),var(--candy-cyan))] text-white flex items-center justify-center shadow-[0_0_30px_rgba(0,240,255,0.4)] animate-pulse">
-                <Swords className="size-10" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <h3 className="font-display text-2xl font-black text-white">DUELO PRIVADO 1 VS 1</h3>
-                <p className="font-mono text-base font-extrabold tracking-widest text-[var(--candy-cyan)]">
-                  SALA: {autoJoinCode}
-                </p>
-              </div>
-              <div className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/5 border border-white/10">
-                <Loader2 className="size-5 text-[var(--candy-cyan)] animate-spin" />
-                <span className="text-sm font-display font-bold text-foreground">Conectando a ambos jugadores a la mesa...</span>
-              </div>
-              <button
-                onClick={handleBackToMenu}
-                className="btn-3d rounded-xl bg-white/10 px-6 py-2.5 font-display text-xs font-bold text-muted-foreground hover:text-white transition-colors"
-              >
-                Cancelar y Salir
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Pestañas Superiores principales */}
-              <div className="flex rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/60">
-                <button
-                  onClick={() => {
-                    setMainTab('quick')
-                    setCreatedRoomCode(null)
-                  }}
-                  className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 font-display text-sm sm:text-base font-extrabold transition-all ${
-                    mainTab === 'quick'
-                      ? 'bg-[linear-gradient(145deg,var(--candy-cyan),oklch(0.7_0.18_190))] text-[oklch(0.18_0.03_285)] shadow-[0_4px_12px_oklch(0.82_0.15_200/0.4)]'
-                      : 'text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground'
-                  }`}
-                >
-                  <Zap className="size-5 fill-current" />
-                  Partida Rápida ⚡
-                </button>
-                
-                <button
-                  onClick={() => {
-                    setMainTab('friends')
-                    setCreatedRoomCode(null)
-                  }}
-                  className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 font-display text-sm sm:text-base font-extrabold transition-all ${
-                    mainTab === 'friends'
-                      ? 'bg-[linear-gradient(145deg,var(--candy-magenta),oklch(0.6_0.25_340))] text-white shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)]'
-                      : 'text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground'
-                  }`}
-                >
-                  <Key className="size-5" />
-                  Batalla Amigos 🔑
-                </button>
-              </div>
+          {/* Pestañas Superiores principales */}
+          <div className="flex rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/60">
+            <button
+              onClick={() => {
+                setMainTab('quick')
+                setCreatedRoomCode(null)
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 font-display text-sm sm:text-base font-extrabold transition-all ${
+                mainTab === 'quick'
+                  ? 'bg-[linear-gradient(145deg,var(--candy-cyan),oklch(0.7_0.18_190))] text-[oklch(0.18_0.03_285)] shadow-[0_4px_12px_oklch(0.82_0.15_200/0.4)]'
+                  : 'text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground'
+              }`}
+            >
+              <Zap className="size-5 fill-current" />
+              Partida Rápida ⚡
+            </button>
+            
+            <button
+              onClick={() => {
+                setMainTab('friends')
+                setCreatedRoomCode(null)
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 font-display text-sm sm:text-base font-extrabold transition-all ${
+                mainTab === 'friends'
+                  ? 'bg-[linear-gradient(145deg,var(--candy-magenta),oklch(0.6_0.25_340))] text-white shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)]'
+                  : 'text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground'
+              }`}
+            >
+              <Key className="size-5" />
+              Batalla Amigos 🔑
+            </button>
+          </div>
 
           {/* TAB 1: PARTIDA RÁPIDA ⚡ */}
           {mainTab === 'quick' && (
@@ -740,8 +689,6 @@ export function OnlineTraining({
               )}
             </div>
           )}
-          </>
-          )}
 
           <div className="mt-2">
             <button 
@@ -758,7 +705,7 @@ export function OnlineTraining({
 
       <GameGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} showEconomy={false} />
       {/* FLOATING LOBBY MODAL */}
-      {(isSearching || lobbyData) && (
+      {(isSearching || lobbyData) && !autoJoinCode && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 backdrop-blur-md bg-black/15 animate-in fade-in zoom-in-95">
           <div className="bg-card w-full max-w-sm rounded-[2rem] p-6 sm:p-8 border-2 border-[var(--candy-cyan)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col items-center gap-6">
             <header className="text-center w-full">
