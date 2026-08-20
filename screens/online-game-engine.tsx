@@ -1021,6 +1021,9 @@ export function OnlineGameEngine({
         if (isPenalty) {
           showToast('🚫 ¡Penalización por 3 dobles consecutivos! Ficha devuelta a la base')
           globalLogger.log('GAME-FLOW', '¡Penalización por 3 dobles consecutivos recibida del servidor!')
+        } else if (data.captureCell === 0 || (isHexGame && data.captureCell === 1)) {
+          showToast('💥 ¡EXPULSIÓN! Ficha enemiga expulsada de la salida')
+          globalLogger.log('GAME-FLOW', '¡EXPULSIÓN en casilla de salida recibida del servidor!')
         } else {
           showToast(`⚔️ ¡Ficha capturada! +${isHexGame ? 25 : 20} pasos de bonificación`)
         }
@@ -1157,7 +1160,7 @@ export function OnlineGameEngine({
                     if (!mutedRef.current) audio.playFireworks()
                     setExplosionData({ cellIndex: targetCellIndex, color: enemyTokens[0].color })
                     setTimeout(() => setExplosionData(null), 3500)
-                    showToast('⚔️ ¡Ficha enemiga expulsada de salida!')
+                    showToast('💥 ¡EXPULSIÓN! Ficha enemiga expulsada de la salida')
                   }
                 } else if (!STAR_CELLS.includes(targetCellIndex)) {
                   const enemyTokens = tokensRef.current.filter(
@@ -1178,7 +1181,7 @@ export function OnlineGameEngine({
               const isGoldStar = [1, 8, 14, 21, 27, 34, 40, 47].includes(pIndex)
 
               if (targetStep === 0) {
-                // Salida a casilla propia
+                // Salida a casilla propia: solo expulsa si la casilla ya estaba saturada (>= 2 fichas)
                 const cellTokens = tokensRef.current.filter((t) => {
                   if (t.step < 0 || t.step >= trackSteps) return false
                   const oppPIndex = (getStartOffset(t.color, isHexGame) + t.step) % perimeter
@@ -1191,7 +1194,7 @@ export function OnlineGameEngine({
                   if (!mutedRef.current) audio.playFireworks()
                   setExplosionData({ cellIndex: pIndex + 1, color: enemyTokens[0].color })
                   setTimeout(() => setExplosionData(null), 3500)
-                  showToast('⚔️ ¡Ficha enemiga expulsada de salida!')
+                  showToast('💥 ¡EXPULSIÓN! Ficha enemiga expulsada de la salida')
                 }
               } else if (!isGoldStar) {
                 const opponents = tokensRef.current.filter((t) => {
