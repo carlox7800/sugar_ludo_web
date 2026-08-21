@@ -2,6 +2,7 @@
  
 import { useEffect } from 'react'
 import { Sparkles, RefreshCw } from 'lucide-react'
+import { globalLogger } from '@/lib/logger'
 
 export default function Error({
   error,
@@ -12,6 +13,10 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error('Next.js Client Error Boundary caught error:', error)
+    globalLogger.log('ERROR', `Error en interfaz (Error Boundary): ${error?.message || String(error)}`, {
+      digest: error?.digest,
+      stack: error?.stack
+    })
   }, [error])
 
   return (

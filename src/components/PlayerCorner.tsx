@@ -40,6 +40,7 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   diceSkinId,
 }) => {
   const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
+  const [localMessage, setLocalMessage] = useState<string | null>(null);
   const baseEmotes = EMOTE_ITEMS.filter(e => e.priceSC === 0);
   const [userEmotes, setUserEmotes] = useState(baseEmotes);
 
