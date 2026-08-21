@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { PRESET_AVATARS } from '@/components/avatar-selector-modal'
 import { getSocket } from '@/lib/socket'
+import { globalLogger } from '@/lib/logger'
 import { 
   FriendItem, 
   FriendRequestItem, 
@@ -200,7 +201,8 @@ export function FriendsScreen({
 
     const onRoomCreated = (data: { roomCode?: string; id?: string }) => {
       socket.off('private_room_created', onRoomCreated)
-      const officialCode = data.roomCode || data.id || ''
+      const officialCode = (data.roomCode || data.id || '').trim()
+      globalLogger.socket(`Sala privada creada para duelo: ${officialCode}`, data)
       setDuelRoomCode(officialCode)
 
       const res = sendRealtimeDuelInvite(user, challengingFriend, officialCode, () => {
@@ -217,6 +219,7 @@ export function FriendsScreen({
         setTimeout(() => {
           setIsWaitingResponse((prev) => {
             if (prev) {
+              globalLogger.social(`Timeout de 15s esperando respuesta de ${challengingFriend.name}`)
               showToast(`El jugador ${challengingFriend.name} no respondió a tiempo.`)
               setActiveChallengeId(null)
               setChallengingFriend(null)
@@ -233,19 +236,29 @@ export function FriendsScreen({
 
     socket.once('private_room_created', onRoomCreated)
 
-    // Si el socket no está conectado, conectar primero
-    if (!socket.connected) {
-      socket.connect()
+    const emitCreate = () => {
+      globalLogger.socket(`Emitiendo create_private_room para duelo`, { playerId, targetPlayers: 2 })
+      socket.emit('register_identity', { playerId })
+      socket.emit('create_private_room', {
+        playerId,
+        playerName,
+        targetPlayers: 2
+      })
     }
 
-    socket.emit('create_private_room', {
-      playerId,
-      playerName,
-      targetPlayers: 2
-    })
+    if (socket.connected) {
+      emitCreate()
+    } else {
+      globalLogger.socket(`Socket desconectado al enviar duelo, conectando...`)
+      socket.once('connect', () => {
+        emitCreate()
+      })
+      socket.connect()
+    }
   }
 
   const handleCancelDuel = () => {
+    globalLogger.social(`Cancelando reto enviado a ${challengingFriend?.name}`)
     if (challengingFriend?.id) {
       cancelRealtimeDuelInvite(challengingFriend.id)
     }

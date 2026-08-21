@@ -31,6 +31,7 @@ import { LoginModal } from '@/components/login-modal'
 import { NicknameSetupModal } from '@/components/nickname-setup-modal'
 import { DuelChallengeModal } from '@/components/duel-challenge-modal'
 import { getSocket } from '@/lib/socket'
+import { globalLogger } from '@/lib/logger'
 import { preloadStoreAssets } from '@/lib/store-service'
 import { 
   DuelChallengeItem, 
@@ -87,6 +88,7 @@ function PageContent() {
   const [screen, setScreen] = useState<Screen>('landing')
   const screenRef = useRef<Screen>('landing')
   const setScreenAndRef = (s: Screen) => {
+    globalLogger.nav(screenRef.current, s)
     screenRef.current = s
     setScreen(s)
   }
@@ -112,6 +114,7 @@ function PageContent() {
   // Register on social WebSocket & initialize stream once per user
   useEffect(() => {
     if (!user?.uid) return
+    globalLogger.auth(`Usuario activo en sesión: ${user.nickname || user.displayName || user.uid}`, { uid: user.uid })
     registerSocialSocket(user)
   }, [user?.uid])
 
@@ -126,6 +129,9 @@ function PageContent() {
   useEffect(() => {
     if (!user?.uid) return
     const unsub = subscribeToIncomingDuelInvites(user.uid, (challenge) => {
+      if (challenge) {
+        globalLogger.social(`Modal de reto activado en pantalla`, challenge)
+      }
       setIncomingChallenge(challenge)
     })
     return () => unsub()
@@ -135,6 +141,10 @@ function PageContent() {
   useEffect(() => {
     const socket = getSocket()
     const handleGlobalMatchFound = (gameData: any) => {
+      globalLogger.socket(`match_found global recibido en page.tsx`, {
+        roomId: gameData.roomId || gameData.id,
+        playersCount: gameData.players?.length
+      })
       clearIncomingDuelInvite()
       setIncomingChallenge(null)
       setDuelAutoJoinCode(null)
@@ -187,45 +197,78 @@ function PageContent() {
   }, [user, screen, isNative, forceWebMode])
 
   const handleStartGame = (gameConfig: GameConfig) => {
+    globalLogger.log('GAME-FLOW', `Iniciando partida offline clásica (${gameConfig.playerCount} jugadores)`, gameConfig)
     setConfig(gameConfig)
     setScreenAndRef('game')
   }
 
   const handleMatchFound = (gameData: OnlineGameData, origin: Screen = 'online-training') => {
+    globalLogger.log('GAME-FLOW', `Iniciando partida online (${gameData.players?.length} jugadores)`, {
+      roomId: gameData.roomId,
+      origin
+    })
     setOnlineGameData(gameData)
     setOnlineGameOrigin(origin)
     setScreenAndRef('online-game')
   }
 
   const handleAcceptDuel = (challenge: DuelChallengeItem) => {
+    globalLogger.social(`Jugador aceptó reto 1 vs 1`, challenge)
     respondToRealtimeDuelInvite(challenge.senderUid, 'accepted', challenge.roomCode, challenge.id)
     clearIncomingDuelInvite()
     setIncomingChallenge(null)
-    setDuelAutoJoinCode(null)
     // Capture current screen synchronously from ref
     const originAtAccept = screenRef.current === 'amigos' ? 'amigos' : 'lobby'
     setOnlineGameOrigin(originAtAccept)
 
-    // Unirse directamente a la sala en el socket del servidor
-    const socket = getSocket()
-    const playerId = user?.uid || socket.id
-    const playerName = user?.photoURL ? `${user.nickname || 'Jugador'}|||${user.photoURL}` : (user?.nickname || 'Jugador')
-    const baseCode = challenge.roomCode.replace(/[^0-9]/g, '') || challenge.roomCode.replace('DUEL-', '')
+    const rawCode = challenge.roomCode.trim()
 
-    if (!socket.connected) {
-      socket.connect()
+    // Si es una invitación al Lobby P2P de espera previa, redirigir a online-training como invitado
+    if (rawCode.startsWith('LOBBY-')) {
+      globalLogger.nav(`Redirigiendo a BatallaLobby como invitado para: ${rawCode}`)
+      setDuelAutoJoinCode(rawCode)
+      setScreenAndRef('online-training')
+      return
     }
 
-    socket.emit('join_private_room', {
-      playerId,
-      playerName,
-      targetPlayers: 2,
-      roomCode: baseCode,
-      code: baseCode,
-    })
+    setDuelAutoJoinCode(null)
+
+    // Unirse directamente a la sala en el socket del servidor usando el código exacto
+    const socket = getSocket()
+    const playerId = user?.uid || socket.id || `guest_${Math.floor(Math.random() * 10000)}`
+    const playerName = user?.photoURL ? `${user.nickname || 'Jugador'}|||${user.photoURL}` : (user?.nickname || 'Jugador')
+
+    const emitJoin = () => {
+      globalLogger.socket(`Emitiendo join_private_room para reto`, {
+        roomCode: rawCode,
+        playerId,
+        playerName
+      })
+
+      socket.emit('register_identity', { playerId })
+
+      socket.emit('join_private_room', {
+        playerId,
+        playerName,
+        targetPlayers: 2,
+        roomCode: rawCode,
+        code: rawCode,
+      })
+    }
+
+    if (socket.connected) {
+      emitJoin()
+    } else {
+      globalLogger.socket(`Socket desconectado al aceptar reto, conectando primero...`)
+      socket.once('connect', () => {
+        emitJoin()
+      })
+      socket.connect()
+    }
   }
 
   const handleRejectDuel = (challenge: DuelChallengeItem) => {
+    globalLogger.social(`Jugador rechazó reto 1 vs 1`, challenge)
     respondToRealtimeDuelInvite(challenge.senderUid, 'rejected', challenge.roomCode, challenge.id)
     clearIncomingDuelInvite()
     setIncomingChallenge(null)

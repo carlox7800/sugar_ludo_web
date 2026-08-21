@@ -61,8 +61,20 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
       setPlayers([me])
     } else if (mode === 'guest' && hostUid) {
       setPlayers([me])
-      // Emit a join request to the host
-      sendP2PData(hostUid, { type: 'lobby_join', player: me })
+      // Emit a join request to the host with retry until answered
+      const sendJoin = () => {
+        sendP2PData(hostUid, { type: 'lobby_join', player: me })
+      }
+      sendJoin()
+      const retryInterval = setInterval(() => {
+        setPlayers(current => {
+          if (current.length <= 1) {
+            sendJoin()
+          }
+          return current
+        })
+      }, 1500)
+      return () => clearInterval(retryInterval)
     }
   }, [mode, hostUid])
 
@@ -88,6 +100,15 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
         } else if (data.type === 'lobby_ready' && data.uid) {
           setPlayers((prev) => {
             const newPlayers = prev.map(p => p.uid === data.uid ? { ...p, isReady: data.isReady } : p)
+            // Broadcast new state
+            newPlayers.filter(p => !p.isHost).forEach(p => {
+              sendP2PData(p.uid, { type: 'lobby_state', players: newPlayers, targetPlayers })
+            })
+            return newPlayers
+          })
+        } else if (data.type === 'lobby_leave' && data.uid) {
+          setPlayers((prev) => {
+            const newPlayers = prev.filter(p => p.uid !== data.uid)
             // Broadcast new state
             newPlayers.filter(p => !p.isHost).forEach(p => {
               sendP2PData(p.uid, { type: 'lobby_state', players: newPlayers, targetPlayers })
@@ -124,6 +145,13 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
     }
   }
 
+  const handleExit = () => {
+    if (mode === 'guest' && hostUid) {
+      sendP2PData(hostUid, { type: 'lobby_leave', uid: me.uid })
+    }
+    onBack()
+  }
+
   useEffect(() => {
     const handleSocketCreated = (e: any) => {
       const code = e.detail.roomCode
@@ -139,9 +167,8 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
 
   const handleStartHost = () => {
     if (mode !== 'host') return
-    // Check if everyone is ready
-    if (!allGuestsReady) return
-    if (players.length < 2) return
+    // Check if room is full and everyone is ready
+    if (!canStartMatch) return
 
     // Notify parent to create the socket.io room and transition
     onStartGame('CREATE_NOW', players.length)
@@ -158,8 +185,8 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
   const handleInvite = (friend: FriendItem) => {
     if (invitedUids.has(friend.id)) return
     
-    // We send a duel invite, but the roomCode tells the guest it's a Lobby
-    const { challengeId } = sendRealtimeDuelInvite(user, friend, `LOBBY-${me.uid}`, () => {
+    // We send a duel invite with capacity: LOBBY-{hostUid}-{targetPlayers}
+    const { challengeId } = sendRealtimeDuelInvite(user, friend, `LOBBY-${me.uid}-${targetPlayers}`, () => {
       showToast(`No se pudo conectar con ${friend.name}. Verifica que tenga la app abierta.`)
       setInvitedUids(prev => {
         const next = new Set(prev)
@@ -192,7 +219,8 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
 
   const myPlayer = players.find(p => p.uid === me.uid)
   const isMeReady = myPlayer?.isReady || false
-  const allGuestsReady = players.length >= 2 && players.every(p => p.isReady)
+  const isRoomFull = players.length === targetPlayers
+  const canStartMatch = isRoomFull && players.length >= 2 && players.every(p => p.isReady)
 
   return (
     <div className="flex flex-col w-full h-full animate-in fade-in zoom-in-95 relative">
@@ -213,7 +241,7 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
         <header className="text-center w-full relative z-10 flex flex-col items-center gap-2">
           <div className="flex items-center justify-between w-full mb-2">
              <button
-                onClick={onBack}
+                onClick={handleExit}
                 className="btn-3d flex items-center gap-2 rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-2 font-display text-xs font-bold uppercase tracking-wider text-red-500 hover:bg-red-500/20 transition-colors shadow-lg active:scale-95"
               >
                 <ArrowLeft className="size-4" /> Salir
@@ -319,10 +347,10 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
           {mode === 'host' ? (
             <button
               onClick={handleStartHost}
-              disabled={!allGuestsReady || players.length < 2}
+              disabled={!canStartMatch}
               className={cn(
                 "btn-3d flex w-full max-w-sm items-center justify-center gap-3 rounded-2xl py-4 font-display text-lg font-extrabold uppercase tracking-widest shadow-xl transition-all duration-300",
-                allGuestsReady && players.length >= 2
+                canStartMatch
                   ? "bg-[linear-gradient(145deg,oklch(0.85_0.16_90),oklch(0.78_0.18_55))] text-[oklch(0.25_0.08_60)] shadow-[inset_0_2px_0_oklch(1_0_0/0.5),0_7px_0_oklch(0.6_0.15_50),0_14px_26px_oklch(0.6_0.15_50/0.55)] scale-100 hover:scale-105 cursor-pointer"
                   : "bg-muted text-muted-foreground opacity-50 cursor-not-allowed scale-95"
               )}
@@ -343,15 +371,44 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
             </button>
           )}
 
-          {mode === 'host' && (!allGuestsReady && players.length >= 2) && (
-            <p className="text-xs font-bold text-[var(--candy-gold)] uppercase tracking-widest animate-pulse flex items-center gap-2">
-              <Clock className="size-3" /> Esperando a que los invitados estén listos
-            </p>
+          {mode === 'host' && (
+            <>
+              {!isRoomFull && (
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                  <UserPlus className="size-3" /> Faltan {targetPlayers - players.length} jugadores para completar la sala
+                </p>
+              )}
+              {isRoomFull && !players.every(p => p.isReady) && (
+                <p className="text-xs font-bold text-[var(--candy-gold)] uppercase tracking-widest animate-pulse flex items-center gap-2">
+                  <Clock className="size-3" /> Esperando a que todos los invitados estén listos
+                </p>
+              )}
+              {canStartMatch && (
+                <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest animate-pulse flex items-center gap-2">
+                  <Sparkles className="size-3" /> ¡Todos listos! Puedes comenzar la partida
+                </p>
+              )}
+            </>
           )}
-          {mode === 'host' && players.length < 2 && (
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-              <UserPlus className="size-3" /> Invita amigos para comenzar
-            </p>
+
+          {mode === 'guest' && (
+            <>
+              {!isRoomFull && (
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                  <UserPlus className="size-3" /> Esperando {targetPlayers - players.length} jugadores más...
+                </p>
+              )}
+              {isRoomFull && !players.every(p => p.isReady) && (
+                <p className="text-xs font-bold text-[var(--candy-gold)] uppercase tracking-widest animate-pulse flex items-center gap-2">
+                  <Clock className="size-3" /> Esperando confirmación de todos los jugadores
+                </p>
+              )}
+              {canStartMatch && (
+                <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest animate-pulse flex items-center gap-2">
+                  <Sparkles className="size-3" /> ¡Todos listos! Esperando que el anfitrión inicie...
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>

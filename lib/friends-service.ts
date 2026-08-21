@@ -14,6 +14,7 @@ import {
   onSnapshot 
 } from 'firebase/firestore'
 import { getSocket } from './socket'
+import { globalLogger } from './logger'
 
 export interface FriendItem {
   id: string
@@ -166,10 +167,14 @@ export function broadcastLocalMessage(payload: any) {
 }
 
 function handleIncomingData(data: any) {
-  if (!data || typeof data !== 'object') return
-
-  // Generic custom data broadcast
-  customDataCallbacks.forEach(cb => cb(data))
+  if (data.type === 'p2p_data') {
+    const isForMe = !data.targetUid || (currentActiveUid && data.targetUid.toLowerCase() === currentActiveUid.toLowerCase())
+    if (isForMe && data.payload) {
+      globalLogger.social(`P2P data recibido de ${data.senderUid || 'peer'}`, data.payload)
+      customDataCallbacks.forEach(cb => cb(data.payload))
+    }
+    return
+  }
 
   if (data.type === 'presence') {
     if (data.uid && data.status) {
@@ -193,6 +198,11 @@ function handleIncomingData(data: any) {
     )
 
     if (isForMe && data.challenge) {
+      globalLogger.social(`Invitación a duelo recibida de ${data.challenge.senderName} (${data.challenge.senderUid})`, {
+        challengeId: data.challenge.id,
+        roomCode: data.challenge.roomCode
+      })
+
       // Enviar ACK inmediato de recepción para confirmar entrega instantánea
       const ackPayload = {
         type: 'duel_ack',
@@ -207,10 +217,16 @@ function handleIncomingData(data: any) {
     }
   } else if (data.type === 'duel_ack') {
     if (data.challengeId && duelAckCallbacks.has(data.challengeId)) {
+      globalLogger.social(`ACK de entrega de reto confirmado: ${data.challengeId}`)
       const cb = duelAckCallbacks.get(data.challengeId)
       cb?.()
     }
   } else if (data.type === 'duel_response') {
+    globalLogger.social(`Respuesta a reto recibida: ${data.status}`, {
+      challengeId: data.challengeId,
+      senderUid: data.senderUid,
+      roomCode: data.roomCode
+    })
     if (data.challengeId && duelResultCallbacks.has(data.challengeId)) {
       const cb = duelResultCallbacks.get(data.challengeId)
       cb?.(data.status)
@@ -219,6 +235,7 @@ function handleIncomingData(data: any) {
     }
   } else if (data.type === 'duel_cancel') {
     if (!currentActiveUid || data.targetUid?.toLowerCase() === currentActiveUid?.toLowerCase()) {
+      globalLogger.social(`Reto cancelado por el emisor`, { targetUid: data.targetUid })
       incomingInviteCallbacks.forEach(cb => cb(null))
     }
   }
@@ -341,6 +358,10 @@ export function sendRealtimeDuelInvite(
   }, 10000)
 
   // Emitir por canal social
+  globalLogger.social(`Emitiendo invitación de duelo a ${targetFriend.name} (${targetFriend.id})`, {
+    challengeId,
+    roomCode
+  })
   broadcastLocalMessage(payload)
 
   return { success: true, challengeId }
@@ -385,6 +406,11 @@ export function respondToRealtimeDuelInvite(
     roomCode,
     respondedAt: new Date().toISOString()
   }
+
+  globalLogger.social(`Enviando respuesta a reto (${response}) para ${senderUid}`, {
+    challengeId,
+    roomCode
+  })
 
   broadcastLocalMessage(payload)
 }

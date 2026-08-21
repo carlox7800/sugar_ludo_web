@@ -138,6 +138,8 @@ const server = http.createServer((req, res) => {
             clearPendingDuels(payload.targetUid);
             clearPendingDuels(payload.senderUid);
             broadcastToSSE(payload.targetUid, payload);
+          } else if (payload.type === 'p2p_data' && payload.targetUid) {
+            broadcastToSSE(payload.targetUid, payload);
           }
 
           const currentMap = {};

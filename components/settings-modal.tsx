@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { X, Settings, Volume2, VolumeX, Smartphone, Palette, Copy, Check, LogOut, Info, Download } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { globalLogger } from '@/lib/logger'
+import { getSocket } from '@/lib/socket'
 import { APP_VERSION } from '@/lib/constants'
 
 interface SettingsModalProps {
@@ -13,7 +14,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose, onNavigateToLanding }: SettingsModalProps) {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
   const [isMuted, setIsMuted] = useState(false)
   const [vibration, setVibration] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'sugar'>('dark')
@@ -74,11 +75,28 @@ export function SettingsModal({ isOpen, onClose, onNavigateToLanding }: Settings
   }
 
   const handleExportLogs = () => {
-    const header = `[Sugar Ludo Logs Export]\nTimestamp: ${new Date().toISOString()}\nUser Agent: ${navigator.userAgent}\nTheme: ${theme}\nSound Muted: ${isMuted}\nStatus: System Nominal\n----------------------------------------\n`
+    const socket = getSocket()
+    const header = `================================================================================
+SUGAR LUDO - REGISTRO DEL SISTEMA (DIAGNÓSTICO COMPLETO)
+================================================================================
+Versión App:       ${APP_VERSION}
+Fecha / Hora UTC:  ${new Date().toISOString()}
+Fecha / Hora Local:${new Date().toLocaleString()}
+Usuario:           ${user?.nickname || user?.displayName || 'Anónimo'} (UID: ${user?.uid || 'Sin sesión'})
+Nivel / XP:        Nivel ${user?.level || 1} (${user?.xp || 0} XP)
+Monedas / Diamantes: ${user?.coins ?? 0} SC / ${user?.diamonds ?? 0} Diamantes
+User Agent:        ${typeof navigator !== 'undefined' ? navigator.userAgent : 'Desconocido'}
+Pantalla / View:   ${typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight} (DPR: ${window.devicePixelRatio})` : 'N/A'}
+Plataforma:        ${typeof window !== 'undefined' && (window as any).Capacitor ? 'Capacitor Native' : 'Navegador Web'}
+Tema / Sonido / Vib: Tema: ${theme} | Muted: ${isMuted} | Vibration: ${vibration}
+Socket Estado:     ${socket.connected ? `Conectado (ID: ${socket.id})` : 'Desconectado'}
+================================================================================
+HISTORIAL CRONOLÓGICO DE EVENTOS:
+================================================================================\n`
     const logs = globalLogger.exportLogs()
     
     // Create a blob and download it instead of just copying to clipboard to allow larger files
-    const blob = new Blob([header + logs], { type: 'text/plain' })
+    const blob = new Blob([header + logs], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

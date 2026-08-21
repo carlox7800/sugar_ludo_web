@@ -198,9 +198,11 @@ export function OnlineTraining({
     const code = autoJoinCode.trim()
 
     if (code.startsWith('LOBBY-')) {
-      const hostUid = code.replace('LOBBY-', '')
+      const parts = code.replace('LOBBY-', '').split('-')
+      const hostUid = parts[0]
+      const cap = parts[1] ? parseInt(parts[1], 10) : 2
       isPrivateMatchRef.current = true
-      setP2pLobbyConfig({ mode: 'guest', hostUid })
+      setP2pLobbyConfig({ mode: 'guest', hostUid, capacity: Number.isFinite(cap) && cap >= 2 ? cap : 2 })
     }
   }, [autoJoinCode])
 
