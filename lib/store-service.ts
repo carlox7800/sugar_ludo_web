@@ -1,6 +1,7 @@
 import { db } from './firebase'
 import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore'
 import { recordWalletTransaction } from './wallet-service'
+import { APP_VERSION } from './constants'
 
 export type ItemRarity = 'common' | 'rare' | 'epic' | 'legendary'
 export type ItemCategory = 'board' | 'token' | 'dice' | 'emote' | 'booster'
@@ -124,7 +125,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'common',
     description: 'El tablero insignia oficial de Sugar Ludo.',
     icon: '🏁',
-    image: '/store/board_classic.png',
+    image: `/store/board_classic.png?v=${APP_VERSION}`,
     accentColor: 'var(--candy-cyan)',
     previewData: { theme: 'classic' }
   },
@@ -136,7 +137,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'rare',
     description: 'Estilo vibrante de confitería con colores pastel y destellos dulces.',
     icon: '🍭',
-    image: '/store/board_candy.png',
+    image: `/store/board_candy_3d.png?v=${APP_VERSION}`,
     accentColor: 'var(--candy-magenta)',
     previewData: { theme: 'sugar' }
   },
@@ -148,7 +149,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'epic',
     description: 'Fondo oscuro con circuitos y bordes holográficos luminiscentes.',
     icon: '🌌',
-    image: '/store/board_neon.png',
+    image: `/store/board_neon_3d.png?v=${APP_VERSION}`,
     accentColor: '#38bdf8',
     previewData: { theme: 'neon' }
   },
@@ -160,7 +161,7 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
     rarity: 'legendary',
     description: 'Diseño de ultra lujo con acabados en oro pulido y piedras preciosas.',
     icon: '👑',
-    image: '/store/board_royal.png',
+    image: `/store/board_royal_3d.png?v=${APP_VERSION}`,
     accentColor: 'var(--candy-gold)',
     previewData: { theme: 'royal' }
   },
@@ -636,25 +637,26 @@ export async function equipEmoteInSlot(
  */
 export function preloadStoreAssets() {
   if (typeof window === 'undefined') return
+  const v = APP_VERSION
   const assets = [
-    '/sugar-coin.png',
-    '/store/bolsa_dulce.png',
-    '/store/frasco_dorado.png',
-    '/store/cofre_imperial.png',
-    '/store/cofre_sugar.png',
-    '/store/cofre_titan.png',
-    '/store/board_classic.png',
-    '/store/board_candy.png',
-    '/store/board_neon.png',
-    '/store/board_royal.png',
-    '/store/token_classic.png',
-    '/store/token_gem.png',
-    '/store/token_candy.png',
-    '/store/token_gold.png',
-    '/store/dice_classic.png',
-    '/store/dice_neon.png',
-    '/store/dice_fire.png',
-    '/store/dice_gold.png'
+    `/sugar-coin.png?v=${v}`,
+    `/store/bolsa_dulce.png?v=${v}`,
+    `/store/frasco_dorado.png?v=${v}`,
+    `/store/cofre_imperial.png?v=${v}`,
+    `/store/cofre_sugar.png?v=${v}`,
+    `/store/cofre_titan.png?v=${v}`,
+    `/store/board_classic.png?v=${v}`,
+    `/store/board_candy_3d.png?v=${v}`,
+    `/store/board_neon_3d.png?v=${v}`,
+    `/store/board_royal_3d.png?v=${v}`,
+    `/store/token_classic.png?v=${v}`,
+    `/store/token_gem.png?v=${v}`,
+    `/store/token_candy.png?v=${v}`,
+    `/store/token_gold.png?v=${v}`,
+    `/store/dice_classic.png?v=${v}`,
+    `/store/dice_neon.png?v=${v}`,
+    `/store/dice_fire.png?v=${v}`,
+    `/store/dice_gold.png?v=${v}`
   ]
   assets.forEach((src) => {
     const img = new Image()
