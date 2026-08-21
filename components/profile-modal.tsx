@@ -5,6 +5,7 @@ import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Packag
 import { useAuth } from '@/lib/auth-context'
 import { AvatarSelectorModal, PRESET_AVATARS } from './avatar-selector-modal'
 import { HistoryModal } from './history-modal'
+import { fetchUserInventory, CUSTOMIZATION_ITEMS, UserInventory } from '@/lib/store-service'
 
 interface ProfileModalProps {
   isOpen: boolean
@@ -20,6 +21,17 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [isEditingNick, setIsEditingNick] = useState(false)
   const [newNick, setNewNick] = useState('')
   const [errorNick, setErrorNick] = useState('')
+  const [inventory, setInventory] = useState<UserInventory>({
+    ownedItems: ['board_default', 'token_default', 'dice_default'],
+    equipped: { board: 'board_default', token: 'token_default', dice: 'dice_default' },
+    activeBoosters: []
+  })
+
+  useEffect(() => {
+    if (isOpen && user?.uid) {
+      fetchUserInventory(user.uid).then(setInventory)
+    }
+  }, [isOpen, user?.uid])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -41,6 +53,10 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     return PRESET_AVATARS.find(a => a.id === user.photoURL) || PRESET_AVATARS[0]
   }
   const activeAvatar = getActiveAvatar()
+
+  const equippedBoardItem = CUSTOMIZATION_ITEMS.find(i => i.id === inventory.equipped.board) || CUSTOMIZATION_ITEMS[0]
+  const equippedTokenItem = CUSTOMIZATION_ITEMS.find(i => i.id === inventory.equipped.token) || CUSTOMIZATION_ITEMS.find(i => i.category === 'token') || CUSTOMIZATION_ITEMS[4]
+  const equippedDiceItem = CUSTOMIZATION_ITEMS.find(i => i.id === inventory.equipped.dice) || CUSTOMIZATION_ITEMS.find(i => i.category === 'dice') || CUSTOMIZATION_ITEMS[8]
 
   // Calculate 90 days restriction
   const canEditNickname = !user.nicknameUpdatedAt || (Date.now() - user.nicknameUpdatedAt) >= NINETY_DAYS_MS
@@ -203,16 +219,34 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               </div>
             </div>
 
-            {/* Inventory Preview */}
+            {/* Real Inventory & Equipment Preview */}
             <div className="flex flex-col gap-3">
               <h4 className="font-display text-sm font-extrabold uppercase tracking-wide text-foreground flex items-center gap-2">
                 <Package className="size-4 text-[var(--candy-cyan)]" />
                 Inventario & Equipamiento
               </h4>
               <div className="grid grid-cols-3 gap-3">
-                <ItemCard name="Tablero Sugar" type="Equipado" active />
-                <ItemCard name="Dados Neón" type="Equipado" active />
-                <ItemCard name="Corona Dulce" type="En Almacén" />
+                <ItemCard 
+                  name={equippedBoardItem.name} 
+                  category="Tablero" 
+                  image={equippedBoardItem.image}
+                  icon={equippedBoardItem.icon}
+                  active 
+                />
+                <ItemCard 
+                  name={equippedTokenItem.name} 
+                  category="Fichas" 
+                  image={equippedTokenItem.image}
+                  icon={equippedTokenItem.icon}
+                  active 
+                />
+                <ItemCard 
+                  name={equippedDiceItem.name} 
+                  category="Dados" 
+                  image={equippedDiceItem.image}
+                  icon={equippedDiceItem.icon}
+                  active 
+                />
               </div>
             </div>
 
@@ -260,16 +294,22 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: s
   )
 }
 
-function ItemCard({ name, type, active }: { name: string; type: string; active?: boolean }) {
+function ItemCard({ name, category, image, icon, active }: { name: string; category: string; image?: string; icon?: string; active?: boolean }) {
   return (
     <div className={`flex flex-col items-center rounded-2xl border p-3 text-center transition-all ${
       active 
         ? 'border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/10 shadow-[0_0_15px_oklch(0.82_0.15_200/0.15)]' 
         : 'border-border bg-[oklch(1_0_0/0.02)]'
     }`}>
-      <Award className={`size-6 mb-1 ${active ? 'text-[var(--candy-cyan)]' : 'text-muted-foreground'}`} />
+      {image ? (
+        <img src={image} alt={name} className="size-8 object-contain mb-1 drop-shadow-md" />
+      ) : icon ? (
+        <span className="text-2xl mb-1">{icon}</span>
+      ) : (
+        <Award className={`size-6 mb-1 ${active ? 'text-[var(--candy-cyan)]' : 'text-muted-foreground'}`} />
+      )}
       <span className="font-display text-xs font-bold text-foreground truncate w-full">{name}</span>
-      <span className="text-[10px] text-muted-foreground font-semibold">{type}</span>
+      <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">{category} (Equipado)</span>
     </div>
   )
 }

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
+import { usePlayer } from '@/lib/player-context'
 import { 
   CUSTOMIZATION_ITEMS, 
   EMOTE_ITEMS, 
@@ -29,69 +30,17 @@ import {
   fetchUserInventory, 
   equipStoreItem 
 } from '@/lib/store-service'
+import { 
+  Achievement, 
+  fetchUserAchievements, 
+  claimAchievementReward 
+} from '@/lib/achievements-service'
 import { AnimatedEmote } from '@/src/components/AnimatedEmote'
 import confetti from 'canvas-confetti'
 
-export interface Achievement {
-  id: string
-  title: string
-  description: string
-  icon: string
-  rewardSC: number
-  unlocked: boolean
-  progress: string
-}
-
-const MOCK_ACHIEVEMENTS: Achievement[] = [
-  {
-    id: 'ach_1',
-    title: 'Primer Triunfo',
-    description: 'Gana tu primera partida en cualquier modo de juego.',
-    icon: '🥇',
-    rewardSC: 100,
-    unlocked: true,
-    progress: '1/1'
-  },
-  {
-    id: 'ach_2',
-    title: 'Verdugo del Arena',
-    description: 'Captura un total de 50 fichas enemigas.',
-    icon: '⚔️',
-    rewardSC: 300,
-    unlocked: true,
-    progress: '50/50'
-  },
-  {
-    id: 'ach_3',
-    title: 'Rey de los 6 Jugadores',
-    description: 'Gana 5 partidas en el tablero Hexagonal.',
-    icon: '👑',
-    rewardSC: 500,
-    unlocked: false,
-    progress: '3/5'
-  },
-  {
-    id: 'ach_4',
-    title: 'Coleccionista Maestro',
-    description: 'Posee al menos 8 aspectos en tu arsenal.',
-    icon: '💎',
-    rewardSC: 400,
-    unlocked: false,
-    progress: '4/8'
-  },
-  {
-    id: 'ach_5',
-    title: 'Racha Imparable',
-    description: 'Consigue una racha de 5 victorias consecutivas.',
-    icon: '🔥',
-    rewardSC: 600,
-    unlocked: false,
-    progress: '2/5'
-  }
-]
-
 export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, onNavigate?: (screen: string) => void }) {
   const { user } = useAuth()
+  const { coins, setCoins } = usePlayer()
 
   const [activeTab, setActiveTab] = useState<'board' | 'token' | 'dice' | 'emote' | 'achievements'>('board')
   const [inventory, setInventory] = useState<UserInventory>({
@@ -99,15 +48,17 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
     equipped: { board: 'board_default', token: 'token_default', dice: 'dice_default' },
     activeBoosters: []
   })
+  const [achievements, setAchievements] = useState<Achievement[]>([])
   const [selectedItem, setSelectedItem] = useState<StoreItem | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
-  // Cargar inventario del usuario
+  // Cargar inventario y logros del usuario
   useEffect(() => {
     fetchUserInventory(user?.uid).then((inv) => {
       setInventory(inv)
+      fetchUserAchievements(user?.uid, user, inv.ownedItems.length).then(setAchievements)
     })
-  }, [user?.uid])
+  }, [user?.uid, user])
 
   // Filtrar ítems según pestaña
   const boards = CUSTOMIZATION_ITEMS.filter(i => i.category === 'board')
@@ -371,43 +322,48 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
                 </span>
 
                 {/* Preview Avatar / Icon Box */}
-                <div 
-                  className="size-28 sm:size-32 rounded-3xl flex items-center justify-center p-2 mx-auto shadow-[0_0_30px_rgba(168,85,247,0.3)] border border-white/20 overflow-hidden"
-                  style={{ backgroundColor: `${selectedItem.accentColor}30` }}
-                >
-                  {selectedItem.image ? (
-                    <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-md animate-in zoom-in-95" loading="eager" decoding="async" />
-                  ) : selectedItem.category === 'emote' ? (
-                    <AnimatedEmote emoteId={selectedItem.id} emoji={selectedItem.icon} size={76} />
+                <div className="size-32 rounded-3xl bg-black/60 border-2 border-white/10 flex items-center justify-center p-4 shadow-[inset_0_4px_20px_rgba(0,0,0,0.6)] mx-auto">
+                  {selectedItem.category === 'emote' ? (
+                    <AnimatedEmote emoteId={selectedItem.id} size={72} />
+                  ) : selectedItem.image ? (
+                    <img src={selectedItem.image} alt={selectedItem.name} className="size-full object-contain drop-shadow-xl" />
                   ) : (
                     <span className="text-6xl">{selectedItem.icon}</span>
                   )}
                 </div>
 
-                <div className="flex flex-col gap-1">
-                  <h3 className="font-display text-xl font-black text-white">
+                <div>
+                  <h3 className="font-display text-xl font-extrabold text-foreground">
                     {selectedItem.name}
                   </h3>
-                  <span className="text-xs font-bold uppercase text-[var(--candy-gold)]">
-                    Rareza {selectedItem.rarity}
-                  </span>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xs leading-relaxed">
+                    {selectedItem.description}
+                  </p>
                 </div>
-
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {selectedItem.description}
-                </p>
               </div>
 
-              {/* Botón de Acción Principal en Preview */}
-              <div className="pt-4 border-t border-white/10 mt-4">
+              {/* Action Button */}
+              <div className="pt-6 border-t border-border/40 mt-6">
                 {inventory.ownedItems.includes(selectedItem.id) ? (
-                  <button
-                    onClick={() => handleEquip(selectedItem)}
-                    className="btn-3d w-full flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,var(--candy-violet),oklch(0.55_0.22_300))] py-3 font-display text-sm font-black text-white shadow-lg hover:scale-[1.02] transition-all"
-                  >
-                    <Check className="size-4" />
-                    <span>Equipar este Aspecto</span>
-                  </button>
+                  (selectedItem.category === 'board' && inventory.equipped.board === selectedItem.id) ||
+                  (selectedItem.category === 'token' && inventory.equipped.token === selectedItem.id) ||
+                  (selectedItem.category === 'dice' && inventory.equipped.dice === selectedItem.id) ? (
+                    <button
+                      disabled
+                      className="w-full flex items-center justify-center gap-2 rounded-2xl bg-white/10 py-3 text-xs font-extrabold text-muted-foreground cursor-not-allowed"
+                    >
+                      <Check className="size-4" />
+                      <span>Aspecto Equipado</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleEquip(selectedItem)}
+                      className="btn-3d w-full flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,var(--candy-cyan),oklch(0.65_0.18_200))] py-3 font-display text-sm font-black text-[oklch(0.18_0.03_285)] shadow-lg shadow-[var(--candy-cyan)]/30 hover:scale-[1.02] transition-all"
+                    >
+                      <Sparkles className="size-4" />
+                      <span>Equipar este Aspecto</span>
+                    </button>
+                  )
                 ) : (
                   <button
                     onClick={() => onNavigate ? onNavigate('tienda') : showToast('Disponible en la Tienda')}
@@ -425,47 +381,68 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
         /* PESTAÑA: LOGROS & MEDALLAS */
         <div className="flex flex-col gap-3 animate-in fade-in">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {MOCK_ACHIEVEMENTS.map((ach) => (
+            {achievements.map((ach) => (
               <div
                 key={ach.id}
                 className={cn(
-                  "glass flex items-center justify-between p-4 sm:p-5 rounded-3xl border transition-all shadow-md gap-4",
-                  ach.unlocked
-                    ? "border-[var(--candy-gold)]/50 bg-[linear-gradient(135deg,oklch(0.14_0.04_50/0.4),oklch(0.12_0.02_285/0.8))]"
-                    : "border-border/60 bg-[oklch(1_0_0/0.02)] opacity-70"
+                  "glass flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 sm:p-5 rounded-3xl border transition-all shadow-md gap-4",
+                  ach.claimed
+                    ? "border-border/60 bg-[oklch(1_0_0/0.02)] opacity-80"
+                    : ach.unlocked
+                      ? "border-[var(--candy-gold)]/60 bg-[linear-gradient(135deg,oklch(0.14_0.04_50/0.4),oklch(0.12_0.02_285/0.8))] shadow-[0_0_20px_rgba(255,215,0,0.15)]"
+                      : "border-border/60 bg-[oklch(1_0_0/0.02)] opacity-70"
                 )}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-3.5 min-w-0 w-full sm:w-auto">
                   <div className="size-14 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center text-3xl shrink-0 shadow-inner">
                     {ach.icon}
                   </div>
 
-                  <div className="flex flex-col min-w-0">
+                  <div className="flex flex-col min-w-0 flex-1">
                     <h3 className="font-display text-base font-extrabold text-foreground truncate">
                       {ach.title}
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {ach.description}
                     </p>
-                    <span className="text-[10px] font-bold text-muted-foreground/60 mt-1">
-                      Progreso: {ach.progress}
-                    </span>
+                    {/* Progress Bar */}
+                    <div className="mt-2 flex flex-col gap-1 w-full max-w-[220px]">
+                      <div className="flex justify-between text-[10px] font-bold text-muted-foreground">
+                        <span>Progreso</span>
+                        <span>{ach.progress}</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/40 border border-white/10">
+                        <div 
+                          className="h-full rounded-full bg-[linear-gradient(90deg,var(--candy-cyan),var(--candy-gold))]" 
+                          style={{ width: `${ach.progressPercent}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  {ach.unlocked ? (
-                    <span className="flex items-center gap-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 px-3 py-1 text-xs font-black text-emerald-400">
-                      <CheckCircle2 className="size-3.5" /> Logrado
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-1 text-xs font-bold text-muted-foreground">
-                      <Lock className="size-3" /> Bloqueado
-                    </span>
-                  )}
+                <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
                   <span className="font-display text-xs font-black text-[var(--candy-gold)] flex items-center gap-1">
                     +{ach.rewardSC} <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" />
+                    <span className="text-[10px] text-[var(--candy-cyan)] font-bold ml-0.5">+{ach.rewardXP} XP</span>
                   </span>
+
+                  {ach.claimed ? (
+                    <span className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-muted-foreground">
+                      <Check className="size-3.5" /> Reclamado
+                    </span>
+                  ) : ach.unlocked ? (
+                    <button
+                      onClick={() => handleClaimAchievement(ach)}
+                      className="btn-3d flex items-center gap-1.5 rounded-xl bg-[linear-gradient(145deg,var(--candy-gold),#f59e0b)] px-4 py-2 font-display text-xs font-black text-[oklch(0.2_0.08_60)] shadow-lg hover:scale-105 transition-all cursor-pointer"
+                    >
+                      <Sparkles className="size-3.5" /> Reclamar
+                    </button>
+                  ) : (
+                    <span className="flex items-center gap-1 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-muted-foreground">
+                      <Lock className="size-3.5" /> Bloqueado
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

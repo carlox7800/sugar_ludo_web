@@ -31,6 +31,11 @@ import {
   getLeaderboardData, 
   getMissionResetTimes 
 } from '@/lib/missions-service'
+import { 
+  Tournament, 
+  fetchActiveTournaments, 
+  registerUserInTournament 
+} from '@/lib/tournaments-service'
 
 function renderAvatar(avatar?: string, className = "size-full object-cover rounded-full") {
   if (!avatar) return '🎲'
@@ -42,59 +47,15 @@ function renderAvatar(avatar?: string, className = "size-full object-cover round
   return avatar
 }
 
-export interface Tournament {
-  id: string
-  title: string
-  subtitle: string
-  badge: string
-  potSC: number
-  entryFeeSC: number
-  endDate: string
-  playersRegistered: number
-  maxPlayers: number
-  bannerGradient: string
-  accentColor: string
-  rules: string
-}
-
-const MOCK_TOURNAMENTS: Tournament[] = [
-  {
-    id: 'tour_1',
-    title: 'Copa Galáctica Cyber Candy',
-    subtitle: 'Torneo oficial de 4 jugadores con eliminatorias directas.',
-    badge: 'En Curso',
-    potSC: 50000,
-    entryFeeSC: 250,
-    endDate: 'Termina en 3 días',
-    playersRegistered: 128,
-    maxPlayers: 256,
-    bannerGradient: 'linear-gradient(135deg, oklch(0.7 0.27 350 / 0.4), oklch(0.14 0.04 45 / 0.8))',
-    accentColor: 'var(--candy-magenta)',
-    rules: 'Partidas 4 Jugadores • Sin tiempo de espera • +25% XP extra'
-  },
-  {
-    id: 'tour_2',
-    title: 'Desafío Relámpago Hexagonal',
-    subtitle: 'El campo de batalla más grande: 6 jugadores, 1 solo campeón.',
-    badge: 'Inscripción Abierta',
-    potSC: 80000,
-    entryFeeSC: 500,
-    endDate: 'Inicia en 12 horas',
-    playersRegistered: 48,
-    maxPlayers: 64,
-    bannerGradient: 'linear-gradient(135deg, oklch(0.82 0.15 200 / 0.4), oklch(0.12 0.02 285 / 0.8))',
-    accentColor: 'var(--candy-cyan)',
-    rules: 'Tablero Hexagonal • Reglas Clásicas • Pozo acumulado dinámico'
-  }
-]
-
 export function EventsScreen({ onBack }: { onBack: () => void }) {
-  const { user } = useAuth()
+  const { user, deductCoins } = useAuth()
   const { coins, setCoins } = usePlayer()
 
   const [activeTab, setActiveTab] = useState<'missions' | 'tournaments' | 'leaderboard'>('missions')
   const [missionFilter, setMissionFilter] = useState<'all' | 'daily' | 'weekly'>('all')
   const [missions, setMissions] = useState<Mission[]>([])
+  const [tournaments, setTournaments] = useState<Tournament[]>([])
+  const [registeredTournaments, setRegisteredTournaments] = useState<string[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([])
   const [myRank, setMyRank] = useState<number>(1)
   const [resetTimes, setResetTimes] = useState(getMissionResetTimes())
@@ -106,9 +67,22 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
     setTimeout(() => setToastMessage(null), 3500)
   }
 
-  // Load real missions & leaderboard
+  // Load real missions, tournaments & leaderboard
   useEffect(() => {
     fetchUserMissions(user?.uid, user).then(setMissions).catch(() => {})
+    fetchActiveTournaments().then(setTournaments).catch(() => {})
+    
+    // Check registered tournaments
+    if ((user as any)?.registeredTournaments) {
+      setRegisteredTournaments((user as any).registeredTournaments)
+    } else if (typeof window !== 'undefined') {
+      const key = 'sugar_registered_tournaments_' + (user?.uid || 'local')
+      const stored = localStorage.getItem(key)
+      if (stored) {
+        try { setRegisteredTournaments(JSON.parse(stored)) } catch {}
+      }
+    }
+
     getLeaderboardData(user).then((res) => {
       setLeaderboard(res.leaderboard)
       setMyRank(res.myRank)
@@ -136,6 +110,24 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
         spread: 65,
         origin: { y: 0.6 }
       })
+    } else {
+      showToast(res.message)
+    }
+  }
+
+  const handleRegisterTournament = async (tour: Tournament) => {
+    const res = await registerUserInTournament(user?.uid, tour, coins, deductCoins)
+    if (res.success) {
+      setCoins(coins - tour.entryFeeSC)
+      setRegisteredTournaments(prev => [...prev, tour.id])
+      setTournaments(prev => prev.map(t => t.id === tour.id ? { ...t, playersRegistered: t.playersRegistered + 1 } : t))
+      showToast(res.message)
+      confetti({
+        particleCount: 90,
+        spread: 60,
+        origin: { y: 0.6 }
+      })
+      setSelectedTournament(null)
     } else {
       showToast(res.message)
     }
@@ -178,95 +170,88 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-2xl border border-[var(--candy-orange)]/40 bg-[oklch(0_0_0/0.4)] px-3 py-1.5 shadow-inner">
             <Clock className="size-4 text-[var(--candy-orange)] animate-pulse" />
-            <span className="font-display text-xs sm:text-sm font-black text-[var(--candy-orange)]">
-              Temporada 1: {resetTimes.weeklyFormatted}
-            </span>
+            <div className="flex flex-col">
+              <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Temporada 1</span>
+              <span className="font-display text-xs font-black text-foreground">{resetTimes.weeklyFormatted}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main Navigation Tabs */}
+      {/* Navigation Tabs */}
       <div className="grid grid-cols-3 gap-2 rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/80">
         <button
           onClick={() => setActiveTab('missions')}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative",
+            "flex items-center justify-center gap-2 py-2.5 rounded-xl font-display text-xs sm:text-sm font-bold transition-all relative",
             activeTab === 'missions'
-              ? "bg-[linear-gradient(145deg,var(--candy-orange),oklch(0.65_0.20_45))] text-white shadow-lg shadow-[var(--candy-orange)]/25"
+              ? "bg-[var(--candy-orange)] text-[oklch(0.2_0.05_40)] shadow-md"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
           )}
         >
           <Target className="size-4" />
           <span>Misiones</span>
           {claimableCount > 0 && (
-            <span className="size-5 rounded-full bg-emerald-500 text-[10px] font-black text-white flex items-center justify-center shadow-md animate-pulse">
-              {claimableCount}
-            </span>
+            <span className="size-2 rounded-full bg-red-500 animate-pulse" />
           )}
         </button>
 
         <button
           onClick={() => setActiveTab('tournaments')}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all",
+            "flex items-center justify-center gap-2 py-2.5 rounded-xl font-display text-xs sm:text-sm font-bold transition-all",
             activeTab === 'tournaments'
-              ? "bg-[linear-gradient(145deg,var(--candy-orange),oklch(0.65_0.20_45))] text-white shadow-lg shadow-[var(--candy-orange)]/25"
+              ? "bg-[var(--candy-magenta)] text-white shadow-md"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
           )}
         >
           <Trophy className="size-4" />
-          <span>Torneos ({MOCK_TOURNAMENTS.length})</span>
+          <span>Torneos ({tournaments.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('leaderboard')}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all",
+            "flex items-center justify-center gap-2 py-2.5 rounded-xl font-display text-xs sm:text-sm font-bold transition-all",
             activeTab === 'leaderboard'
-              ? "bg-[linear-gradient(145deg,var(--candy-orange),oklch(0.65_0.20_45))] text-white shadow-lg shadow-[var(--candy-orange)]/25"
+              ? "bg-[var(--candy-cyan)] text-[oklch(0.18_0.03_285)] shadow-md"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
           )}
         >
           <Crown className="size-4" />
-          <span>Clasificación</span>
+          <span>Ranking Global</span>
         </button>
       </div>
 
-      {/* TAB 1: MISIONES */}
+      {/* TAB 1: MISIONES DIARIAS Y SEMANALES */}
       {activeTab === 'missions' && (
         <div className="flex flex-col gap-4 animate-in fade-in">
-          {/* Sub-filtros de misiones */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setMissionFilter('all')}
-              className={cn(
-                "px-3 py-1.5 rounded-xl font-display text-xs font-bold transition-all",
-                missionFilter === 'all' ? "bg-white/15 text-white" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Todas
-            </button>
-            <button
-              onClick={() => setMissionFilter('daily')}
-              className={cn(
-                "px-3 py-1.5 rounded-xl font-display text-xs font-bold transition-all",
-                missionFilter === 'daily' ? "bg-[var(--candy-orange)]/20 text-[var(--candy-orange)] border border-[var(--candy-orange)]/30" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Diarias
-            </button>
-            <button
-              onClick={() => setMissionFilter('weekly')}
-              className={cn(
-                "px-3 py-1.5 rounded-xl font-display text-xs font-bold transition-all",
-                missionFilter === 'weekly' ? "bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)] border border-[var(--candy-cyan)]/30" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Semanales
-            </button>
+          {/* Sub-filtros de Misiones */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              {(['all', 'daily', 'weekly'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setMissionFilter(filter)}
+                  className={cn(
+                    "px-3.5 py-1.5 rounded-xl text-xs font-bold font-display uppercase tracking-wider transition-all",
+                    missionFilter === filter
+                      ? "bg-white/15 text-white border border-white/20"
+                      : "text-muted-foreground hover:text-white bg-transparent"
+                  )}
+                >
+                  {filter === 'all' ? 'Todas' : filter === 'daily' ? 'Diarias' : 'Semanales'}
+                </button>
+              ))}
+            </div>
+
+            <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
+              <Clock className="size-3 text-[var(--candy-orange)]" />
+              Reinicio diario en: <strong className="text-foreground">{resetTimes.dailyFormatted}</strong>
+            </span>
           </div>
 
-          {/* Grid de Misiones */}
+          {/* Lista de Misiones */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filteredMissions.map((mission) => {
               const isCompleted = mission.current >= mission.target
@@ -276,79 +261,67 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
                 <div
                   key={mission.id}
                   className={cn(
-                    "glass flex flex-col justify-between p-4 sm:p-5 rounded-3xl border transition-all shadow-md gap-4",
-                    mission.claimed
-                      ? "border-border/40 opacity-60 bg-black/20"
+                    "glass relative flex items-center justify-between p-4 rounded-3xl border transition-all shadow-md gap-3",
+                    mission.claimed 
+                      ? "border-border/60 bg-[oklch(1_0_0/0.02)] opacity-70"
                       : isCompleted
-                      ? "border-emerald-500/50 bg-[linear-gradient(135deg,oklch(0.14_0.04_150/0.4),oklch(0.12_0.02_285/0.8))]"
-                      : "border-border/80 bg-[oklch(1_0_0/0.02)]"
+                        ? "border-emerald-500/50 bg-[linear-gradient(135deg,oklch(0.14_0.04_140/0.4),oklch(0.12_0.02_285/0.8))]"
+                        : "border-border/80 bg-[oklch(1_0_0/0.04)]"
                   )}
                 >
-                  <div className="flex items-start gap-3">
-                    <span className="text-3xl p-2 rounded-2xl bg-black/40 border border-white/10 shrink-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="size-12 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center text-2xl shrink-0 shadow-inner">
                       {mission.icon}
-                    </span>
+                    </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-display text-base font-extrabold text-foreground truncate">
-                          {mission.title}
-                        </h3>
-                        <span className={cn(
-                          "rounded-full px-2 py-0.5 text-[10px] font-black uppercase shrink-0",
-                          mission.category === 'daily'
-                            ? "bg-[var(--candy-orange)]/20 text-[var(--candy-orange)]"
-                            : "bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)]"
-                        )}>
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-white/10 text-white/80">
                           {mission.category === 'daily' ? 'Diaria' : 'Semanal'}
                         </span>
+                        <h3 className="font-display text-sm font-extrabold text-foreground truncate">
+                          {mission.title}
+                        </h3>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {mission.description}
                       </p>
+                      
+                      {/* Barra de progreso */}
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="h-1.5 w-28 rounded-full bg-black/40 overflow-hidden border border-white/10">
+                          <div 
+                            className="h-full rounded-full bg-[linear-gradient(90deg,var(--candy-orange),var(--candy-gold))]" 
+                            style={{ width: `${progressPct}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-bold text-muted-foreground font-mono">
+                          {mission.current}/{mission.target}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Barra de Progreso y Recompensas */}
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between text-xs font-display font-bold">
-                      <span className="text-muted-foreground">Progreso:</span>
-                      <span className={isCompleted ? "text-emerald-400 font-black" : "text-foreground"}>
-                        {mission.current} / {mission.target} ({progressPct}%)
+                  {/* Recompensas y Botón */}
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-display text-xs font-black text-[var(--candy-gold)] flex items-center gap-0.5">
+                        +{mission.rewardSC} <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" />
+                      </span>
+                      <span className="text-[10px] font-extrabold text-[var(--candy-cyan)]">
+                        +{mission.rewardXP} XP
                       </span>
                     </div>
 
-                    <div className="h-2 w-full rounded-full bg-black/40 border border-white/5 overflow-hidden">
-                      <div 
-                        className={cn(
-                          "h-full rounded-full transition-all duration-500",
-                          isCompleted
-                            ? "bg-[linear-gradient(90deg,#34d399,#10b981)]"
-                            : "bg-[linear-gradient(90deg,var(--candy-orange),oklch(0.7_0.2_50))]"
-                        )}
-                        style={{ width: `${progressPct}%` }}
-                      />
-                    </div>
-
-                    {/* Recompensas y Botón */}
-                    <div className="flex items-center justify-between pt-2 border-t border-border/40 mt-1">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1 font-display text-xs font-black text-[var(--candy-gold)]">
-                          +{mission.rewardSC} <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" />
-                        </div>
-                        <div className="flex items-center gap-1 font-display text-xs font-bold text-[var(--candy-cyan)]">
-                          +{mission.rewardXP} XP
-                        </div>
-                      </div>
-
+                    <div>
                       {mission.claimed ? (
-                        <span className="flex items-center gap-1 text-xs font-bold text-emerald-400/80">
+                        <span className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground">
                           <CheckCircle2 className="size-4" /> Reclamado
                         </span>
                       ) : isCompleted ? (
                         <button
                           onClick={() => handleClaimMission(mission.id)}
-                          className="btn-3d flex items-center gap-1.5 rounded-xl bg-[linear-gradient(145deg,#10b981,#059669)] px-4 py-2 font-display text-xs font-black text-white shadow-lg hover:scale-105 transition-all"
+                          className="btn-3d flex items-center gap-1.5 rounded-xl bg-[linear-gradient(145deg,#10b981,#059669)] px-4 py-2 font-display text-xs font-black text-white shadow-lg hover:scale-105 transition-all cursor-pointer"
                         >
                           <Gift className="size-3.5" />
                           <span>Reclamar</span>
@@ -371,64 +344,80 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
       {activeTab === 'tournaments' && (
         <div className="flex flex-col gap-4 animate-in fade-in">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {MOCK_TOURNAMENTS.map((tour) => (
-              <div
-                key={tour.id}
-                className="glass relative overflow-hidden flex flex-col justify-between p-6 rounded-3xl border border-border shadow-xl hover:border-[var(--candy-orange)]/50 transition-all"
-                style={{ background: tour.bannerGradient }}
-              >
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <span className="rounded-full bg-white/15 px-3 py-1 font-display text-[10px] font-black uppercase text-white shadow-inner">
-                      {tour.badge}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs font-bold text-white/80">
-                      <Clock className="size-3.5" /> {tour.endDate}
-                    </span>
+            {tournaments.map((tour) => {
+              const isRegistered = registeredTournaments.includes(tour.id) || (user as any)?.registeredTournaments?.includes(tour.id)
+
+              return (
+                <div
+                  key={tour.id}
+                  className="glass relative overflow-hidden flex flex-col justify-between p-6 rounded-3xl border border-border shadow-xl hover:border-[var(--candy-orange)]/50 transition-all"
+                  style={{ background: tour.bannerGradient }}
+                >
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <span className="rounded-full bg-white/15 px-3 py-1 font-display text-[10px] font-black uppercase text-white shadow-inner">
+                        {tour.badge}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {isRegistered && (
+                          <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-black text-emerald-400">
+                            <CheckCircle2 className="size-3" /> Inscrito
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1 text-xs font-bold text-white/80">
+                          <Clock className="size-3.5" /> {tour.endDate}
+                        </span>
+                      </div>
+                    </div>
+
+                    <h3 className="font-display text-xl font-black text-white drop-shadow-md">
+                      {tour.title}
+                    </h3>
+                    <p className="text-xs text-white/80 leading-relaxed">
+                      {tour.subtitle}
+                    </p>
+
+                    <div className="rounded-2xl bg-black/40 border border-white/10 p-3.5 flex flex-col gap-2 mt-2">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-muted-foreground font-semibold">Pozo de Premios:</span>
+                        <span className="font-display text-base font-black text-[var(--candy-gold)] flex items-center gap-1">
+                          {tour.potSC.toLocaleString()} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-muted-foreground font-semibold">Entrada:</span>
+                        <span className="font-display text-xs font-bold text-white">
+                          {tour.entryFeeSC} SC
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-muted-foreground font-semibold">Registrados:</span>
+                        <span className="font-display text-xs font-bold text-emerald-400">
+                          {tour.playersRegistered} / {tour.maxPlayers} Jugadores
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <h3 className="font-display text-xl font-black text-white drop-shadow-md">
-                    {tour.title}
-                  </h3>
-                  <p className="text-xs text-white/80 leading-relaxed">
-                    {tour.subtitle}
-                  </p>
-
-                  <div className="rounded-2xl bg-black/40 border border-white/10 p-3.5 flex flex-col gap-2 mt-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-muted-foreground font-semibold">Pozo de Premios:</span>
-                      <span className="font-display text-base font-black text-[var(--candy-gold)] flex items-center gap-1">
-                        {tour.potSC.toLocaleString()} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-muted-foreground font-semibold">Entrada:</span>
-                      <span className="font-display text-xs font-bold text-white">
-                        {tour.entryFeeSC} SC
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-muted-foreground font-semibold">Registrados:</span>
-                      <span className="font-display text-xs font-bold text-emerald-400">
-                        {tour.playersRegistered} / {tour.maxPlayers} Jugadores
-                      </span>
-                    </div>
+                  <div className="pt-4 mt-2">
+                    <button
+                      onClick={() => setSelectedTournament(tour)}
+                      className={cn(
+                        "btn-3d w-full flex items-center justify-center gap-2 rounded-2xl py-3 font-display text-sm font-black transition-all cursor-pointer shadow-lg",
+                        isRegistered
+                          ? "bg-white/15 text-white border border-white/20 hover:bg-white/25"
+                          : "bg-[linear-gradient(145deg,var(--candy-orange),oklch(0.65_0.20_45))] text-white hover:scale-[1.02]"
+                      )}
+                    >
+                      <Trophy className="size-4" />
+                      <span>{isRegistered ? 'Ver Detalles (Inscrito)' : 'Ver Detalles & Inscribirse'}</span>
+                    </button>
                   </div>
                 </div>
-
-                <div className="pt-4 mt-2">
-                  <button
-                    onClick={() => setSelectedTournament(tour)}
-                    className="btn-3d w-full flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,var(--candy-orange),oklch(0.65_0.20_45))] py-3 font-display text-sm font-black text-white shadow-lg hover:scale-[1.02] transition-all"
-                  >
-                    <Trophy className="size-4" />
-                    <span>Ver Detalles & Inscribirse</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -438,22 +427,51 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
         <div className="flex flex-col gap-6 animate-in fade-in">
           {/* Tarjeta de Posición del Jugador */}
           {(() => {
-            const userTrophies = Number(user?.rankPoints !== undefined ? user.rankPoints : (Number(user?.totalWins || 0) * 25))
+            const myUser = leaderboard.find(u => u.isCurrentUser) || {
+              rank: myRank,
+              name: user?.nickname || 'Tú',
+              avatar: user?.photoURL || '🎲',
+              avatarColor: '#facc15',
+              trophies: Number((user as any)?.rankPoints !== undefined ? (user as any).rankPoints : (((user as any)?.totalWins || 0) * 25)),
+              level: Number(user?.level || 1),
+              totalWins: Number(user?.totalWins || 0),
+              winRate: '0%',
+              league: 'Bronce'
+            }
 
             return (
-              <div className="glass rounded-2xl p-4 border border-[var(--candy-gold)]/50 bg-[linear-gradient(135deg,oklch(0.18_0.05_55/0.5),oklch(0.12_0.02_285/0.8))] flex items-center justify-between shadow-lg">
-                <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-xl bg-[var(--candy-gold)]/20 border border-[var(--candy-gold)]/40 flex items-center justify-center font-display text-sm font-black text-[var(--candy-gold)]">
+              <div className="glass flex flex-col sm:flex-row items-center justify-between p-5 rounded-3xl border-2 border-[var(--candy-gold)] bg-[linear-gradient(135deg,oklch(0.14_0.04_50/0.6),oklch(0.12_0.02_285/0.9))] shadow-2xl gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="size-12 rounded-2xl bg-[var(--candy-gold)] text-[oklch(0.2_0.08_60)] flex items-center justify-center font-display text-xl font-black shadow-lg">
                     #{myRank}
                   </div>
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-[var(--candy-gold)] tracking-wider">Tu Posición Global</span>
-                    <h3 className="font-display text-sm sm:text-base font-extrabold text-white">{user?.nickname || 'Jugador'}</h3>
+
+                  <div className="size-14 rounded-full border-2 border-[var(--candy-gold)] overflow-hidden bg-black/60 flex items-center justify-center text-3xl shadow-md">
+                    {renderAvatar(myUser.avatar)}
+                  </div>
+
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-display text-lg font-black text-white">
+                        {myUser.name}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-[var(--candy-gold)]/20 text-[var(--candy-gold)] border border-[var(--candy-gold)]/30">
+                        {myUser.league}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Nivel {myUser.level} • {myUser.totalWins} Victorias
+                    </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 font-display text-sm font-black text-[var(--candy-gold)] bg-black/40 px-3 py-1.5 rounded-xl border border-[var(--candy-gold)]/30">
-                  <Trophy className="size-4 text-[var(--candy-gold)]" />
-                  <span>{userTrophies.toLocaleString()} Copas</span>
+
+                <div className="flex items-center gap-6">
+                  <div className="flex flex-col items-center sm:items-end">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase">Copas de Rango</span>
+                    <span className="font-display text-2xl font-black text-[var(--candy-gold)] flex items-center gap-1 drop-shadow-md">
+                      {myUser.trophies.toLocaleString()} 🏆
+                    </span>
+                  </div>
                 </div>
               </div>
             )
@@ -669,19 +687,25 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
             <div className="flex gap-3 mt-2">
               <button
                 onClick={() => setSelectedTournament(null)}
-                className="flex-1 py-3 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all"
+                className="flex-1 py-3 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer"
               >
                 Cerrar
               </button>
-              <button
-                onClick={() => {
-                  showToast(`🏆 ¡Inscrito con éxito en ${selectedTournament.title}!`)
-                  setSelectedTournament(null)
-                }}
-                className="btn-3d flex-1 py-3 rounded-xl bg-[linear-gradient(145deg,var(--candy-orange),oklch(0.65_0.20_45))] font-display text-xs font-black text-white shadow-lg"
-              >
-                Inscribirme Ahora
-              </button>
+              {registeredTournaments.includes(selectedTournament.id) || (user as any)?.registeredTournaments?.includes(selectedTournament.id) ? (
+                <button
+                  disabled
+                  className="flex-1 py-3 rounded-xl bg-white/10 text-emerald-400 font-display text-xs font-black cursor-not-allowed flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 className="size-4" /> Ya Estás Inscrito
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleRegisterTournament(selectedTournament)}
+                  className="btn-3d flex-1 py-3 rounded-xl bg-[linear-gradient(145deg,var(--candy-orange),oklch(0.65_0.20_45))] font-display text-xs font-black text-white shadow-lg hover:scale-105 transition-all cursor-pointer"
+                >
+                  Inscribirme ({selectedTournament.entryFeeSC} SC)
+                </button>
+              )}
             </div>
           </div>
         </div>
