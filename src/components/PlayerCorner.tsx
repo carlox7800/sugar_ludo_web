@@ -40,8 +40,8 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   diceSkinId,
 }) => {
   const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
-  const [localMessage, setLocalMessage] = useState<string | null>(null);
-  const [userEmotes, setUserEmotes] = useState(EMOTE_ITEMS);
+  const baseEmotes = EMOTE_ITEMS.filter(e => e.priceSC === 0);
+  const [userEmotes, setUserEmotes] = useState(baseEmotes);
 
   // Sync external reaction or use local
   const currentMessage = reactionMessage !== undefined ? reactionMessage : localMessage;
@@ -51,11 +51,18 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   useEffect(() => {
     if (isLocalUser) {
       fetchUserInventory(user?.uid).then((inv) => {
-        if (inv && inv.ownedItems) {
-          const available = EMOTE_ITEMS.filter(e => inv.ownedItems.includes(e.id) || e.priceSC === 0);
-          if (available.length > 0) {
-            setUserEmotes(available);
+        if (inv) {
+          if (Array.isArray(inv.equippedEmotes) && inv.equippedEmotes.length === 5) {
+            const equippedList = inv.equippedEmotes
+              .map(id => EMOTE_ITEMS.find(e => e.id === id))
+              .filter(Boolean) as typeof EMOTE_ITEMS;
+            
+            if (equippedList.length > 0) {
+              setUserEmotes(equippedList);
+              return;
+            }
           }
+          setUserEmotes(baseEmotes);
         }
       }).catch(() => {});
     }

@@ -28,7 +28,9 @@ import {
   StoreItem, 
   UserInventory, 
   fetchUserInventory, 
-  equipStoreItem 
+  equipStoreItem,
+  equipEmoteInSlot,
+  DEFAULT_BASE_EMOTE_IDS
 } from '@/lib/store-service'
 import { 
   Achievement, 
@@ -44,8 +46,9 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
 
   const [activeTab, setActiveTab] = useState<'board' | 'token' | 'dice' | 'emote' | 'achievements'>('board')
   const [inventory, setInventory] = useState<UserInventory>({
-    ownedItems: ['board_default', 'token_default', 'dice_default', 'emote_lol_bounce'],
+    ownedItems: ['board_default', 'token_default', 'dice_default', ...DEFAULT_BASE_EMOTE_IDS],
     equipped: { board: 'board_default', token: 'token_default', dice: 'dice_default' },
+    equippedEmotes: [...DEFAULT_BASE_EMOTE_IDS],
     activeBoosters: []
   })
   const [achievements, setAchievements] = useState<Achievement[]>([])
@@ -95,6 +98,18 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
     const updated = await fetchUserInventory(user?.uid)
     setInventory(updated)
     showToast(`✨ ¡${item.name} equipado en tu arsenal!`)
+    confetti({
+      particleCount: 70,
+      spread: 50,
+      origin: { y: 0.6 }
+    })
+  }
+
+  const handleEquipEmote = async (item: StoreItem, slotIndex: number) => {
+    await equipEmoteInSlot(user?.uid || 'guest', item.id, slotIndex)
+    const updated = await fetchUserInventory(user?.uid)
+    setInventory(updated)
+    showToast(`✨ ¡${item.name} equipado en la Ranura ${slotIndex + 1}!`)
     confetti({
       particleCount: 70,
       spread: 50,
@@ -217,100 +232,145 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
       {/* CONTENIDO PRINCIPAL SEGÚN PESTAÑA */}
       {activeTab !== 'achievements' ? (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 animate-in fade-in">
-          {/* Grid de Ítems */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {(activeTab === 'board' ? boards : activeTab === 'token' ? tokens : activeTab === 'dice' ? dices : emotes).map((item) => {
-              const isOwned = inventory.ownedItems.includes(item.id)
-              const isEquipped = 
-                (item.category === 'board' && inventory.equipped.board === item.id) ||
-                (item.category === 'token' && inventory.equipped.token === item.id) ||
-                (item.category === 'dice' && inventory.equipped.dice === item.id)
-              const isSelected = selectedItem?.id === item.id
+          {/* Columna Izquierda: Grid de Ítems */}
+          <div className="flex flex-col gap-3">
+            {/* Widget de Rueda Equipada en pestaña de Emotes */}
+            {activeTab === 'emote' && (
+              <div className="glass p-4 rounded-3xl border border-[var(--candy-magenta)]/30 bg-[oklch(1_0_0/0.03)] flex flex-col gap-2 shadow-lg mb-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-display text-xs font-black uppercase text-[var(--candy-magenta)] flex items-center gap-1.5">
+                    <Smile className="size-4" /> Rueda de Emotes Equipada (5 Ranuras)
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">Tus 5 reacciones activas en juego</span>
+                </div>
+                <div className="grid grid-cols-5 gap-2 pt-1">
+                  {(inventory.equippedEmotes && inventory.equippedEmotes.length === 5 ? inventory.equippedEmotes : DEFAULT_BASE_EMOTE_IDS).map((emId, idx) => {
+                    const emItem = EMOTE_ITEMS.find(e => e.id === emId)
+                    const isSelected = selectedItem?.id === emId
+                    return (
+                      <div 
+                        key={idx}
+                        onClick={() => emItem && setSelectedItem(emItem)}
+                        className={cn(
+                          "flex flex-col items-center justify-center p-2 rounded-2xl border transition-all cursor-pointer gap-1 text-center",
+                          isSelected
+                            ? "border-[var(--candy-magenta)] bg-[var(--candy-magenta)]/15 shadow-[0_0_12px_rgba(255,34,119,0.3)]"
+                            : "border-white/10 bg-black/40 hover:border-white/30"
+                        )}
+                      >
+                        <span className="text-[9px] font-black text-white/50 uppercase">Ranura {idx + 1}</span>
+                        <div className="size-9 flex items-center justify-center">
+                          <AnimatedEmote emoteId={emId} emoji={emItem?.icon} size={28} />
+                        </div>
+                        <span className="text-[9px] font-bold text-white truncate max-w-full">{emItem?.name.split(' ')[0]}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
-              return (
-                <div
-                  key={item.id}
-                  onClick={() => setSelectedItem(item)}
-                  className={cn(
-                    "glass flex flex-col justify-between p-4 rounded-3xl border transition-all cursor-pointer shadow-md gap-3",
-                    isSelected
-                      ? "border-[var(--candy-violet)] bg-[oklch(1_0_0/0.05)] shadow-[0_0_20px_rgba(168,85,247,0.2)]"
-                      : "border-border/80 bg-[oklch(1_0_0/0.02)] hover:border-[var(--candy-violet)]/40"
-                  )}
-                >
-                  <div className="flex items-start gap-3">
-                    <div 
-                      className="size-14 sm:size-16 rounded-2xl flex items-center justify-center shrink-0 shadow-inner border border-white/10 p-1 overflow-hidden"
-                      style={{ backgroundColor: `${item.accentColor}20` }}
-                    >
-                      {item.image ? (
-                        <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-sm" loading="eager" decoding="async" />
-                      ) : item.category === 'emote' ? (
-                        <AnimatedEmote emoteId={item.id} emoji={item.icon} size={38} />
-                      ) : (
-                        <span className="text-3xl">{item.icon}</span>
-                      )}
-                    </div>
+            {/* Grid de Ítems */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {(activeTab === 'board' ? boards : activeTab === 'token' ? tokens : activeTab === 'dice' ? dices : emotes).map((item) => {
+                const isOwned = inventory.ownedItems.includes(item.id) || item.priceSC === 0
+                const isEquipped = 
+                  (item.category === 'board' && inventory.equipped.board === item.id) ||
+                  (item.category === 'token' && inventory.equipped.token === item.id) ||
+                  (item.category === 'dice' && inventory.equipped.dice === item.id) ||
+                  (item.category === 'emote' && inventory.equippedEmotes?.includes(item.id))
+                const isSelected = selectedItem?.id === item.id
+                const emoteSlot = item.category === 'emote' && inventory.equippedEmotes ? inventory.equippedEmotes.indexOf(item.id) : -1
 
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <h3 className="font-display text-sm font-extrabold text-foreground truncate">
-                          {item.name}
-                        </h3>
-                        <span className={cn(
-                          "rounded-full px-2 py-0.2 text-[9px] font-black uppercase shrink-0",
-                          item.rarity === 'legendary' ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" :
-                          item.rarity === 'epic' ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" :
-                          item.rarity === 'rare' ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30" :
-                          "bg-white/10 text-muted-foreground"
-                        )}>
-                          {item.rarity}
-                        </span>
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedItem(item)}
+                    className={cn(
+                      "glass flex flex-col justify-between p-4 rounded-3xl border transition-all cursor-pointer shadow-md gap-3",
+                      isSelected
+                        ? "border-[var(--candy-violet)] bg-[oklch(1_0_0/0.05)] shadow-[0_0_20px_rgba(168,85,247,0.2)]"
+                        : "border-border/80 bg-[oklch(1_0_0/0.02)] hover:border-[var(--candy-violet)]/40"
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div 
+                        className="size-14 sm:size-16 rounded-2xl flex items-center justify-center shrink-0 shadow-inner border border-white/10 p-1 overflow-hidden"
+                        style={{ backgroundColor: `${item.accentColor}20` }}
+                      >
+                        {item.image ? (
+                          <img src={item.image} alt={item.name} className="size-full object-contain drop-shadow-sm" loading="eager" decoding="async" />
+                        ) : item.category === 'emote' ? (
+                          <AnimatedEmote emoteId={item.id} emoji={item.icon} size={38} />
+                        ) : (
+                          <span className="text-3xl">{item.icon}</span>
+                        )}
                       </div>
 
-                      <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">
-                        {item.description}
-                      </p>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <h3 className="font-display text-sm font-extrabold text-foreground truncate">
+                            {item.name}
+                          </h3>
+                          <span className={cn(
+                            "rounded-full px-2 py-0.2 text-[9px] font-black uppercase shrink-0",
+                            item.rarity === 'legendary' ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" :
+                            item.rarity === 'epic' ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" :
+                            item.rarity === 'rare' ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30" :
+                            "bg-white/10 text-muted-foreground"
+                          )}>
+                            {item.rarity}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Acciones de Equipar / Estado */}
+                    <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                      <span className="text-[11px] font-bold text-muted-foreground">
+                        {isEquipped ? (emoteSlot >= 0 ? `✨ Ranura ${emoteSlot + 1}` : '✨ En Uso') : isOwned ? (item.priceSC === 0 ? 'Set Base' : 'En Inventario') : 'No adquirido'}
+                      </span>
+
+                      {isEquipped ? (
+                        <span className="flex items-center gap-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 px-3 py-1 text-xs font-black text-emerald-400">
+                          <CheckCircle2 className="size-3.5" /> Equipado {emoteSlot >= 0 ? `(R${emoteSlot + 1})` : ''}
+                        </span>
+                      ) : isOwned ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (item.category === 'emote') {
+                              setSelectedItem(item)
+                            } else {
+                              handleEquip(item)
+                            }
+                          }}
+                          className="btn-3d flex items-center gap-1 rounded-xl bg-[linear-gradient(145deg,var(--candy-violet),oklch(0.55_0.22_300))] px-3.5 py-1.5 font-display text-xs font-black text-white shadow-md hover:scale-105 transition-all"
+                        >
+                          <Check className="size-3.5" />
+                          <span>{item.category === 'emote' ? 'Asignar Ranura' : 'Equipar'}</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onNavigate ? onNavigate('tienda') : showToast('Disponible en la Tienda Oficial')
+                          }}
+                          className="btn-3d flex items-center gap-1 rounded-xl border border-[var(--candy-gold)]/40 bg-[var(--candy-gold)]/10 px-3 py-1 font-display text-xs font-bold text-[var(--candy-gold)] hover:bg-[var(--candy-gold)]/20 transition-all"
+                        >
+                          <Store className="size-3.5" />
+                          <span>Ver en Tienda</span>
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  {/* Acciones de Equipar / Estado */}
-                  <div className="flex items-center justify-between pt-2 border-t border-border/40">
-                    <span className="text-[11px] font-bold text-muted-foreground">
-                      {isEquipped ? '✨ En Uso' : isOwned ? 'En Inventario' : 'No adquirido'}
-                    </span>
-
-                    {isEquipped ? (
-                      <span className="flex items-center gap-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 px-3 py-1 text-xs font-black text-emerald-400">
-                        <CheckCircle2 className="size-3.5" /> Equipado
-                      </span>
-                    ) : isOwned ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleEquip(item)
-                        }}
-                        className="btn-3d flex items-center gap-1 rounded-xl bg-[linear-gradient(145deg,var(--candy-violet),oklch(0.55_0.22_300))] px-3.5 py-1.5 font-display text-xs font-black text-white shadow-md hover:scale-105 transition-all"
-                      >
-                        <Check className="size-3.5" />
-                        <span>Equipar</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onNavigate ? onNavigate('tienda') : showToast('Disponible en la Tienda Oficial')
-                        }}
-                        className="btn-3d flex items-center gap-1 rounded-xl border border-[var(--candy-gold)]/40 bg-[var(--candy-gold)]/10 px-3 py-1 font-display text-xs font-bold text-[var(--candy-gold)] hover:bg-[var(--candy-gold)]/20 transition-all"
-                      >
-                        <Store className="size-3.5" />
-                        <span>Ver en Tienda</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
 
           {/* Panel Lateral: Previsualización 3D e Información */}
@@ -344,34 +404,70 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
 
               {/* Action Button */}
               <div className="pt-6 border-t border-border/40 mt-6">
-                {inventory.ownedItems.includes(selectedItem.id) ? (
-                  (selectedItem.category === 'board' && inventory.equipped.board === selectedItem.id) ||
-                  (selectedItem.category === 'token' && inventory.equipped.token === selectedItem.id) ||
-                  (selectedItem.category === 'dice' && inventory.equipped.dice === selectedItem.id) ? (
-                    <button
-                      disabled
-                      className="w-full flex items-center justify-center gap-2 rounded-2xl bg-white/10 py-3 text-xs font-extrabold text-muted-foreground cursor-not-allowed"
-                    >
-                      <Check className="size-4" />
-                      <span>Aspecto Equipado</span>
-                    </button>
+                {selectedItem.category === 'emote' ? (
+                  (inventory.ownedItems.includes(selectedItem.id) || selectedItem.priceSC === 0) ? (
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs font-extrabold text-foreground text-center">Equipar en tu Rueda de 5 Ranuras:</span>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {[0, 1, 2, 3, 4].map((slotIdx) => {
+                          const isSlotActive = inventory.equippedEmotes?.[slotIdx] === selectedItem.id
+                          return (
+                            <button
+                              key={slotIdx}
+                              onClick={() => handleEquipEmote(selectedItem, slotIdx)}
+                              className={cn(
+                                "flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-[10px] font-black transition-all hover:scale-105 active:scale-95",
+                                isSlotActive
+                                  ? "border-emerald-500 bg-emerald-500/25 text-emerald-300 shadow-md shadow-emerald-500/20"
+                                  : "border-white/10 bg-white/5 hover:bg-white/15 text-white"
+                              )}
+                            >
+                              <span>R{slotIdx + 1}</span>
+                              {isSlotActive ? <Check className="size-3 mt-1 text-emerald-400" /> : <span className="text-[8px] text-white/50 mt-1">Poner</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
                   ) : (
                     <button
-                      onClick={() => handleEquip(selectedItem)}
-                      className="btn-3d w-full flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,var(--candy-cyan),oklch(0.65_0.18_200))] py-3 font-display text-sm font-black text-[oklch(0.18_0.03_285)] shadow-lg shadow-[var(--candy-cyan)]/30 hover:scale-[1.02] transition-all"
+                      onClick={() => onNavigate ? onNavigate('tienda') : showToast('Disponible en la Tienda')}
+                      className="btn-3d w-full flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,var(--candy-gold),oklch(0.65_0.16_60))] py-3 font-display text-sm font-black text-[oklch(0.2_0.05_40)] shadow-lg hover:scale-[1.02] transition-all"
                     >
-                      <Sparkles className="size-4" />
-                      <span>Equipar este Aspecto</span>
+                      <Store className="size-4" />
+                      <span>Adquirir en la Tienda</span>
                     </button>
                   )
                 ) : (
-                  <button
-                    onClick={() => onNavigate ? onNavigate('tienda') : showToast('Disponible en la Tienda')}
-                    className="btn-3d w-full flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,var(--candy-gold),oklch(0.65_0.16_60))] py-3 font-display text-sm font-black text-[oklch(0.2_0.05_40)] shadow-lg hover:scale-[1.02] transition-all"
-                  >
-                    <Store className="size-4" />
-                    <span>Adquirir en la Tienda</span>
-                  </button>
+                  (inventory.ownedItems.includes(selectedItem.id) || selectedItem.priceSC === 0) ? (
+                    (selectedItem.category === 'board' && inventory.equipped.board === selectedItem.id) ||
+                    (selectedItem.category === 'token' && inventory.equipped.token === selectedItem.id) ||
+                    (selectedItem.category === 'dice' && inventory.equipped.dice === selectedItem.id) ? (
+                      <button
+                        disabled
+                        className="w-full flex items-center justify-center gap-2 rounded-2xl bg-white/10 py-3 text-xs font-extrabold text-muted-foreground cursor-not-allowed"
+                      >
+                        <Check className="size-4" />
+                        <span>Aspecto Equipado</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleEquip(selectedItem)}
+                        className="btn-3d w-full flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,var(--candy-cyan),oklch(0.65_0.18_200))] py-3 font-display text-sm font-black text-[oklch(0.18_0.03_285)] shadow-lg shadow-[var(--candy-cyan)]/30 hover:scale-[1.02] transition-all"
+                      >
+                        <Sparkles className="size-4" />
+                        <span>Equipar este Aspecto</span>
+                      </button>
+                    )
+                  ) : (
+                    <button
+                      onClick={() => onNavigate ? onNavigate('tienda') : showToast('Disponible en la Tienda')}
+                      className="btn-3d w-full flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,var(--candy-gold),oklch(0.65_0.16_60))] py-3 font-display text-sm font-black text-[oklch(0.2_0.05_40)] shadow-lg hover:scale-[1.02] transition-all"
+                    >
+                      <Store className="size-4" />
+                      <span>Adquirir en la Tienda</span>
+                    </button>
+                  )
                 )}
               </div>
             </div>

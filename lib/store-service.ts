@@ -44,6 +44,7 @@ export interface UserInventory {
     token: string
     dice: string
   }
+  equippedEmotes?: string[]
   activeBoosters?: {
     id: string
     multiplier: number
@@ -265,14 +266,23 @@ export const CUSTOMIZATION_ITEMS: StoreItem[] = [
   }
 ]
 
+export const DEFAULT_BASE_EMOTE_IDS = [
+  'emote_lol_bounce',
+  'emote_on_fire',
+  'emote_sad_cry',
+  'emote_sugar_love',
+  'emote_trophy_gg'
+]
+
 export const EMOTE_ITEMS: StoreItem[] = [
+  // --- SET BASE GRATUITO (POR DEFECTO EN RUEDA) ---
   {
     id: 'emote_lol_bounce',
     name: 'Risa en Bucle (LOL)',
     category: 'emote',
-    priceSC: 250,
-    rarity: 'rare',
-    description: 'Carcajada imparable con efecto de rebote elástico.',
+    priceSC: 0,
+    rarity: 'common',
+    description: 'Carcajada imparable con efecto de rebote elástico (Set Base).',
     icon: '🤣',
     accentColor: 'var(--candy-gold)',
     previewData: { animation: 'bounce' }
@@ -281,9 +291,9 @@ export const EMOTE_ITEMS: StoreItem[] = [
     id: 'emote_on_fire',
     name: 'En Llamas (On Fire)',
     category: 'emote',
-    priceSC: 250,
-    rarity: 'rare',
-    description: 'Llamarada intensa para intimidar a tus rivales.',
+    priceSC: 0,
+    rarity: 'common',
+    description: 'Llamarada viva para intimidar a tus rivales (Set Base).',
     icon: '🔥',
     accentColor: 'var(--candy-orange)',
     previewData: { animation: 'flame' }
@@ -292,9 +302,9 @@ export const EMOTE_ITEMS: StoreItem[] = [
     id: 'emote_sad_cry',
     name: 'Lágrimas (Sad Cry)',
     category: 'emote',
-    priceSC: 200,
-    rarity: 'rare',
-    description: 'Cascada de lágrimas cómica cuando te capturan una ficha.',
+    priceSC: 0,
+    rarity: 'common',
+    description: 'Cascada de lágrimas cómica cuando te capturan una ficha (Set Base).',
     icon: '😭',
     accentColor: 'var(--candy-cyan)',
     previewData: { animation: 'tears' }
@@ -303,9 +313,9 @@ export const EMOTE_ITEMS: StoreItem[] = [
     id: 'emote_sugar_love',
     name: 'Sugar Love (Corazón)',
     category: 'emote',
-    priceSC: 300,
-    rarity: 'epic',
-    description: 'Corazones dulces que flotan y se multiplican en pantalla.',
+    priceSC: 0,
+    rarity: 'common',
+    description: 'Corazones dulces que flotan y se multiplican en pantalla (Set Base).',
     icon: '💖',
     accentColor: 'var(--candy-magenta)',
     previewData: { animation: 'heartbeat' }
@@ -314,12 +324,69 @@ export const EMOTE_ITEMS: StoreItem[] = [
     id: 'emote_trophy_gg',
     name: 'Copa GG (Victoria Épica)',
     category: 'emote',
-    priceSC: 350,
-    rarity: 'legendary',
-    description: 'Trofeo dorado brillante con fuegos artificiales.',
+    priceSC: 0,
+    rarity: 'common',
+    description: 'Trofeo dorado brillante con rayos giratorios (Set Base).',
     icon: '🏆',
     accentColor: 'var(--candy-gold)',
     previewData: { animation: 'shine' }
+  },
+
+  // --- NUEVO SET PREMIUM EXCLUSIVO (TIENDA OFICIAL) ---
+  {
+    id: 'emote_toxic_salt',
+    name: 'Lluvia de Sal',
+    category: 'emote',
+    priceSC: 250,
+    rarity: 'rare',
+    description: 'Salero animado que rocía cristales de sal con burla picante.',
+    icon: '🧂',
+    accentColor: '#38bdf8',
+    previewData: { animation: 'salt' }
+  },
+  {
+    id: 'emote_ghost_rip',
+    name: 'Fantasma RIP',
+    category: 'emote',
+    priceSC: 250,
+    rarity: 'rare',
+    description: 'Fantasmita etéreo con alas y halo dorado cuando envías al rival a casa.',
+    icon: '👻',
+    accentColor: '#818cf8',
+    previewData: { animation: 'ghost' }
+  },
+  {
+    id: 'emote_mind_blown',
+    name: 'Cerebro Galáctico',
+    category: 'emote',
+    priceSC: 350,
+    rarity: 'epic',
+    description: 'Cabeza cósmica en shock con explosión de chispas y humo estelar.',
+    icon: '🤯',
+    accentColor: '#ec4899',
+    previewData: { animation: 'mind_blown' }
+  },
+  {
+    id: 'emote_rage_demon',
+    name: 'Furia Sugar',
+    category: 'emote',
+    priceSC: 350,
+    rarity: 'epic',
+    description: 'Diablillo furioso con cuernos neón y humo saliendo por la nariz.',
+    icon: '😈',
+    accentColor: '#ef4444',
+    previewData: { animation: 'rage' }
+  },
+  {
+    id: 'emote_king_crown',
+    name: 'Corona Diamante MVP',
+    category: 'emote',
+    priceSC: 500,
+    rarity: 'legendary',
+    description: 'Corona imperial de oro y diamantes flotante con destellos estelares.',
+    icon: '👑',
+    accentColor: 'var(--candy-gold)',
+    previewData: { animation: 'crown' }
   }
 ]
 
@@ -364,12 +431,13 @@ export const BOOSTER_ITEMS: StoreItem[] = [
 // -----------------------------------------------------------------------------
 
 const DEFAULT_INVENTORY: UserInventory = {
-  ownedItems: ['board_default', 'token_default', 'dice_default'],
+  ownedItems: ['board_default', 'token_default', 'dice_default', ...DEFAULT_BASE_EMOTE_IDS],
   equipped: {
     board: 'board_default',
     token: 'token_default',
     dice: 'dice_default'
   },
+  equippedEmotes: [...DEFAULT_BASE_EMOTE_IDS],
   activeBoosters: []
 }
 
@@ -378,7 +446,12 @@ export async function fetchUserInventory(userId?: string): Promise<UserInventory
     const saved = localStorage.getItem('sugar_user_inventory')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        const parsed = JSON.parse(saved)
+        // Ensure equippedEmotes exists and has 5 slots
+        if (!Array.isArray(parsed.equippedEmotes) || parsed.equippedEmotes.length !== 5) {
+          parsed.equippedEmotes = [...DEFAULT_BASE_EMOTE_IDS]
+        }
+        return parsed
       } catch (e) {
         console.warn('Error parsing local inventory:', e)
       }
@@ -391,6 +464,10 @@ export async function fetchUserInventory(userId?: string): Promise<UserInventory
     const userSnap = await getDoc(userRef)
     if (userSnap.exists()) {
       const data = userSnap.data()
+      const equippedEmotes = Array.isArray(data.equippedEmotes) && data.equippedEmotes.length === 5
+        ? data.equippedEmotes
+        : [...DEFAULT_BASE_EMOTE_IDS]
+
       return {
         ownedItems: Array.isArray(data.ownedItems) && data.ownedItems.length > 0 
           ? data.ownedItems 
@@ -400,6 +477,7 @@ export async function fetchUserInventory(userId?: string): Promise<UserInventory
           token: data.equippedToken || DEFAULT_INVENTORY.equipped.token,
           dice: data.equippedDice || DEFAULT_INVENTORY.equipped.dice
         },
+        equippedEmotes,
         activeBoosters: data.activeBoosters || []
       }
     }
@@ -512,6 +590,40 @@ export async function equipStoreItem(
   } else {
     const inv = await fetchUserInventory(userId)
     inv.equipped[category] = itemId
+    localStorage.setItem('sugar_user_inventory', JSON.stringify(inv))
+  }
+
+  return { success: true }
+}
+
+export async function equipEmoteInSlot(
+  userId: string,
+  emoteId: string,
+  slotIndex: number
+): Promise<{ success: boolean }> {
+  if (slotIndex < 0 || slotIndex >= 5) return { success: false }
+
+  if (userId && !userId.startsWith('dev_')) {
+    try {
+      const userRef = doc(db, 'users', userId)
+      const userSnap = await getDoc(userRef)
+      let currentEquipped: string[] = [...DEFAULT_BASE_EMOTE_IDS]
+      if (userSnap.exists()) {
+        const data = userSnap.data()
+        if (Array.isArray(data.equippedEmotes) && data.equippedEmotes.length === 5) {
+          currentEquipped = [...data.equippedEmotes]
+        }
+      }
+      currentEquipped[slotIndex] = emoteId
+      await updateDoc(userRef, { equippedEmotes: currentEquipped })
+    } catch (e) {
+      console.warn('Firestore equip emote error:', e)
+    }
+  } else {
+    const inv = await fetchUserInventory(userId)
+    const current = inv.equippedEmotes && inv.equippedEmotes.length === 5 ? inv.equippedEmotes : [...DEFAULT_BASE_EMOTE_IDS]
+    current[slotIndex] = emoteId
+    inv.equippedEmotes = current
     localStorage.setItem('sugar_user_inventory', JSON.stringify(inv))
   }
 

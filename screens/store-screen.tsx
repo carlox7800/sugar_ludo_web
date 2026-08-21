@@ -487,7 +487,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {EMOTE_ITEMS.map((emote) => {
-              const isOwned = inventory.ownedItems.includes(emote.id)
+              const isOwned = inventory.ownedItems.includes(emote.id) || emote.priceSC === 0
 
               return (
                 <div
@@ -509,7 +509,13 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
                   <div className="border-t border-border/40 pt-3 mt-4 flex items-center justify-between">
                     <div className="flex items-center gap-1 font-display text-sm font-black text-[var(--candy-gold)]">
-                      {emote.priceSC} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
+                      {emote.priceSC === 0 ? (
+                        <span className="text-emerald-400 font-bold text-xs uppercase tracking-wider">Set Base Gratis</span>
+                      ) : (
+                        <>
+                          {emote.priceSC} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
+                        </>
+                      )}
                     </div>
 
                     {isOwned ? (
