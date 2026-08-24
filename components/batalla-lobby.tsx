@@ -1,9 +1,11 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Crown, Check, Clock, UserPlus, Loader2, Copy, Swords, Sparkles, X, Send, Trophy, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Crown, Check, Clock, UserPlus, Loader2, Copy, Swords, Sparkles, X, Send, Trophy, AlertCircle, Mic, MicOff, Headphones, Volume2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
+import { useVoiceChat } from '@/lib/voice-context'
+import { VoiceSpeakingBadge } from '@/src/components/VoiceSpeakingBadge'
 import { getSugarId, sendP2PData, subscribeToP2PData, fetchUserFriends, sendRealtimeDuelInvite, subscribeToSentDuelResult } from '@/lib/friends-service'
 import { FriendItem } from '@/lib/friends-service'
 
@@ -28,6 +30,19 @@ interface BatallaLobbyProps {
 
 export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame }: BatallaLobbyProps) {
   const { user } = useAuth()
+  const { 
+    joinVoiceRoom, 
+    leaveVoiceRoom, 
+    isMuted, 
+    isDeafened, 
+    isListenerOnly, 
+    toggleMute, 
+    toggleDeafen, 
+    enableMicrophone,
+    isSpeakingMap, 
+    activeParticipants 
+  } = useVoiceChat()
+
   const [players, setPlayers] = useState<LobbyPlayer[]>([])
   const [targetPlayers, setTargetPlayers] = useState(capacity)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
@@ -35,6 +50,19 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
   const [loadingFriends, setLoadingFriends] = useState(false)
   const [invitedUids, setInvitedUids] = useState<Set<string>>(new Set())
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const lobbyVoiceRoomCode = mode === 'host' ? `LOBBY-${user?.uid}-${targetPlayers}` : `LOBBY-${hostUid}-${targetPlayers}`
+
+  useEffect(() => {
+    if (user?.uid) {
+      const knownPeers = new Set<string>()
+      if (mode === 'guest' && hostUid) knownPeers.add(hostUid)
+      players.forEach(p => {
+        if (p.uid && p.uid !== user?.uid) knownPeers.add(p.uid)
+      })
+      joinVoiceRoom(lobbyVoiceRoomCode, Array.from(knownPeers))
+    }
+  }, [lobbyVoiceRoomCode, players.length, hostUid, user?.uid])
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -149,6 +177,7 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
     if (mode === 'guest' && hostUid) {
       sendP2PData(hostUid, { type: 'lobby_leave', uid: me.uid })
     }
+    leaveVoiceRoom()
     onBack()
   }
 
@@ -265,6 +294,61 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
               <span className="font-mono text-xl font-black text-[var(--candy-cyan)] tracking-widest">{getSugarId(user?.uid).replace('SL-', '')}</span>
             </div>
           )}
+
+          {/* Voice Chat Control Dock */}
+          <div className="w-full flex items-center justify-between bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 mt-2 gap-3 shadow-inner">
+            <div className="flex items-center gap-2">
+              <div className="size-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#4ade80]" />
+              <span className="text-xs font-display font-extrabold text-white tracking-wide">
+                Chat de Voz HD {isListenerOnly ? '(Solo Oyente)' : '(Activo)'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  if (isListenerOnly) {
+                    const res = await enableMicrophone()
+                    if (!res.success) {
+                      if (res.reason === 'insecure_context') {
+                        showToast('⚠️ El navegador exige conexión HTTPS para activar micrófono en red local.')
+                      } else if (res.reason === 'denied') {
+                        showToast('⚠️ Permiso de micrófono denegado en el navegador.')
+                      }
+                    }
+                  } else {
+                    toggleMute()
+                  }
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-display text-xs font-black transition-all cursor-pointer border shadow-md active:scale-95",
+                  isListenerOnly
+                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60 hover:bg-cyan-500/30 animate-pulse shadow-[0_0_10px_rgba(6,182,212,0.4)]"
+                    : isMuted 
+                    ? "bg-rose-500/20 text-rose-300 border-rose-500/50 hover:bg-rose-500/30" 
+                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-500/30"
+                )}
+                title={isListenerOnly ? "Toca para Activar Micrófono y Hablar" : isMuted ? "Activar micrófono" : "Silenciar micrófono"}
+              >
+                {isListenerOnly ? <Mic className="size-3.5 text-cyan-300" /> : isMuted ? <MicOff className="size-3.5" /> : <Mic className="size-3.5 animate-pulse" />}
+                <span>{isListenerOnly ? 'Activar Mic' : isMuted ? 'Mute' : 'Mic On'}</span>
+              </button>
+
+              <button
+                onClick={toggleDeafen}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-display text-xs font-black transition-all cursor-pointer border shadow-md",
+                  isDeafened
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30"
+                    : "bg-sky-500/20 text-sky-300 border-sky-500/50 hover:bg-sky-500/30"
+                )}
+                title={isDeafened ? "Reactivar audio general" : "Ensordecer (Silenciar a todos)"}
+              >
+                <Headphones className="size-3.5" />
+                <span>{isDeafened ? 'Ensordecido' : 'Audio On'}</span>
+              </button>
+            </div>
+          </div>
         </header>
 
         {/* Dynamic Seats Grid */}
@@ -272,6 +356,7 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
           {Array.from({ length: targetPlayers }).map((_, i) => {
              const player = players[i]
              if (player) {
+               const isMe = player.uid === user?.uid
                return (
                  <div key={player.uid} className={cn(
                    "relative flex flex-col items-center gap-3 rounded-2xl p-4 border-2 transition-all shadow-xl bg-[oklch(0_0_0/0.5)] backdrop-blur-sm",
@@ -299,6 +384,14 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
                          <Check className="size-4" strokeWidth={3} />
                        </div>
                      )}
+                     {/* Voice Speaking Badge */}
+                     <VoiceSpeakingBadge 
+                       isSpeaking={!!isSpeakingMap[player.uid]} 
+                       isMuted={isMe ? isMuted : false} 
+                       isDeafened={isMe ? isDeafened : false} 
+                       isListenerOnly={isMe ? isListenerOnly : false} 
+                       className="absolute -bottom-1 -left-1 z-30" 
+                     />
                    </div>
 
                    <div className="flex flex-col items-center text-center w-full">

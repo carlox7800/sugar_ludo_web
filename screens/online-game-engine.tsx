@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle, Trophy } from 'lucide-react'
+import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle, Trophy, Mic, MicOff, Headphones } from 'lucide-react'
 import { recordMatchResult } from '@/lib/stats-service'
 import confetti from 'canvas-confetti'
 import { getSocket } from '@/lib/socket'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
+import { useVoiceChat } from '@/lib/voice-context'
 import { GameBoard } from '@/src/components/GameBoard'
 import { PlayerCorner } from '@/src/components/PlayerCorner'
 import { Token, Player, PlayerColor } from '@/src/types'
@@ -105,6 +106,20 @@ export function OnlineGameEngine({
 }) {
   const { user } = useAuth()
   const socket = getSocket()
+  const { 
+    isMuted, 
+    isDeafened, 
+    isListenerOnly, 
+    toggleMute, 
+    toggleDeafen, 
+    enableMicrophone,
+    isSpeakingMap, 
+    joinVoiceRoom 
+  } = useVoiceChat()
+
+  // Detect if current online session is Batalla de Amigos (Private Room)
+  const isFriendsMatch = modeType !== 'competitive' && (!!gameData.roomCode || !!(gameData as any).isPrivate || (gameData.roomId && !gameData.roomId.startsWith('quick_') && !gameData.roomId.startsWith('comp_')))
+  const voiceRoomCode = gameData.roomCode || (isFriendsMatch ? `LOBBY-${gameData.roomId}` : null)
 
   const myPlayerId = gameData.myPlayerId || user?.uid || socket.id
   const [dynamicPlayers, setDynamicPlayers] = useState(() => {
@@ -117,6 +132,14 @@ export function OnlineGameEngine({
       return 0
     })
   })
+
+  // Auto-connect voice session if friend battle
+  useEffect(() => {
+    if (isFriendsMatch && voiceRoomCode && user?.uid) {
+      const otherUids = dynamicPlayers.map(p => p.playerId || (p as any).uid).filter(uid => uid && uid !== user?.uid)
+      joinVoiceRoom(voiceRoomCode, otherUids)
+    }
+  }, [isFriendsMatch, voiceRoomCode, dynamicPlayers.length, user?.uid])
   const myPlayerIndex = useMemo(() => {
     return dynamicPlayers.findIndex((p) => p.playerId === myPlayerId || p.socketId === socket.id)
   }, [dynamicPlayers, myPlayerId, socket.id])
@@ -1686,7 +1709,55 @@ export function OnlineGameEngine({
           <span className="font-extrabold text-lg text-t-primary tracking-widest font-mono uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{modeType === 'competitive' ? 'Modo Competitivo' : 'Entrenamiento Online'}</span>
         </div>
 
-        <div className="flex items-center gap-3 relative">
+        <div className="flex items-center gap-2 sm:gap-3 relative">
+          {/* Voice Chat Fast Controls (Only in Batalla de Amigos) */}
+          {isFriendsMatch && (
+            <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 px-2 py-1 rounded-xl shadow-inner">
+              <button
+                onClick={async () => {
+                  if (isListenerOnly) {
+                    const res = await enableMicrophone()
+                    if (!res.success) {
+                      if (res.reason === 'insecure_context') {
+                        setNotification('⚠️ El navegador exige conexión HTTPS para activar el micrófono.')
+                        setTimeout(() => setNotification(null), 4000)
+                      } else if (res.reason === 'denied') {
+                        setNotification('⚠️ Permiso de micrófono denegado.')
+                        setTimeout(() => setNotification(null), 4000)
+                      }
+                    }
+                  } else {
+                    toggleMute()
+                  }
+                }}
+                className={cn(
+                  "p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center shadow-md active:scale-95",
+                  isListenerOnly 
+                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60 hover:bg-cyan-500/30 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.4)]" 
+                    : isMuted 
+                    ? "bg-rose-500/20 text-rose-300 border-rose-500/50 hover:bg-rose-500/30" 
+                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-500/30"
+                )}
+                title={isListenerOnly ? "Toca para Activar Micrófono" : isMuted ? "Activar Micrófono" : "Silenciar Micrófono"}
+              >
+                {isListenerOnly ? <Mic size={16} className="text-cyan-300" /> : isMuted ? <MicOff size={16} /> : <Mic size={16} className="animate-pulse" />}
+              </button>
+              
+              <button
+                onClick={toggleDeafen}
+                className={cn(
+                  "p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center shadow-md",
+                  isDeafened
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30"
+                    : "bg-sky-500/20 text-sky-300 border-sky-500/50 hover:bg-sky-500/30"
+                )}
+                title={isDeafened ? "Reactivar Audio de Amigos" : "Ensordecer (Silenciar a Todos)"}
+              >
+                <Headphones size={16} />
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => setIsAudioMenuOpen(!isAudioMenuOpen)}
             className={`p-2 rounded-xl text-t-muted hover:text-t-primary hover:bg-panel transition-colors cursor-pointer flex items-center justify-center border ${isAudioMenuOpen ? 'border-p-cyan bg-panel' : 'border-border'}`}
@@ -1856,6 +1927,8 @@ export function OnlineGameEngine({
             const isActiveTurn = activePlayerIndex >= 0 && activePlayerIndex === p.id && currentTurnPlayerId !== '';
             const isHumanTurnToRoll = isActiveTurn && isMyTurn && !hasRolled && !isRolling && !isAnimatingMove;
             const isLocalUser = p.id === (myPlayerIndex >= 0 ? myPlayerIndex : 0);
+            const peerUid = (p as any).playerId || (p as any).uid || ''
+            const isPeerSpeaking = isFriendsMatch && !!(isSpeakingMap[peerUid] || (isLocalUser ? isSpeakingMap[user?.uid || ''] : false));
 
             return (
               <PlayerCorner
@@ -1873,6 +1946,11 @@ export function OnlineGameEngine({
                 onSendReaction={isLocalUser ? handleSendReaction : undefined}
                 reactionMessage={playerReactions[p.id]}
                 isLocalUser={isLocalUser}
+                isVoiceActive={isFriendsMatch}
+                isSpeaking={isPeerSpeaking}
+                isVoiceMuted={isLocalUser ? isMuted : false}
+                isVoiceDeafened={isLocalUser ? isDeafened : false}
+                isVoiceListenerOnly={isLocalUser ? isListenerOnly : false}
               />
             );
           });

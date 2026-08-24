@@ -27,6 +27,7 @@ import { LandingPage } from '@/screens/landing-page'
 // Contexts, Hooks & Modals
 import { PlayerProvider } from '@/lib/player-context'
 import { AuthProvider, useAuth } from '@/lib/auth-context'
+import { VoiceProvider, useVoiceChat } from '@/lib/voice-context'
 import { LoginModal } from '@/components/login-modal'
 import { NicknameSetupModal } from '@/components/nickname-setup-modal'
 import { DuelChallengeModal } from '@/components/duel-challenge-modal'
@@ -59,6 +60,7 @@ export type Screen =
 
 function PageContent() {
   const { user, loginWithGoogle, loginDev, setNickname } = useAuth()
+  const { leaveVoiceRoom } = useVoiceChat()
   const [isNative, setIsNative] = useState(false)
   
   useEffect(() => {
@@ -391,6 +393,7 @@ function PageContent() {
           setIncomingChallenge(null)
           setOnlineGameData(null)
           setDuelAutoJoinCode(null)
+          leaveVoiceRoom()
           const targetScreen = (onlineGameOrigin === 'amigos') ? 'amigos' : (onlineGameOrigin === 'competitive' ? 'competitive' : (onlineGameOrigin === 'online-training' ? 'online-training' : 'lobby'))
           setOnlineGameOrigin('lobby')
           setScreenAndRef(targetScreen)
@@ -479,11 +482,13 @@ function PageContent() {
   )
 }
 
-// Envuelve el componente en AuthProvider para poder usar el hook useAuth
+// Envuelve el componente en AuthProvider y VoiceProvider
 export default function Page() {
   return (
     <AuthProvider>
-      <PageContent />
+      <VoiceProvider>
+        <PageContent />
+      </VoiceProvider>
     </AuthProvider>
   )
 }

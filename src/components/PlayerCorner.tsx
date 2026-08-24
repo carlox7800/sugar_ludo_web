@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth-context';
 import { PRESET_AVATARS } from '@/components/avatar-selector-modal';
 import { getDiceTheme } from '../themes/diceThemes';
 import { AnimatedEmote } from './AnimatedEmote';
+import { VoiceSpeakingBadge } from './VoiceSpeakingBadge';
 import { EMOTE_ITEMS, fetchUserInventory } from '@/lib/store-service';
 
 interface PlayerCornerProps {
@@ -21,6 +22,11 @@ interface PlayerCornerProps {
   reactionMessage?: string | null;
   isLocalUser?: boolean;
   diceSkinId?: string;
+  isVoiceActive?: boolean;
+  isSpeaking?: boolean;
+  isVoiceMuted?: boolean;
+  isVoiceDeafened?: boolean;
+  isVoiceListenerOnly?: boolean;
 }
 
 export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
@@ -38,6 +44,11 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
   reactionMessage,
   isLocalUser = false,
   diceSkinId,
+  isVoiceActive = false,
+  isSpeaking = false,
+  isVoiceMuted = false,
+  isVoiceDeafened = false,
+  isVoiceListenerOnly = false,
 }) => {
   const [activeMenu, setActiveMenu] = useState<'emoji' | 'chat' | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
@@ -313,9 +324,20 @@ export const PlayerCorner: React.FC<PlayerCornerProps> = memo(({
              </svg>
            )}
            {isActiveTurn && timer > 0 && (
-              <div className="absolute -bottom-1 -right-1 md:-bottom-2 md:-right-2 bg-background border border-border text-foreground text-[9px] md:text-xs font-black rounded-full w-5 h-5 md:w-7 md:h-7 flex items-center justify-center shadow-lg">
+              <div className="absolute -bottom-1 -right-1 md:-bottom-2 md:-right-2 bg-background border border-border text-foreground text-[9px] md:text-xs font-black rounded-full w-5 h-5 md:w-7 md:h-7 flex items-center justify-center shadow-lg z-20">
                 {timer}
               </div>
+           )}
+           {/* Voice Speaking Badge (Non-blocking, independent from active turn ring) */}
+           {isVoiceActive && (
+             <VoiceSpeakingBadge 
+               isSpeaking={isSpeaking}
+               isMuted={isVoiceMuted}
+               isDeafened={isVoiceDeafened}
+               isListenerOnly={isVoiceListenerOnly}
+               className="absolute -bottom-1 -left-1 md:-bottom-2 md:-left-2 z-20"
+               size="sm"
+             />
            )}
         </div>
         <span className={`text-[10px] md:text-xs mt-1 md:mt-2 font-black font-mono tracking-wider drop-shadow-sm ${isActiveTurn ? 'text-foreground font-black' : 'text-muted-foreground'}`}>
