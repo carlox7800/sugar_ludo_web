@@ -15,7 +15,7 @@ interface VoiceContextValue {
   mutedUsers: Record<string, boolean>
   activeRoomCode: string | null
   joinVoiceRoom: (roomCode: string, targetFriendUids?: string[]) => Promise<void>
-  leaveVoiceRoom: () => void
+  leaveVoiceRoom: (stopHardwareMic?: boolean) => void
   toggleMute: () => boolean
   toggleDeafen: () => boolean
   enableMicrophone: () => Promise<{ success: boolean; reason?: 'insecure_context' | 'denied' | 'unsupported' }>
@@ -56,9 +56,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     await voiceChatService.joinRoom(roomCode, localUser, targetFriendUids)
   }, [user])
 
-  const leaveVoiceRoom = useCallback(() => {
+  const leaveVoiceRoom = useCallback((stopHardwareMic = false) => {
     setActiveRoomCode(null)
-    voiceChatService.leaveRoom()
+    voiceChatService.leaveRoom(stopHardwareMic)
   }, [])
 
   const toggleMute = useCallback(() => {

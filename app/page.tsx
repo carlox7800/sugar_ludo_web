@@ -393,7 +393,7 @@ function PageContent() {
           setIncomingChallenge(null)
           setOnlineGameData(null)
           setDuelAutoJoinCode(null)
-          leaveVoiceRoom()
+          leaveVoiceRoom(true)
           const targetScreen = (onlineGameOrigin === 'amigos') ? 'amigos' : (onlineGameOrigin === 'competitive' ? 'competitive' : (onlineGameOrigin === 'online-training' ? 'online-training' : 'lobby'))
           setOnlineGameOrigin('lobby')
           setScreenAndRef(targetScreen)

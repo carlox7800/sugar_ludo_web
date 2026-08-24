@@ -177,7 +177,7 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
     if (mode === 'guest' && hostUid) {
       sendP2PData(hostUid, { type: 'lobby_leave', uid: me.uid })
     }
-    leaveVoiceRoom()
+    leaveVoiceRoom(true)
     onBack()
   }
 

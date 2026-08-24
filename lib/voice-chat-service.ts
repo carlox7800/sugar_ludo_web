@@ -1,7 +1,10 @@
 // -----------------------------------------------------------------------------
 // Sugar Ludo - Professional WebRTC Full-Mesh Voice Chat Service ($0.00 Cost)
-// Provides HD Opus Audio, real-time speaking detection (AnalyserNode),
-// non-blocking Listen-Only fallback with bidirectional transceivers for 2-6 friends.
+// Features:
+// - Direct Web Audio API Hardware Output (AudioContext.destination)
+// - Dynamic Bidirectional Renegotiation (sendrecv on Mic Activate)
+// - Persistent Local MediaStream (Zero-Drop across screen transitions)
+// - Non-blocking Listen-Only fallback with instant audio output
 // -----------------------------------------------------------------------------
 
 import { sendP2PData, subscribeToP2PData } from './friends-service'
@@ -38,8 +41,10 @@ class VoiceChatService {
   private localAnalyser: AnalyserNode | null = null
   private peerConnections = new Map<string, RTCPeerConnection>()
   private remoteStreams = new Map<string, MediaStream>()
-  private remoteAudioElements = new Map<string, HTMLAudioElement>()
+  private remoteSources = new Map<string, MediaStreamAudioSourceNode>()
+  private remoteGainNodes = new Map<string, GainNode>()
   private remoteAnalysers = new Map<string, AnalyserNode>()
+  private remoteAudioElements = new Map<string, HTMLAudioElement>()
   private userVolumes = new Map<string, number>()
   private mutedUsers = new Set<string>()
 
@@ -93,16 +98,9 @@ class VoiceChatService {
    * Initializes or re-attaches to a voice room for friends
    */
   public async joinRoom(roomCode: string, user: VoiceUser, targetFriendUids: string[] = []) {
-    // If already in this room, synchronize any new participants directly
-    if (this.currentRoomCode === roomCode) {
-      globalLogger.log('SYSTEM', `[VoiceChat] Sincronizando participantes para sala de voz: ${roomCode}`)
-      this.syncParticipants(targetFriendUids)
-      return
-    }
-
-    // Leave any previous room
+    // If roomCode changed (e.g. from Lobby to InGame), cleanup previous connections but PRESERVE localStream
     if (this.currentRoomCode && this.currentRoomCode !== roomCode) {
-      this.leaveRoom()
+      this.cleanupRoomConnections()
     }
 
     this.currentRoomCode = roomCode
@@ -110,6 +108,7 @@ class VoiceChatService {
     this.initAudioContext()
 
     // Listen to P2P Voice Signaling
+    if (this.p2pUnsub) this.p2pUnsub()
     this.p2pUnsub = subscribeToP2PData((data) => {
       if (!data || typeof data !== 'object' || data.roomCode !== this.currentRoomCode) return
       if (data.type?.startsWith('voice_')) {
@@ -117,14 +116,16 @@ class VoiceChatService {
       }
     })
 
-    // Try background stream only if permission was previously granted
-    if (this.hasMicPermission === true) {
-      await this.initLocalStream()
+    // If localStream is already active from previous screen, reuse it seamlessly
+    if (this.localStream && this.localStream.getAudioTracks().length > 0 && this.localStream.getAudioTracks()[0].readyState === 'live') {
+      this.hasMicPermission = true
+      this.isListenerOnly = false
+      this.localStream.getAudioTracks().forEach(t => t.enabled = !this.isMuted)
     } else {
       this.isListenerOnly = true
     }
 
-    // Announce presence in voice room and start WebRTC offers with target peers
+    // Synchronize participants and start WebRTC peer connections
     this.syncParticipants(targetFriendUids)
 
     this.startSpeakingDetection()
@@ -228,18 +229,23 @@ class VoiceChatService {
         } catch {}
       }
 
-      // Hot-replace or add audio track on all existing WebRTC peer connections
+      // Hot-replace or add audio track on all existing WebRTC peer connections and RENEGOTIATE to sendrecv
       const audioTrack = stream.getAudioTracks()[0]
       if (audioTrack) {
         for (const [peerUid, pc] of this.peerConnections.entries()) {
-          const senders = pc.getSenders()
-          const audioSender = senders.find(s => s.track?.kind === 'audio' || !s.track)
-          if (audioSender) {
-            audioSender.replaceTrack(audioTrack).catch(() => {})
+          const transceiver = pc.getTransceivers().find(t => 
+            t.receiver.track.kind === 'audio' || (t.sender.track && t.sender.track.kind === 'audio')
+          )
+
+          if (transceiver) {
+            transceiver.direction = 'sendrecv'
+            transceiver.sender.replaceTrack(audioTrack).catch(() => {})
           } else {
             pc.addTrack(audioTrack, stream)
-            this.createPeerConnectionAndOffer(peerUid)
           }
+
+          // Trigger immediate renegotiation offer with sendrecv
+          this.createPeerConnectionAndOffer(peerUid)
         }
       }
 
@@ -253,38 +259,6 @@ class VoiceChatService {
       this.isListenerOnly = true
       this.notify()
       return { success: false, reason: 'denied' }
-    }
-  }
-
-  private async initLocalStream() {
-    try {
-      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        video: false
-      })
-
-      this.localStream = stream
-      this.hasMicPermission = true
-      this.isListenerOnly = false
-
-      if (this.audioContext) {
-        try {
-          const source = this.audioContext.createMediaStreamSource(stream)
-          this.localAnalyser = this.audioContext.createAnalyser()
-          this.localAnalyser.fftSize = 256
-          this.localAnalyser.smoothingTimeConstant = 0.4
-          source.connect(this.localAnalyser)
-        } catch {}
-      }
-    } catch (err: any) {
-      this.isListenerOnly = true
-      this.localStream = null
     }
   }
 
@@ -384,13 +358,56 @@ class VoiceChatService {
 
   private handleRemoteStream(peerUid: string, stream: MediaStream) {
     this.remoteStreams.set(peerUid, stream)
+    this.initAudioContext()
 
-    // Audio Element for playback
+    // 1. Direct Web Audio API Output Graph (AudioContext.destination)
+    if (this.audioContext) {
+      try {
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume().catch(() => {})
+        }
+
+        // Clean up previous nodes for this peer if re-negotiating
+        try {
+          const oldSrc = this.remoteSources.get(peerUid)
+          oldSrc?.disconnect()
+          const oldGain = this.remoteGainNodes.get(peerUid)
+          oldGain?.disconnect()
+        } catch {}
+
+        const source = this.audioContext.createMediaStreamSource(stream)
+        this.remoteSources.set(peerUid, source)
+
+        const gainNode = this.audioContext.createGain()
+        const vol = this.isDeafened || this.mutedUsers.has(peerUid) ? 0 : (this.userVolumes.get(peerUid) ?? 1.0)
+        gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
+        this.remoteGainNodes.set(peerUid, gainNode)
+
+        // Connect source -> GainNode -> Destination (Speakers / Headphones)
+        source.connect(gainNode)
+        gainNode.connect(this.audioContext.destination)
+
+        // Parallel connection to Analyser for the Visual Micro-Equalizer
+        const analyser = this.audioContext.createAnalyser()
+        analyser.fftSize = 256
+        analyser.smoothingTimeConstant = 0.4
+        source.connect(analyser)
+        this.remoteAnalysers.set(peerUid, analyser)
+
+        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Web Audio API destination para peer ${peerUid}`)
+      } catch (err) {
+        console.warn('[VoiceChat] Error conectando stream a Web Audio API:', err)
+      }
+    }
+
+    // 2. HTML Audio Element backup (muted to prevent echo while keeping stream alive)
     let audioEl = this.remoteAudioElements.get(peerUid)
     if (!audioEl && typeof document !== 'undefined') {
       audioEl = document.createElement('audio')
       audioEl.autoplay = true
       audioEl.playsInline = true
+      audioEl.setAttribute('playsinline', 'true')
+      audioEl.setAttribute('autoplay', 'true')
       audioEl.style.display = 'none'
       document.body.appendChild(audioEl)
       this.remoteAudioElements.set(peerUid, audioEl)
@@ -398,33 +415,9 @@ class VoiceChatService {
 
     if (audioEl) {
       audioEl.srcObject = stream
-      audioEl.muted = this.isDeafened || this.mutedUsers.has(peerUid)
-      audioEl.volume = this.userVolumes.get(peerUid) ?? 1.0
-
-      const playAudio = () => {
-        audioEl?.play().catch(() => {
-          const unlock = () => {
-            audioEl?.play().catch(() => {})
-            window.removeEventListener('click', unlock)
-            window.removeEventListener('touchstart', unlock)
-          }
-          window.addEventListener('click', unlock, { once: true })
-          window.addEventListener('touchstart', unlock, { once: true })
-        })
-      }
-      playAudio()
-    }
-
-    // Setup remote analyzer for speaking indicator
-    if (this.audioContext) {
-      try {
-        const source = this.audioContext.createMediaStreamSource(stream)
-        const analyser = this.audioContext.createAnalyser()
-        analyser.fftSize = 256
-        analyser.smoothingTimeConstant = 0.4
-        source.connect(analyser)
-        this.remoteAnalysers.set(peerUid, analyser)
-      } catch {}
+      audioEl.muted = true
+      audioEl.volume = 0
+      audioEl.play().catch(() => {})
     }
   }
 
@@ -589,8 +582,11 @@ class VoiceChatService {
   public toggleDeafen(): boolean {
     this.isDeafened = !this.isDeafened
 
-    this.remoteAudioElements.forEach((audio, uid) => {
-      audio.muted = this.isDeafened || this.mutedUsers.has(uid)
+    this.remoteGainNodes.forEach((gainNode, uid) => {
+      const vol = this.isDeafened || this.mutedUsers.has(uid) ? 0 : (this.userVolumes.get(uid) ?? 1.0)
+      if (this.audioContext) {
+        gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
+      }
     })
 
     this.notify()
@@ -604,9 +600,10 @@ class VoiceChatService {
       this.mutedUsers.delete(uid)
     }
 
-    const audio = this.remoteAudioElements.get(uid)
-    if (audio) {
-      audio.muted = this.isDeafened || muted
+    const gainNode = this.remoteGainNodes.get(uid)
+    if (gainNode && this.audioContext) {
+      const vol = this.isDeafened || muted ? 0 : (this.userVolumes.get(uid) ?? 1.0)
+      gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
     }
 
     this.notify()
@@ -616,9 +613,10 @@ class VoiceChatService {
     const clamped = Math.max(0, Math.min(1, volume))
     this.userVolumes.set(uid, clamped)
 
-    const audio = this.remoteAudioElements.get(uid)
-    if (audio) {
-      audio.volume = clamped
+    const gainNode = this.remoteGainNodes.get(uid)
+    if (gainNode && this.audioContext) {
+      const vol = this.isDeafened || this.mutedUsers.has(uid) ? 0 : clamped
+      gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
     }
   }
 
@@ -627,6 +625,18 @@ class VoiceChatService {
     if (pc) {
       try { pc.close() } catch {}
       this.peerConnections.delete(peerUid)
+    }
+
+    const src = this.remoteSources.get(peerUid)
+    if (src) {
+      try { src.disconnect() } catch {}
+      this.remoteSources.delete(peerUid)
+    }
+
+    const gain = this.remoteGainNodes.get(peerUid)
+    if (gain) {
+      try { gain.disconnect() } catch {}
+      this.remoteGainNodes.delete(peerUid)
     }
 
     const audio = this.remoteAudioElements.get(peerUid)
@@ -641,7 +651,35 @@ class VoiceChatService {
     this.remoteAnalysers.delete(peerUid)
   }
 
-  public leaveRoom() {
+  private cleanupRoomConnections() {
+    this.peerConnections.forEach((pc) => {
+      try { pc.close() } catch {}
+    })
+    this.peerConnections.clear()
+
+    this.remoteSources.forEach((src) => {
+      try { src.disconnect() } catch {}
+    })
+    this.remoteSources.clear()
+
+    this.remoteGainNodes.forEach((gain) => {
+      try { gain.disconnect() } catch {}
+    })
+    this.remoteGainNodes.clear()
+
+    this.remoteAudioElements.forEach((audio) => {
+      audio.pause()
+      audio.srcObject = null
+      try { audio.remove() } catch {}
+    })
+    this.remoteAudioElements.clear()
+    this.remoteStreams.clear()
+    this.remoteAnalysers.clear()
+    this.activeParticipants.clear()
+    this.speakingMap = {}
+  }
+
+  public leaveRoom(stopHardwareMic = false) {
     if (!this.currentRoomCode) return
 
     if (this.localUser) {
@@ -662,32 +700,15 @@ class VoiceChatService {
       this.p2pUnsub = null
     }
 
-    this.peerConnections.forEach((pc) => {
-      try { pc.close() } catch {}
-    })
-    this.peerConnections.clear()
+    this.cleanupRoomConnections()
 
-    this.remoteAudioElements.forEach((audio) => {
-      audio.pause()
-      audio.srcObject = null
-      try { audio.remove() } catch {}
-    })
-    this.remoteAudioElements.clear()
-    this.remoteStreams.clear()
-    this.remoteAnalysers.clear()
-
-    if (this.localStream) {
+    if (stopHardwareMic && this.localStream) {
       this.localStream.getTracks().forEach(t => t.stop())
       this.localStream = null
+      this.hasMicPermission = null
     }
 
     this.currentRoomCode = null
-    this.activeParticipants.clear()
-    this.speakingMap = {}
-    this.isMuted = false
-    this.isDeafened = false
-    this.isListenerOnly = true
-
     this.notify()
     globalLogger.log('SYSTEM', `[VoiceChat] Sala de voz cerrada con éxito.`)
   }
