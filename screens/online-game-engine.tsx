@@ -171,6 +171,8 @@ export function OnlineGameEngine({
         type: p.isBot ? 'bot' : 'human',
         isActive: p.isConnected !== false,
         photoURL: photo,
+        playerId: p.playerId || (p as any).uid || '',
+        uid: p.playerId || (p as any).uid || ''
       }
     })
   }, [dynamicPlayers, myPlayerId, socket.id, currentColorsOrder])
@@ -1927,7 +1929,8 @@ export function OnlineGameEngine({
             const isActiveTurn = activePlayerIndex >= 0 && activePlayerIndex === p.id && currentTurnPlayerId !== '';
             const isHumanTurnToRoll = isActiveTurn && isMyTurn && !hasRolled && !isRolling && !isAnimatingMove;
             const isLocalUser = p.id === (myPlayerIndex >= 0 ? myPlayerIndex : 0);
-            const peerUid = (p as any).playerId || (p as any).uid || ''
+            const dynamicPlayer = dynamicPlayers[p.id];
+            const peerUid = (p as any).playerId || (p as any).uid || dynamicPlayer?.playerId || (dynamicPlayer as any)?.uid || '';
             const isPeerSpeaking = isFriendsMatch && !!(isSpeakingMap[peerUid] || (isLocalUser ? isSpeakingMap[user?.uid || ''] : false));
 
             return (

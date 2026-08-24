@@ -2,9 +2,9 @@
 // Sugar Ludo - Professional WebRTC Full-Mesh Voice Chat Service ($0.00 Cost)
 // Features:
 // - Direct Web Audio API Hardware Output (AudioContext.destination)
-// - Dynamic Bidirectional Renegotiation (sendrecv on Mic Activate)
-// - Persistent Local MediaStream (Zero-Drop across screen transitions)
-// - Non-blocking Listen-Only fallback with instant audio output
+// - Polite Peer Pattern with Glare / Collision Rollback Resolution
+// - Deterministic Offerer Strategy (Prevents simultaneous offer storm)
+// - Persistent Local MediaStream across screen transitions
 // -----------------------------------------------------------------------------
 
 import { sendP2PData, subscribeToP2PData } from './friends-service'
@@ -125,7 +125,7 @@ class VoiceChatService {
       this.isListenerOnly = true
     }
 
-    // Synchronize participants and start WebRTC peer connections
+    // Synchronize participants and start WebRTC peer connections deterministically
     this.syncParticipants(targetFriendUids)
 
     this.startSpeakingDetection()
@@ -137,7 +137,8 @@ class VoiceChatService {
       if (uid && uid !== this.localUser?.uid) {
         this.activeParticipants.add(uid)
 
-        // If no active WebRTC peer connection exists yet with this friend, initiate negotiation
+        // Deterministic Offerer: peer with higher UID initiates offer
+        const shouldInitiateOffer = this.localUser && this.localUser.uid > uid
         if (!this.peerConnections.has(uid) && this.currentRoomCode && this.localUser) {
           sendP2PData(uid, {
             type: 'voice_join',
@@ -145,7 +146,9 @@ class VoiceChatService {
             senderName: this.localUser.name,
             roomCode: this.currentRoomCode
           })
-          this.createPeerConnectionAndOffer(uid)
+          if (shouldInitiateOffer) {
+            this.createPeerConnectionAndOffer(uid)
+          }
         }
       }
     })
@@ -273,8 +276,10 @@ class VoiceChatService {
 
     switch (data.type) {
       case 'voice_join': {
-        // When a friend announces presence, initiate WebRTC offer immediately
-        this.createPeerConnectionAndOffer(fromUid)
+        // When a friend announces presence, only the deterministic offerer creates the offer
+        if (this.localUser && this.localUser.uid > fromUid) {
+          this.createPeerConnectionAndOffer(fromUid)
+        }
         break
       }
       case 'voice_offer': {
@@ -424,6 +429,11 @@ class VoiceChatService {
   private async createPeerConnectionAndOffer(peerUid: string) {
     try {
       const pc = this.getOrCreatePeerConnection(peerUid)
+      // Prevent glare collision if connection is already in negotiation
+      if (pc.signalingState !== 'stable') {
+        return
+      }
+
       const offer = await pc.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: false
@@ -446,6 +456,21 @@ class VoiceChatService {
   private async handleOffer(fromUid: string, sdp: RTCSessionDescriptionInit) {
     try {
       const pc = this.getOrCreatePeerConnection(fromUid)
+
+      // Handle SDP Glare Collision with Polite Peer pattern
+      const isOfferCollision = pc.signalingState !== 'stable'
+      if (isOfferCollision) {
+        const isPolite = this.localUser && this.localUser.uid < fromUid
+        if (!isPolite) {
+          // Impolite peer ignores colliding offer; polite remote peer will rollback
+          return
+        }
+        // Polite peer rolls back local offer to accept incoming remote offer
+        try {
+          await pc.setLocalDescription({ type: 'rollback' } as any)
+        } catch {}
+      }
+
       await pc.setRemoteDescription(new RTCSessionDescription(sdp))
 
       const answer = await pc.createAnswer()
