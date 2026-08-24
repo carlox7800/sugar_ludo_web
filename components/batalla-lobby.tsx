@@ -1,11 +1,11 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Crown, Check, Clock, UserPlus, Loader2, Copy, Swords, Sparkles, X, Send, Trophy, AlertCircle, Mic, MicOff, Headphones, Volume2 } from 'lucide-react'
+import { ArrowLeft, Crown, Check, Clock, UserPlus, Loader2, Copy, Swords, Sparkles, X, Send, Trophy, AlertCircle, Mic, MicOff, Headphones, Volume2, Sliders } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { useVoiceChat } from '@/lib/voice-context'
 import { VoiceSpeakingBadge } from '@/src/components/VoiceSpeakingBadge'
+import { VoiceControlPopover } from '@/src/components/VoiceControlPopover'
 import { getSugarId, sendP2PData, subscribeToP2PData, fetchUserFriends, sendRealtimeDuelInvite, subscribeToSentDuelResult } from '@/lib/friends-service'
 import { FriendItem } from '@/lib/friends-service'
 
@@ -50,6 +50,7 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
   const [loadingFriends, setLoadingFriends] = useState(false)
   const [invitedUids, setInvitedUids] = useState<Set<string>>(new Set())
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [isVoicePopoverOpen, setIsVoicePopoverOpen] = useState(false)
 
   const lobbyVoiceRoomCode = mode === 'host' ? `LOBBY-${user?.uid}-${targetPlayers}` : `LOBBY-${hostUid}-${targetPlayers}`
 
@@ -347,6 +348,14 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
                 <Headphones className="size-3.5" />
                 <span>{isDeafened ? 'Ensordecido' : 'Audio On'}</span>
               </button>
+
+              <button
+                onClick={() => setIsVoicePopoverOpen(true)}
+                className="p-1.5 rounded-xl font-display text-xs font-black transition-all cursor-pointer border shadow-md bg-white/5 text-slate-300 border-white/10 hover:bg-white/15 active:scale-95"
+                title="Ajustes de volumen y ganancia de amigos"
+              >
+                <Sliders className="size-3.5 text-cyan-300" />
+              </button>
             </div>
           </div>
         </header>
@@ -579,6 +588,21 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
           </div>
         </div>
       )}
+
+      {/* Voice Control Popover Modal */}
+      <VoiceControlPopover
+        isOpen={isVoicePopoverOpen}
+        onClose={() => setIsVoicePopoverOpen(false)}
+        participants={players
+          .filter(p => p.uid !== user?.uid)
+          .map(p => ({
+            uid: p.uid,
+            name: p.name,
+            avatar: p.avatar,
+            avatarColor: p.avatarColor
+          }))
+        }
+      />
     </div>
   )
 }

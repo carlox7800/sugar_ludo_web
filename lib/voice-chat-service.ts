@@ -4,6 +4,10 @@
 // - Direct Web Audio API Hardware Output (AudioContext.destination)
 // - Polite Peer Pattern with Glare / Collision Rollback Resolution
 // - Deterministic Offerer Strategy (Prevents simultaneous offer storm)
+// - DSP Vocal Presence Filter (+3dB @ 2.8kHz) for crystal clear dialogue
+// - Hardware Acoustic Echo Cancellation + Noise Suppression + High-Pass Filter (85Hz)
+// - Dynamics Vocal Compressor (Anti-clipping & peak normalization)
+// - Individual Player Volume Control (0% to 200% gain, default 130%)
 // - Persistent Local MediaStream across screen transitions
 // -----------------------------------------------------------------------------
 
@@ -24,6 +28,7 @@ export type VoiceStateListener = (state: {
   activeParticipants: string[]
   isSpeakingMap: Record<string, boolean>
   mutedUsers: Record<string, boolean>
+  userVolumes: Record<string, number>
 }) => void
 
 const RTC_CONFIG: RTCConfiguration = {
@@ -33,6 +38,8 @@ const RTC_CONFIG: RTCConfiguration = {
     { urls: 'stun:stun2.l.google.com:19302' }
   ]
 }
+
+const DEFAULT_USER_GAIN = 1.3 // 130% default vocal gain boost for AAA presence
 
 class VoiceChatService {
   private static instance: VoiceChatService
@@ -87,7 +94,8 @@ class VoiceChatService {
       hasMicPermission: this.hasMicPermission,
       activeParticipants: Array.from(this.activeParticipants),
       isSpeakingMap: { ...this.speakingMap },
-      mutedUsers: Object.fromEntries(Array.from(this.mutedUsers).map(u => [u, true]))
+      mutedUsers: Object.fromEntries(Array.from(this.mutedUsers).map(u => [u, true])),
+      userVolumes: Object.fromEntries(Array.from(this.userVolumes.entries()))
     }
     this.listeners.forEach(cb => {
       try { cb(state) } catch {}
@@ -136,6 +144,11 @@ class VoiceChatService {
     uids.forEach(uid => {
       if (uid && uid !== this.localUser?.uid) {
         this.activeParticipants.add(uid)
+
+        // Initialize default volume if not set yet
+        if (!this.userVolumes.has(uid)) {
+          this.userVolumes.set(uid, DEFAULT_USER_GAIN)
+        }
 
         // Deterministic Offerer: peer with higher UID initiates offer
         const shouldInitiateOffer = this.localUser && this.localUser.uid > uid
@@ -196,9 +209,11 @@ class VoiceChatService {
       if (navigator?.mediaDevices?.getUserMedia) {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
+            echoCancellation: { ideal: true },
+            noiseSuppression: { ideal: true },
+            autoGainControl: { ideal: true },
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: 48000 }
           },
           video: false
         })
@@ -221,14 +236,31 @@ class VoiceChatService {
       this.isListenerOnly = false
       this.isMuted = false
 
-      // Setup local audio analyzer for speaking detection
+      // Setup local audio processing graph: Source -> HighPass Filter -> Compressor -> Analyser
       if (this.audioContext) {
         try {
           const source = this.audioContext.createMediaStreamSource(stream)
+          
+          // High-pass filter at 85Hz to cut table thumps, phone vibration and device hums
+          const highPass = this.audioContext.createBiquadFilter()
+          highPass.type = 'highpass'
+          highPass.frequency.setValueAtTime(85, this.audioContext.currentTime)
+
+          // Dynamics compressor to level vocals and prevent clipping
+          const compressor = this.audioContext.createDynamicsCompressor()
+          compressor.threshold.setValueAtTime(-24, this.audioContext.currentTime)
+          compressor.knee.setValueAtTime(30, this.audioContext.currentTime)
+          compressor.ratio.setValueAtTime(12, this.audioContext.currentTime)
+          compressor.attack.setValueAtTime(0.003, this.audioContext.currentTime)
+          compressor.release.setValueAtTime(0.25, this.audioContext.currentTime)
+
+          source.connect(highPass)
+          highPass.connect(compressor)
+
           this.localAnalyser = this.audioContext.createAnalyser()
           this.localAnalyser.fftSize = 256
           this.localAnalyser.smoothingTimeConstant = 0.4
-          source.connect(this.localAnalyser)
+          compressor.connect(this.localAnalyser)
         } catch {}
       }
 
@@ -254,7 +286,7 @@ class VoiceChatService {
 
       this.startSpeakingDetection()
       this.notify()
-      globalLogger.log('SYSTEM', `[VoiceChat] Micrófono habilitado por el usuario con éxito`)
+      globalLogger.log('SYSTEM', `[VoiceChat] Micrófono habilitado por el usuario con filtros DSP activos`)
       return { success: true }
     } catch (err: any) {
       console.warn('[VoiceChat] Permiso de micrófono denegado o no disponible:', err)
@@ -273,6 +305,9 @@ class VoiceChatService {
     if (!fromUid || fromUid === this.localUser?.uid) return
 
     this.activeParticipants.add(fromUid)
+    if (!this.userVolumes.has(fromUid)) {
+      this.userVolumes.set(fromUid, DEFAULT_USER_GAIN)
+    }
 
     switch (data.type) {
       case 'voice_join': {
@@ -365,7 +400,7 @@ class VoiceChatService {
     this.remoteStreams.set(peerUid, stream)
     this.initAudioContext()
 
-    // 1. Direct Web Audio API Output Graph (AudioContext.destination)
+    // 1. Direct Web Audio API Output Graph: Source -> Presence Filter (+3dB @ 2.8kHz) -> GainNode -> Destination
     if (this.audioContext) {
       try {
         if (this.audioContext.state === 'suspended') {
@@ -383,13 +418,22 @@ class VoiceChatService {
         const source = this.audioContext.createMediaStreamSource(stream)
         this.remoteSources.set(peerUid, source)
 
+        // Vocal presence peaking EQ filter for crisp dialogue over game sounds
+        const presenceFilter = this.audioContext.createBiquadFilter()
+        presenceFilter.type = 'peaking'
+        presenceFilter.frequency.setValueAtTime(2800, this.audioContext.currentTime)
+        presenceFilter.gain.setValueAtTime(3.0, this.audioContext.currentTime) // +3dB vocal clarity
+        presenceFilter.Q.setValueAtTime(1.0, this.audioContext.currentTime)
+
         const gainNode = this.audioContext.createGain()
-        const vol = this.isDeafened || this.mutedUsers.has(peerUid) ? 0 : (this.userVolumes.get(peerUid) ?? 1.0)
+        const userVol = this.userVolumes.get(peerUid) ?? DEFAULT_USER_GAIN
+        const vol = this.isDeafened || this.mutedUsers.has(peerUid) ? 0 : userVol
         gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
         this.remoteGainNodes.set(peerUid, gainNode)
 
-        // Connect source -> GainNode -> Destination (Speakers / Headphones)
-        source.connect(gainNode)
+        // Source -> PresenceFilter -> GainNode -> Destination (Speakers / Headphones)
+        source.connect(presenceFilter)
+        presenceFilter.connect(gainNode)
         gainNode.connect(this.audioContext.destination)
 
         // Parallel connection to Analyser for the Visual Micro-Equalizer
@@ -399,7 +443,7 @@ class VoiceChatService {
         source.connect(analyser)
         this.remoteAnalysers.set(peerUid, analyser)
 
-        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Web Audio API destination para peer ${peerUid}`)
+        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Web Audio API con presencia vocal (+3dB) para peer ${peerUid}`)
       } catch (err) {
         console.warn('[VoiceChat] Error conectando stream a Web Audio API:', err)
       }
@@ -608,7 +652,8 @@ class VoiceChatService {
     this.isDeafened = !this.isDeafened
 
     this.remoteGainNodes.forEach((gainNode, uid) => {
-      const vol = this.isDeafened || this.mutedUsers.has(uid) ? 0 : (this.userVolumes.get(uid) ?? 1.0)
+      const userVol = this.userVolumes.get(uid) ?? DEFAULT_USER_GAIN
+      const vol = this.isDeafened || this.mutedUsers.has(uid) ? 0 : userVol
       if (this.audioContext) {
         gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
       }
@@ -627,7 +672,8 @@ class VoiceChatService {
 
     const gainNode = this.remoteGainNodes.get(uid)
     if (gainNode && this.audioContext) {
-      const vol = this.isDeafened || muted ? 0 : (this.userVolumes.get(uid) ?? 1.0)
+      const userVol = this.userVolumes.get(uid) ?? DEFAULT_USER_GAIN
+      const vol = this.isDeafened || muted ? 0 : userVol
       gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
     }
 
@@ -635,7 +681,7 @@ class VoiceChatService {
   }
 
   public setUserVolume(uid: string, volume: number) {
-    const clamped = Math.max(0, Math.min(1, volume))
+    const clamped = Math.max(0, Math.min(2.0, volume))
     this.userVolumes.set(uid, clamped)
 
     const gainNode = this.remoteGainNodes.get(uid)
@@ -643,6 +689,8 @@ class VoiceChatService {
       const vol = this.isDeafened || this.mutedUsers.has(uid) ? 0 : clamped
       gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
     }
+
+    this.notify()
   }
 
   private cleanupPeer(peerUid: string) {

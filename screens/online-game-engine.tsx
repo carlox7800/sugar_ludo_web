@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle, Trophy, Mic, MicOff, Headphones } from 'lucide-react'
+import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle, Trophy, Mic, MicOff, Headphones, Sliders } from 'lucide-react'
 import { recordMatchResult } from '@/lib/stats-service'
 import confetti from 'canvas-confetti'
 import { getSocket } from '@/lib/socket'
@@ -10,6 +9,7 @@ import { useAuth } from '@/lib/auth-context'
 import { useVoiceChat } from '@/lib/voice-context'
 import { GameBoard } from '@/src/components/GameBoard'
 import { PlayerCorner } from '@/src/components/PlayerCorner'
+import { VoiceControlPopover } from '@/src/components/VoiceControlPopover'
 import { Token, Player, PlayerColor } from '@/src/types'
 import { globalLogger } from '@/lib/logger'
 import { audio } from '@/src/audio'
@@ -120,6 +120,7 @@ export function OnlineGameEngine({
   // Detect if current online session is Batalla de Amigos (Private Room)
   const isFriendsMatch = modeType !== 'competitive' && (!!gameData.roomCode || !!(gameData as any).isPrivate || (gameData.roomId && !gameData.roomId.startsWith('quick_') && !gameData.roomId.startsWith('comp_')))
   const voiceRoomCode = gameData.roomCode || (isFriendsMatch ? `LOBBY-${gameData.roomId}` : null)
+  const [isVoicePopoverOpen, setIsVoicePopoverOpen] = useState(false)
 
   const myPlayerId = gameData.myPlayerId || user?.uid || socket.id
   const [dynamicPlayers, setDynamicPlayers] = useState(() => {
@@ -1757,6 +1758,14 @@ export function OnlineGameEngine({
               >
                 <Headphones size={16} />
               </button>
+
+              <button
+                onClick={() => setIsVoicePopoverOpen(true)}
+                className="p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center shadow-md bg-white/5 text-slate-300 border-white/10 hover:bg-white/15 active:scale-95"
+                title="Ajustes de volumen y ganancia de amigos"
+              >
+                <Sliders size={16} className="text-cyan-300" />
+              </button>
             </div>
           )}
 
@@ -2107,6 +2116,22 @@ export function OnlineGameEngine({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Voice Control Popover Modal for Friend Battle */}
+      {isFriendsMatch && (
+        <VoiceControlPopover
+          isOpen={isVoicePopoverOpen}
+          onClose={() => setIsVoicePopoverOpen(false)}
+          participants={dynamicPlayers
+            .filter(p => (p.playerId || (p as any).uid) !== user?.uid)
+            .map(p => ({
+              uid: p.playerId || (p as any).uid || '',
+              name: p.playerName || p.name || 'Amigo',
+              avatar: p.photoURL || p.photoUrl || '🎲'
+            }))
+          }
+        />
       )}
     </div>
   )

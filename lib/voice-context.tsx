@@ -13,6 +13,7 @@ interface VoiceContextValue {
   activeParticipants: string[]
   isSpeakingMap: Record<string, boolean>
   mutedUsers: Record<string, boolean>
+  userVolumes: Record<string, number>
   activeRoomCode: string | null
   joinVoiceRoom: (roomCode: string, targetFriendUids?: string[]) => Promise<void>
   leaveVoiceRoom: (stopHardwareMic?: boolean) => void
@@ -36,7 +37,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     hasMicPermission: null as boolean | null,
     activeParticipants: [] as string[],
     isSpeakingMap: {} as Record<string, boolean>,
-    mutedUsers: {} as Record<string, boolean>
+    mutedUsers: {} as Record<string, boolean>,
+    userVolumes: {} as Record<string, number>
   })
 
   useEffect(() => {
