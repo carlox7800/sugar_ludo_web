@@ -91,6 +91,9 @@ function PageContent() {
   const screenRef = useRef<Screen>('landing')
   const setScreenAndRef = (s: Screen) => {
     globalLogger.nav(screenRef.current, s)
+    if (s !== 'online-game' && s !== 'online-training' && (screenRef.current === 'online-game' || screenRef.current === 'online-training')) {
+      leaveVoiceRoom(true)
+    }
     screenRef.current = s
     setScreen(s)
   }

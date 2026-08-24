@@ -58,7 +58,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     await voiceChatService.joinRoom(roomCode, localUser, targetFriendUids)
   }, [user])
 
-  const leaveVoiceRoom = useCallback((stopHardwareMic = false) => {
+  const leaveVoiceRoom = useCallback((stopHardwareMic = true) => {
     setActiveRoomCode(null)
     voiceChatService.leaveRoom(stopHardwareMic)
   }, [])

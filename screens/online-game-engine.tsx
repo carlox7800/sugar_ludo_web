@@ -1,5 +1,6 @@
 'use client'
 
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { ArrowLeft, Volume2, VolumeX, Sparkles, AlertTriangle, Trophy, Mic, MicOff, Headphones, Sliders } from 'lucide-react'
 import { recordMatchResult } from '@/lib/stats-service'
 import confetti from 'canvas-confetti'

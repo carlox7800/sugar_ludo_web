@@ -5,6 +5,7 @@ import { ArrowLeft, Zap, Key, PlusCircle, LogIn, Copy, Check, Sparkles, Loader2,
 import { cn } from '@/lib/utils'
 import { useSocket } from '@/lib/useSocket'
 import { useAuth } from '@/lib/auth-context'
+import { useVoiceChat } from '@/lib/voice-context'
 import { GameGuideModal } from '@/components/game-guide-modal'
 import { BatallaLobby } from '@/components/batalla-lobby'
 import { searchUsersInFirestore } from '@/lib/friends-service'
@@ -22,6 +23,7 @@ export function OnlineTraining({
 }) {
   const { connect, status, getSocketInstance } = useSocket()
   const { user } = useAuth()
+  const { leaveVoiceRoom } = useVoiceChat()
 
   // P2P Lobby State
   const [p2pLobbyConfig, setP2pLobbyConfig] = useState<{ mode: 'host' | 'guest', capacity?: number, hostUid?: string } | null>(null)
@@ -301,6 +303,7 @@ export function OnlineTraining({
   }
 
   const handleBackToMenu = () => {
+    leaveVoiceRoom(true)
     if (isSearching || lobbyData) {
       const socket = getSocketInstance()
       const playerId = user?.uid || socket.id

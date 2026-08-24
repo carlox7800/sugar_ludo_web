@@ -752,8 +752,18 @@ class VoiceChatService {
     this.speakingMap = {}
   }
 
-  public leaveRoom(stopHardwareMic = false) {
-    if (!this.currentRoomCode) return
+  public leaveRoom(stopHardwareMic = true) {
+    if (!this.currentRoomCode) {
+      if (stopHardwareMic && this.localStream) {
+        this.localStream.getTracks().forEach(t => {
+          try { t.stop() } catch {}
+        })
+        this.localStream = null
+        this.hasMicPermission = null
+        this.notify()
+      }
+      return
+    }
 
     if (this.localUser) {
       this.broadcastSignal({
@@ -776,14 +786,16 @@ class VoiceChatService {
     this.cleanupRoomConnections()
 
     if (stopHardwareMic && this.localStream) {
-      this.localStream.getTracks().forEach(t => t.stop())
+      this.localStream.getTracks().forEach(t => {
+        try { t.stop() } catch {}
+      })
       this.localStream = null
       this.hasMicPermission = null
     }
 
     this.currentRoomCode = null
     this.notify()
-    globalLogger.log('SYSTEM', `[VoiceChat] Sala de voz cerrada con éxito.`)
+    globalLogger.log('SYSTEM', `[VoiceChat] Sala de voz cerrada y hardware de micrófono apagado con éxito.`)
   }
 }
 
