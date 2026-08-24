@@ -1,5 +1,6 @@
 'use client'
 
+import React, { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, Crown, Check, Clock, UserPlus, Loader2, Copy, Swords, Sparkles, X, Send, Trophy, AlertCircle, Mic, MicOff, Headphones, Volume2, Sliders } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
