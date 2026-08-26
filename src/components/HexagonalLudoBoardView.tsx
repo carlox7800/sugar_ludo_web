@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   HexPlayerColor,
   HexToken,
@@ -114,7 +114,7 @@ function getBaseSlotPos(colorKey: HexPlayerColor, tokenSlotIdx: number): { x: nu
 }
 
 // Calculate token position in SVG space
-export function getTokenCoordinates(token: HexToken, allTokens?: HexToken[]): { x: number; y: number } {
+export function getTokenCoordinates(token: HexToken, allTokensOrMap?: HexToken[] | Map<string, HexToken[]>): { x: number; y: number } {
   const cellIdx = getCellIndexForToken(token.color, token.step);
 
   if (cellIdx === 'BASE') {
@@ -154,21 +154,24 @@ export function getTokenCoordinates(token: HexToken, allTokens?: HexToken[]): { 
     basePos = getArmCellPos(loc.s, loc.r, loc.c);
   }
 
-  if (!allTokens) {
+  if (!allTokensOrMap) {
     return basePos;
   }
 
-  // Handle overlapping tokens
-  const activeTokensOnCell = allTokens.filter((t) => {
-    if (t.step === 0 || t.step >= 83) return false;
-    const tCellIdx = getCellIndexForToken(t.color, t.step);
-    if (tCellIdx !== cellIdx) return false;
-    
-    // Si la celda es un string (pasillo H1-H5 o GOAL), físicamente pertenecen a casas distintas
-    if (typeof cellIdx === 'string' && t.color !== token.color) return false;
-    
-    return true;
-  });
+  // Handle overlapping tokens in O(1) if map provided
+  let activeTokensOnCell: HexToken[] = [];
+  if (allTokensOrMap instanceof Map) {
+    const key = typeof cellIdx === 'string' ? `${token.color}_${cellIdx}` : `cell_${cellIdx}`;
+    activeTokensOnCell = allTokensOrMap.get(key) || [];
+  } else if (Array.isArray(allTokensOrMap)) {
+    activeTokensOnCell = allTokensOrMap.filter((t) => {
+      if (t.step === 0 || t.step >= 83) return false;
+      const tCellIdx = getCellIndexForToken(t.color, t.step);
+      if (tCellIdx !== cellIdx) return false;
+      if (typeof cellIdx === 'string' && t.color !== token.color) return false;
+      return true;
+    });
+  }
 
   if (activeTokensOnCell.length <= 1) {
     return basePos;
@@ -426,6 +429,27 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
   const activePlayer = players[currentTurnIndex];
   const tokenTheme = getTokenTheme(tokenSkinId);
 
+  // Pre-calculate active tokens on cells to avoid O(N^2) filter inside getTokenCoordinates
+  const cellTokensMap = useMemo(() => {
+    const map = new Map<string, HexToken[]>();
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t.step > 0 && t.step < 83) {
+        const cIdx = getCellIndexForToken(t.color, t.step);
+        if (cIdx !== 'BASE' && cIdx !== 'GOAL') {
+          const key = typeof cIdx === 'string' ? `${t.color}_${cIdx}` : `cell_${cIdx}`;
+          let list = map.get(key);
+          if (!list) {
+            list = [];
+            map.set(key, list);
+          }
+          list.push(t);
+        }
+      }
+    }
+    return map;
+  }, [tokens]);
+
   return (
     <div className="relative w-full mx-auto select-none flex items-center justify-center p-0">
       <svg
@@ -440,7 +464,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
       {/* --- HTML GPU OVERLAY (Fichas Hexágono Aceleradas por GPU a 60 FPS) --- */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {tokens.map((token) => {
-          const pos = getTokenCoordinates(token, tokens);
+          const pos = getTokenCoordinates(token, cellTokensMap);
           const globalId = token.playerId * 4 + token.id;
           const isPlayable = (playableTokenIds.includes(token.id) || playableTokenIds.includes(globalId)) && activePlayer?.color === token.color;
           const tokenInfo = HEX_COLOR_INFO[token.color];

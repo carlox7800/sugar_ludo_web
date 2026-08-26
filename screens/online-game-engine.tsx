@@ -720,6 +720,10 @@ export function OnlineGameEngine({
 
   // Helper to emit turn end when no valid moves remain
   const emitEndTurnIfNeeded = (nextMoves: number[], currentTokens: Token[] = tokensRef.current) => {
+    if (winnerPlayer || isGameOverRef.current) {
+      return
+    }
+
     const activeIdx = activePlayerIndexRef.current
 
     if (activeIdx !== myPlayerIndex) {
@@ -763,6 +767,7 @@ export function OnlineGameEngine({
     currentMoves: number[] = remainingMovesRef.current,
     currentTokens: Token[] = tokensRef.current
   ) => {
+    if (winnerPlayer || isGameOverRef.current) return
     if (isAnimatingMoveRef.current) return
     if (!isProcessingTimeoutRef.current) return // Abort if user took back control
     
@@ -1085,10 +1090,10 @@ export function OnlineGameEngine({
         animSteps = 1 // Direct 1 step from Base (-1) to First Cell (0 or 1)
       } else {
         const diff = targetStep - startStep
-        if (diff > 25) {
+        if (diff > 35) {
           // Desync Guard: token was lagging behind due to skipped events.
-          // Instantly snap token to expected start position (targetStep - 25 or expected) before animating.
-          const syncedStartStep = Math.max(0, targetStep - 25)
+          // Instantly snap token to expected start position (targetStep - 35 or expected) before animating.
+          const syncedStartStep = Math.max(0, targetStep - 35)
           globalLogger.log('TOKENS', `Desfase detectado (${startStep} -> ${targetStep}). Sincronizando posición base instantáneamente a step ${syncedStartStep}.`)
           
           tokensRef.current = tokensRef.current.map((t) =>
@@ -1540,7 +1545,7 @@ export function OnlineGameEngine({
   }, [])
 
   // Send Chat / Emoji Reaction Intent to Backend
-  const handleSendReaction = (message: string) => {
+  const handleSendReaction = useCallback((message: string) => {
     if (!socket || !gameData?.roomId) return
     const playerName = user?.nickname || 'Jugador'
     socket.emit('intent_chat', {
@@ -1562,10 +1567,10 @@ export function OnlineGameEngine({
         return newState
       })
     }, 3500)
-  }
+  }, [socket, gameData?.roomId, myPlayerId, user?.nickname, myPlayerIndex])
 
   // Roll Dice Action
-  const handleRollDice = () => {
+  const handleRollDice = useCallback(() => {
     if (!isMyTurnRef.current || hasRolledRef.current || isRollingRef.current || isAnimatingMoveRef.current) return
     // BUG FIX v8.0.6: Reset timeout flag so human roll is never confused with auto-roll
     isProcessingTimeoutRef.current = false
@@ -1577,7 +1582,7 @@ export function OnlineGameEngine({
       roomId: gameData.roomId,
       playerId: myPlayerId,
     })
-  }
+  }, [socket, gameData.roomId, myPlayerId, muted])
 
   // Execute single validated move intent
   const executeMoveIntent = (tokenId: number, moveVal: number) => {
@@ -2126,11 +2131,20 @@ export function OnlineGameEngine({
           onClose={() => setIsVoicePopoverOpen(false)}
           participants={dynamicPlayers
             .filter(p => (p.playerId || (p as any).uid) !== user?.uid)
-            .map(p => ({
-              uid: p.playerId || (p as any).uid || '',
-              name: p.playerName || p.name || 'Amigo',
-              avatar: p.photoURL || p.photoUrl || '🎲'
-            }))
+            .map(p => {
+              let rawName = p.playerName || p.name || 'Amigo'
+              let photo = p.photoURL || p.photoUrl || '🎲'
+              if (rawName.includes('|||')) {
+                const parts = rawName.split('|||')
+                rawName = parts[0]
+                photo = parts[1] || photo
+              }
+              return {
+                uid: p.playerId || (p as any).uid || '',
+                name: rawName,
+                avatar: photo
+              }
+            })
           }
         />
       )}

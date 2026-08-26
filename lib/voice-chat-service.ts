@@ -50,6 +50,7 @@ class VoiceChatService {
   private remoteStreams = new Map<string, MediaStream>()
   private remoteSources = new Map<string, MediaStreamAudioSourceNode>()
   private remoteGainNodes = new Map<string, GainNode>()
+  private remoteAudioDestinations = new Map<string, MediaStreamAudioDestinationNode>()
   private remoteAnalysers = new Map<string, AnalyserNode>()
   private remoteAudioElements = new Map<string, HTMLAudioElement>()
   private userVolumes = new Map<string, number>()
@@ -397,10 +398,21 @@ class VoiceChatService {
   }
 
   private handleRemoteStream(peerUid: string, stream: MediaStream) {
+    if (!peerUid || (this.localUser && peerUid === this.localUser.uid)) {
+      return
+    }
+
+    // Prevent looping back local mic audio if reflected by transceiver
+    const localTrackIds = new Set(this.localStream?.getAudioTracks().map(t => t.id) || [])
+    if (stream.getAudioTracks().some(t => localTrackIds.has(t.id))) {
+      return
+    }
+
     this.remoteStreams.set(peerUid, stream)
     this.initAudioContext()
 
-    // 1. Direct Web Audio API Output Graph: Source -> Presence Filter (+3dB @ 2.8kHz) -> GainNode -> Destination
+    let outputStream = stream
+
     if (this.audioContext) {
       try {
         if (this.audioContext.state === 'suspended') {
@@ -413,6 +425,8 @@ class VoiceChatService {
           oldSrc?.disconnect()
           const oldGain = this.remoteGainNodes.get(peerUid)
           oldGain?.disconnect()
+          const oldDest = this.remoteAudioDestinations.get(peerUid)
+          oldDest?.disconnect()
         } catch {}
 
         const source = this.audioContext.createMediaStreamSource(stream)
@@ -425,16 +439,12 @@ class VoiceChatService {
         presenceFilter.gain.setValueAtTime(3.0, this.audioContext.currentTime) // +3dB vocal clarity
         presenceFilter.Q.setValueAtTime(1.0, this.audioContext.currentTime)
 
+        // Remote Gain Node (0% to 200% physical volume control)
         const gainNode = this.audioContext.createGain()
         const userVol = this.userVolumes.get(peerUid) ?? DEFAULT_USER_GAIN
         const vol = this.isDeafened || this.mutedUsers.has(peerUid) ? 0 : userVol
         gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
         this.remoteGainNodes.set(peerUid, gainNode)
-
-        // Source -> PresenceFilter -> GainNode -> Destination (Speakers / Headphones)
-        source.connect(presenceFilter)
-        presenceFilter.connect(gainNode)
-        gainNode.connect(this.audioContext.destination)
 
         // Parallel connection to Analyser for the Visual Micro-Equalizer
         const analyser = this.audioContext.createAnalyser()
@@ -443,13 +453,24 @@ class VoiceChatService {
         source.connect(analyser)
         this.remoteAnalysers.set(peerUid, analyser)
 
-        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Web Audio API con presencia vocal (+3dB) para peer ${peerUid}`)
+        // Route through MediaStreamDestination to output via HTML Audio Element (Activates OS Hardware AEC on Android/iOS)
+        const streamDestination = this.audioContext.createMediaStreamDestination()
+        this.remoteAudioDestinations.set(peerUid, streamDestination)
+
+        source.connect(presenceFilter)
+        presenceFilter.connect(gainNode)
+        gainNode.connect(streamDestination)
+
+        outputStream = streamDestination.stream
+
+        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Web Audio DSP con MediaStreamDestination para peer ${peerUid}`)
       } catch (err) {
-        console.warn('[VoiceChat] Error conectando stream a Web Audio API:', err)
+        console.warn('[VoiceChat] Error conectando stream a Web Audio DSP:', err)
+        outputStream = stream
       }
     }
 
-    // 2. HTML Audio Element backup (muted to prevent echo while keeping stream alive)
+    // Single Unified HTML Audio Element per peer with Hardware AEC activation
     let audioEl = this.remoteAudioElements.get(peerUid)
     if (!audioEl && typeof document !== 'undefined') {
       audioEl = document.createElement('audio')
@@ -463,9 +484,9 @@ class VoiceChatService {
     }
 
     if (audioEl) {
-      audioEl.srcObject = stream
-      audioEl.muted = true
-      audioEl.volume = 0
+      audioEl.srcObject = outputStream
+      audioEl.muted = false
+      audioEl.volume = 1.0
       audioEl.play().catch(() => {})
     }
   }
@@ -712,6 +733,12 @@ class VoiceChatService {
       this.remoteGainNodes.delete(peerUid)
     }
 
+    const dest = this.remoteAudioDestinations.get(peerUid)
+    if (dest) {
+      try { dest.disconnect() } catch {}
+      this.remoteAudioDestinations.delete(peerUid)
+    }
+
     const audio = this.remoteAudioElements.get(peerUid)
     if (audio) {
       audio.pause()
@@ -739,6 +766,11 @@ class VoiceChatService {
       try { gain.disconnect() } catch {}
     })
     this.remoteGainNodes.clear()
+
+    this.remoteAudioDestinations.forEach((dest) => {
+      try { dest.disconnect() } catch {}
+    })
+    this.remoteAudioDestinations.clear()
 
     this.remoteAudioElements.forEach((audio) => {
       audio.pause()

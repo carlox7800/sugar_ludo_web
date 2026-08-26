@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   HexPlayerColor,
   HexPlayer,
@@ -898,6 +898,11 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     isHumanAutoplay,
   ]);
 
+  const handleHumanRollDice = useCallback(() => {
+    setIsHumanAutoplay(false);
+    handleRollDice();
+  }, [handleRollDice]);
+
   // Turn alert vibration & sound sync for Human Turn
   useEffect(() => {
     if (vibrationIntervalRef.current) {
@@ -1040,7 +1045,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                  hasRolled={gameState.hasRolled}
                  diceValues={diceValues}
                  remainingMoves={remainingMoves}
-                 onRollDice={() => { setIsHumanAutoplay(false); handleRollDice(); }}
+                 onRollDice={handleHumanRollDice}
                  timer={timer}
                  diceSkinId={p.type === 'human' ? diceSkinId : undefined}
                />

@@ -254,7 +254,7 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
   const canStartMatch = isRoomFull && players.length >= 2 && players.every(p => p.isReady)
 
   return (
-    <div className="flex flex-col w-full h-full animate-in fade-in zoom-in-95 relative">
+    <div className="flex flex-col w-full h-full animate-in fade-in zoom-in-95 relative" style={{ willChange: 'transform, opacity' }}>
       {/* Toast Notification Flotante */}
       {toastMessage && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] animate-in fade-in slide-in-from-top-4 flex items-center justify-center gap-2.5 rounded-full border border-amber-500/50 bg-[oklch(0.12_0.04_260/0.95)] backdrop-blur-md px-6 py-3 text-amber-300 font-display text-xs sm:text-sm font-extrabold shadow-[0_10px_30px_rgba(245,158,11,0.3)] tracking-wide whitespace-nowrap">
@@ -263,7 +263,7 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
         </div>
       )}
 
-      <div className="bg-card w-full max-w-2xl mx-auto rounded-[2rem] p-6 sm:p-8 border-2 border-[var(--candy-cyan)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col items-center gap-6 relative overflow-hidden">
+      <div className="bg-card w-full max-w-2xl mx-auto rounded-[2rem] p-6 sm:p-8 border-2 border-[var(--candy-cyan)] shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col items-center gap-6 relative overflow-hidden" style={{ willChange: 'transform, opacity' }}>
         
         {/* Glow Effects */}
         <div className="pointer-events-none absolute -right-12 -top-12 size-60 rounded-full bg-[var(--candy-cyan)]/20 blur-3xl" />
@@ -596,12 +596,21 @@ export function BatallaLobby({ mode, hostUid, capacity = 4, onBack, onStartGame 
         onClose={() => setIsVoicePopoverOpen(false)}
         participants={players
           .filter(p => p.uid !== user?.uid)
-          .map(p => ({
-            uid: p.uid,
-            name: p.name,
-            avatar: p.avatar,
-            avatarColor: p.avatarColor
-          }))
+          .map(p => {
+            let rawName = p.name || 'Amigo'
+            let avatar = p.avatar || '🎲'
+            if (rawName.includes('|||')) {
+              const parts = rawName.split('|||')
+              rawName = parts[0]
+              avatar = parts[1] || avatar
+            }
+            return {
+              uid: p.uid,
+              name: rawName,
+              avatar: avatar,
+              avatarColor: p.avatarColor
+            }
+          })
         }
       />
     </div>

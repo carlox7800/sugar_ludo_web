@@ -57,6 +57,18 @@ class Logger {
     }
   }
 
+  private persistTimer: any = null;
+
+  private schedulePersist() {
+    if (typeof window === 'undefined') return;
+    if (this.persistTimer) return;
+
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persist();
+    }, 1500);
+  }
+
   private persist() {
     if (typeof window !== 'undefined') {
       try {
@@ -69,6 +81,14 @@ class Logger {
 
   private initGlobalHandlers() {
     if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', () => {
+        if (this.persistTimer) {
+          clearTimeout(this.persistTimer);
+          this.persistTimer = null;
+        }
+        this.persist();
+      });
+
       window.addEventListener('error', (event) => {
         this.log('ERROR', `Error no controlado: ${event.message}`, {
           filename: event.filename,
@@ -99,7 +119,7 @@ class Logger {
       this.logs.shift();
     }
 
-    this.persist();
+    this.schedulePersist();
     
     // Solo mostramos ERRORs por consola de forma obligatoria, los demás opcional
     if (level === 'ERROR') {

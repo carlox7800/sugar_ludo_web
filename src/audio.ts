@@ -240,7 +240,6 @@ class LudoAudio {
 
     // Look-ahead buffer to avoid main thread render jitter
     const t = this.ctx.currentTime + 0.015;
-    globalLogger.log('AUDIO', 'Ejecutando playStep()', { audioTime: this.ctx.currentTime, bufferTime: t });
 
     // Contact Click Nodes
     const clickOsc1 = this.ctx.createOscillator();
