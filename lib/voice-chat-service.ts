@@ -39,7 +39,7 @@ const RTC_CONFIG: RTCConfiguration = {
   ]
 }
 
-const DEFAULT_USER_GAIN = 1.3 // 130% default vocal gain boost for AAA presence
+const DEFAULT_USER_GAIN = 1.0 // 100% natural baseline reference volume
 
 class VoiceChatService {
   private static instance: VoiceChatService
@@ -50,6 +50,7 @@ class VoiceChatService {
   private remoteStreams = new Map<string, MediaStream>()
   private remoteSources = new Map<string, MediaStreamAudioSourceNode>()
   private remoteGainNodes = new Map<string, GainNode>()
+  private remoteDspNodes = new Map<string, AudioNode[]>()
   private remoteAnalysers = new Map<string, AnalyserNode>()
   private remoteAudioElements = new Map<string, HTMLAudioElement>()
   private userVolumes = new Map<string, number>()
@@ -420,28 +421,58 @@ class VoiceChatService {
 
         // Clean up previous nodes for this peer if re-negotiating
         try {
-          const oldSrc = this.remoteSources.get(peerUid)
-          oldSrc?.disconnect()
-          const oldGain = this.remoteGainNodes.get(peerUid)
-          oldGain?.disconnect()
+          const oldNodes = this.remoteDspNodes.get(peerUid)
+          oldNodes?.forEach(n => {
+            try { n.disconnect() } catch {}
+          })
+          this.remoteDspNodes.delete(peerUid)
         } catch {}
 
         const source = this.audioContext.createMediaStreamSource(stream)
         this.remoteSources.set(peerUid, source)
 
-        // Vocal presence peaking EQ filter for crisp dialogue over game sounds
+        // 1. High-Pass Filter @ 90Hz (Q=0.7) - Cleans inaudible sub-bass rumble & optimizes speaker headroom
+        const highPass = this.audioContext.createBiquadFilter()
+        highPass.type = 'highpass'
+        highPass.frequency.setValueAtTime(90, this.audioContext.currentTime)
+        highPass.Q.setValueAtTime(0.7, this.audioContext.currentTime)
+
+        // 2. Vocal Warmth & Body EQ @ 380Hz (+2.5dB, Q=1.2) - Gives body & fullness on mobile phone speakers
+        const bodyFilter = this.audioContext.createBiquadFilter()
+        bodyFilter.type = 'peaking'
+        bodyFilter.frequency.setValueAtTime(380, this.audioContext.currentTime)
+        bodyFilter.gain.setValueAtTime(2.5, this.audioContext.currentTime)
+        bodyFilter.Q.setValueAtTime(1.2, this.audioContext.currentTime)
+
+        // 3. Vocal Clarity & Presence EQ @ 2600Hz (+2.0dB, Q=1.0) - Enhances speech intelligibility over game audio
         const presenceFilter = this.audioContext.createBiquadFilter()
         presenceFilter.type = 'peaking'
-        presenceFilter.frequency.setValueAtTime(2800, this.audioContext.currentTime)
-        presenceFilter.gain.setValueAtTime(3.0, this.audioContext.currentTime) // +3dB vocal clarity
+        presenceFilter.frequency.setValueAtTime(2600, this.audioContext.currentTime)
+        presenceFilter.gain.setValueAtTime(2.0, this.audioContext.currentTime)
         presenceFilter.Q.setValueAtTime(1.0, this.audioContext.currentTime)
 
-        // Remote Gain Node (0% to 200% physical volume control)
+        // 4. Remote Gain Node (0% to 200% physical volume control modulated by UI slider)
         const gainNode = this.audioContext.createGain()
         const userVol = this.userVolumes.get(peerUid) ?? DEFAULT_USER_GAIN
         const vol = this.isDeafened || this.mutedUsers.has(peerUid) ? 0 : userVol
         gainNode.gain.setValueAtTime(vol, this.audioContext.currentTime)
         this.remoteGainNodes.set(peerUid, gainNode)
+
+        // 5. Vocal Dynamics Compressor / RMS Auto-Leveler - Brings up quiet speech body by +6 to +10dB
+        const vocalCompressor = this.audioContext.createDynamicsCompressor()
+        vocalCompressor.threshold.setValueAtTime(-22, this.audioContext.currentTime)
+        vocalCompressor.knee.setValueAtTime(15, this.audioContext.currentTime)
+        vocalCompressor.ratio.setValueAtTime(4, this.audioContext.currentTime)
+        vocalCompressor.attack.setValueAtTime(0.003, this.audioContext.currentTime)
+        vocalCompressor.release.setValueAtTime(0.15, this.audioContext.currentTime)
+
+        // 6. Safety Brickwall Limiter / Peak Guard - Hard limiting ceiling at -1.5dB to prevent 100% of digital clipping
+        const limiter = this.audioContext.createDynamicsCompressor()
+        limiter.threshold.setValueAtTime(-1.5, this.audioContext.currentTime)
+        limiter.knee.setValueAtTime(0, this.audioContext.currentTime)
+        limiter.ratio.setValueAtTime(20, this.audioContext.currentTime)
+        limiter.attack.setValueAtTime(0.001, this.audioContext.currentTime)
+        limiter.release.setValueAtTime(0.05, this.audioContext.currentTime)
 
         // Parallel connection to Analyser for the Visual Micro-Equalizer
         const analyser = this.audioContext.createAnalyser()
@@ -450,14 +481,21 @@ class VoiceChatService {
         source.connect(analyser)
         this.remoteAnalysers.set(peerUid, analyser)
 
-        // Source -> PresenceFilter -> GainNode -> Destination (Speakers / Headphones)
-        source.connect(presenceFilter)
+        // Multi-stage Processing Chain:
+        // Source -> HighPass -> Body EQ -> Presence EQ -> GainNode -> VocalCompressor -> Limiter -> Destination
+        source.connect(highPass)
+        highPass.connect(bodyFilter)
+        bodyFilter.connect(presenceFilter)
         presenceFilter.connect(gainNode)
-        gainNode.connect(this.audioContext.destination)
+        gainNode.connect(vocalCompressor)
+        vocalCompressor.connect(limiter)
+        limiter.connect(this.audioContext.destination)
 
-        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Web Audio API (Destination) para peer ${peerUid}`)
+        this.remoteDspNodes.set(peerUid, [source, highPass, bodyFilter, presenceFilter, gainNode, vocalCompressor, limiter, analyser])
+
+        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Cadena DSP Multi-Etapa (HighPass + Body + Presence + Compressor + Limiter) para peer ${peerUid}`)
       } catch (err) {
-        console.warn('[VoiceChat] Error conectando stream a Web Audio API:', err)
+        console.warn('[VoiceChat] Error conectando stream a Web Audio API DSP:', err)
       }
     }
 
@@ -712,16 +750,12 @@ class VoiceChatService {
       this.peerConnections.delete(peerUid)
     }
 
-    const src = this.remoteSources.get(peerUid)
-    if (src) {
-      try { src.disconnect() } catch {}
-      this.remoteSources.delete(peerUid)
-    }
-
-    const gain = this.remoteGainNodes.get(peerUid)
-    if (gain) {
-      try { gain.disconnect() } catch {}
-      this.remoteGainNodes.delete(peerUid)
+    const nodes = this.remoteDspNodes.get(peerUid)
+    if (nodes) {
+      nodes.forEach(n => {
+        try { n.disconnect() } catch {}
+      })
+      this.remoteDspNodes.delete(peerUid)
     }
 
     const audio = this.remoteAudioElements.get(peerUid)
@@ -742,14 +776,14 @@ class VoiceChatService {
     })
     this.peerConnections.clear()
 
-    this.remoteSources.forEach((src) => {
-      try { src.disconnect() } catch {}
+    this.remoteDspNodes.forEach((nodes) => {
+      nodes.forEach(n => {
+        try { n.disconnect() } catch {}
+      })
     })
-    this.remoteSources.clear()
+    this.remoteDspNodes.clear()
 
-    this.remoteGainNodes.forEach((gain) => {
-      try { gain.disconnect() } catch {}
-    })
+    this.remoteSources.clear()
     this.remoteGainNodes.clear()
 
     this.remoteAudioElements.forEach((audio) => {

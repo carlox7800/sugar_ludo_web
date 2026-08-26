@@ -174,7 +174,7 @@ export function VoiceControlPopover({ isOpen, onClose, participants }: VoiceCont
                       min="0"
                       max="2"
                       step="0.05"
-                      value={userVolumes[friend.uid] ?? 1.3}
+                      value={userVolumes[friend.uid] ?? 1.0}
                       onChange={(e) => {
                         const val = parseFloat(e.target.value)
                         setUserVolume(friend.uid, val)
