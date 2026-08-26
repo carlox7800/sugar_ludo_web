@@ -50,7 +50,6 @@ class VoiceChatService {
   private remoteStreams = new Map<string, MediaStream>()
   private remoteSources = new Map<string, MediaStreamAudioSourceNode>()
   private remoteGainNodes = new Map<string, GainNode>()
-  private remoteAudioDestinations = new Map<string, MediaStreamAudioDestinationNode>()
   private remoteAnalysers = new Map<string, AnalyserNode>()
   private remoteAudioElements = new Map<string, HTMLAudioElement>()
   private userVolumes = new Map<string, number>()
@@ -425,8 +424,6 @@ class VoiceChatService {
           oldSrc?.disconnect()
           const oldGain = this.remoteGainNodes.get(peerUid)
           oldGain?.disconnect()
-          const oldDest = this.remoteAudioDestinations.get(peerUid)
-          oldDest?.disconnect()
         } catch {}
 
         const source = this.audioContext.createMediaStreamSource(stream)
@@ -453,24 +450,18 @@ class VoiceChatService {
         source.connect(analyser)
         this.remoteAnalysers.set(peerUid, analyser)
 
-        // Route through MediaStreamDestination to output via HTML Audio Element (Activates OS Hardware AEC on Android/iOS)
-        const streamDestination = this.audioContext.createMediaStreamDestination()
-        this.remoteAudioDestinations.set(peerUid, streamDestination)
-
+        // Source -> PresenceFilter -> GainNode -> Destination (Speakers / Headphones)
         source.connect(presenceFilter)
         presenceFilter.connect(gainNode)
-        gainNode.connect(streamDestination)
+        gainNode.connect(this.audioContext.destination)
 
-        outputStream = streamDestination.stream
-
-        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Web Audio DSP con MediaStreamDestination para peer ${peerUid}`)
+        globalLogger.log('SYSTEM', `[VoiceChat] Stream de audio WebRTC conectado a Web Audio API (Destination) para peer ${peerUid}`)
       } catch (err) {
-        console.warn('[VoiceChat] Error conectando stream a Web Audio DSP:', err)
-        outputStream = stream
+        console.warn('[VoiceChat] Error conectando stream a Web Audio API:', err)
       }
     }
 
-    // Single Unified HTML Audio Element per peer with Hardware AEC activation
+    // HTML Audio Element to keep WebRTC stream active (muted to avoid double output)
     let audioEl = this.remoteAudioElements.get(peerUid)
     if (!audioEl && typeof document !== 'undefined') {
       audioEl = document.createElement('audio')
@@ -484,9 +475,9 @@ class VoiceChatService {
     }
 
     if (audioEl) {
-      audioEl.srcObject = outputStream
-      audioEl.muted = false
-      audioEl.volume = 1.0
+      audioEl.srcObject = stream
+      audioEl.muted = true
+      audioEl.volume = 0
       audioEl.play().catch(() => {})
     }
   }
@@ -733,12 +724,6 @@ class VoiceChatService {
       this.remoteGainNodes.delete(peerUid)
     }
 
-    const dest = this.remoteAudioDestinations.get(peerUid)
-    if (dest) {
-      try { dest.disconnect() } catch {}
-      this.remoteAudioDestinations.delete(peerUid)
-    }
-
     const audio = this.remoteAudioElements.get(peerUid)
     if (audio) {
       audio.pause()
@@ -766,11 +751,6 @@ class VoiceChatService {
       try { gain.disconnect() } catch {}
     })
     this.remoteGainNodes.clear()
-
-    this.remoteAudioDestinations.forEach((dest) => {
-      try { dest.disconnect() } catch {}
-    })
-    this.remoteAudioDestinations.clear()
 
     this.remoteAudioElements.forEach((audio) => {
       audio.pause()
