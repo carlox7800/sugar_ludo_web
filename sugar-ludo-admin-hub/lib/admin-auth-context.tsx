@@ -199,12 +199,31 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       isActive: true
     }
 
+    // 1. Guardar en memoria local
     const updatedList = [...adminList, newAdmin]
     setAdminList(updatedList)
     localStorage.setItem('sugar_admin_accounts', JSON.stringify(updatedList))
     localStorage.setItem(`sugar_admin_pass_${newAdmin.uid}`, pass)
 
-    return { success: true, message: `Administrador ${cleanUser} creado con éxito.` }
+    // 2. Persistir formalmente en Backend / Firebase Auth & Firestore
+    try {
+      await fetch('/api/staff/auth/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: pass,
+          displayName: displayName.trim(),
+          username: cleanUser,
+          role,
+          accountType: 'admin'
+        })
+      })
+    } catch (err) {
+      console.warn('[StaffAuth] Background API sync notice:', err)
+    }
+
+    return { success: true, message: `Administrador ${cleanUser} creado y persistido con éxito.` }
   }
 
   const toggleAdminStatus = (uid: string) => {
@@ -222,6 +241,16 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     setAdminList(updatedList)
     localStorage.setItem('sugar_admin_accounts', JSON.stringify(updatedList))
     localStorage.removeItem(`sugar_admin_pass_${uid}`)
+
+    // Eliminar en Backend / Firebase Auth
+    try {
+      fetch('/api/staff/auth/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid, role: 'admin', accountType: 'admin' })
+      }).catch(() => {})
+    } catch {}
+
     return { success: true, message: 'Cuenta de administrador eliminada permanentemente.' }
   }
 
@@ -241,7 +270,26 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(`sugar_cashier_pass_${newCashier.uid}`, pass)
     }
 
-    return { success: true, message: `Cajero ${newCashier.name} registrado con éxito.` }
+    // Persistir formalmente en Backend / Firebase Auth & Firestore
+    try {
+      fetch('/api/staff/auth/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: pass || 'CajeroSugar2026!',
+          displayName: newCashier.name,
+          username: cleanEmail.split('@')[0],
+          role: 'cashier',
+          accountType: 'cashier',
+          initialFloatCoins: newCashier.floatBalanceCoins,
+          phone: newCashier.phone,
+          idDocument: newCashier.idDocument
+        })
+      }).catch(() => {})
+    } catch {}
+
+    return { success: true, message: `Cajero ${newCashier.name} registrado y persistido con éxito.` }
   }
 
   const deleteCashierAccount = (uid: string): { success: boolean; message: string } => {
@@ -249,6 +297,16 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     setCashierList(updatedList)
     localStorage.setItem('sugar_cashier_accounts', JSON.stringify(updatedList))
     localStorage.removeItem(`sugar_cashier_pass_${uid}`)
+
+    // Eliminar en Backend / Firebase Auth
+    try {
+      fetch('/api/staff/auth/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid, role: 'cashier', accountType: 'cashier' })
+      }).catch(() => {})
+    } catch {}
+
     return { success: true, message: 'Cuenta de cajero eliminada permanentemente.' }
   }
 

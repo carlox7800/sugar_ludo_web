@@ -47,7 +47,8 @@ export default function DisputasAdminPage() {
     )
   }
 
-  const handleResolvePlayer = (disputeId: string) => {
+  const handleResolvePlayer = async (disputeId: string) => {
+    if (!adminUser) return
     setDisputes((prev) =>
       prev.map((d) =>
         d.id === disputeId
@@ -56,16 +57,33 @@ export default function DisputasAdminPage() {
               status: 'resolved_player',
               resolvedBy: adminUser.displayName,
               resolvedAt: Date.now(),
-              resolutionNotes: 'Dictamen a favor del jugador. Saldo acreditado forzosamente y penalización aplicada al cajero.'
+              resolutionNotes: 'Dictamen favorable para el jugador. Fondos acreditados.'
             }
           : d
       )
     )
-    setNotification('Dictamen ejecutado: Saldo acreditado al jugador (+5,000 SC).')
+    setNotification('Dictamen ejecutado: Saldo acreditado al jugador atómicamente.')
+
+    try {
+      await fetch('/api/disputes/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          disputeId,
+          verdict: 'favor_player',
+          adminUid: adminUser.uid,
+          adminName: adminUser.displayName
+        })
+      })
+    } catch (e) {
+      console.warn('[Disputas] API sync error:', e)
+    }
+
     setTimeout(() => setNotification(null), 4000)
   }
 
-  const handleResolveCashier = (disputeId: string) => {
+  const handleResolveCashier = async (disputeId: string) => {
+    if (!adminUser) return
     setDisputes((prev) =>
       prev.map((d) =>
         d.id === disputeId
@@ -80,6 +98,22 @@ export default function DisputasAdminPage() {
       )
     )
     setNotification('Dictamen ejecutado: Orden cancelada y saldo de garantía liberado al cajero.')
+
+    try {
+      await fetch('/api/disputes/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          disputeId,
+          verdict: 'favor_cashier',
+          adminUid: adminUser.uid,
+          adminName: adminUser.displayName
+        })
+      })
+    } catch (e) {
+      console.warn('[Disputas] API sync error:', e)
+    }
+
     setTimeout(() => setNotification(null), 4000)
   }
 

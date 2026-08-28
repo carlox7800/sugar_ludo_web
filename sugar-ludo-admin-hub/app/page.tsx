@@ -225,7 +225,7 @@ export default function HubLandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-white/10 p-6 text-center text-xs text-slate-500">
-        Sugar Ludo Decentralized Cashier Hub &bull; Protocolo Seguro de Liquidación Financiera
+        Sugar Ludo Decentralized Cashier Hub &bull; Protocolo Seguro de Liquidación Financiera &bull; v1.0.1
       </footer>
     </div>
   )

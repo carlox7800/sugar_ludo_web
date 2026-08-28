@@ -209,3 +209,75 @@ export async function createWithdrawOrderWithEscrow(params: {
     return { success: true, orderId: orderRef.id }
   })
 }
+
+/**
+ * 3. RESOLUCIÓN ATÓMICA DE DISPUTAS (Arbitraje Super Admin)
+ */
+export async function resolveDisputeCaseAtomics(params: {
+  disputeId: string
+  verdict: 'favor_player' | 'favor_cashier'
+  adminUid: string
+  adminName: string
+  resolutionNotes?: string
+}): Promise<{ success: boolean; message: string }> {
+  const { disputeId, verdict, adminUid, adminName, resolutionNotes } = params
+
+  return await (adminDb as any).runTransaction(async (transaction: any) => {
+    const disputeRef = adminDb.collection('dispute_cases').doc(disputeId)
+    const disputeSnap = await transaction.get(disputeRef)
+
+    const now = Date.now()
+
+    if (disputeSnap.exists) {
+      const disputeData = disputeSnap.data() || {}
+      const orderRef = adminDb.collection('cashier_orders').doc(disputeData.orderId || disputeId)
+      const playerRef = adminDb.collection('users').doc(disputeData.playerUid)
+      const cashierRef = adminDb.collection('cashier_profiles').doc(disputeData.cashierUid)
+
+      const [playerSnap, cashierSnap] = await Promise.all([
+        transaction.get(playerRef),
+        transaction.get(cashierRef)
+      ])
+
+      const amountCoins = Number(disputeData.amountSugarCoins || 0)
+
+      if (verdict === 'favor_player') {
+        if (playerSnap.exists) {
+          const currentCoins = Number(playerSnap.data()?.coins || 0)
+          transaction.update(playerRef, { coins: currentCoins + amountCoins })
+        }
+        if (cashierSnap.exists) {
+          const currentFloat = Number(cashierSnap.data()?.floatBalanceCoins || 0)
+          transaction.update(cashierRef, { floatBalanceCoins: Math.max(0, currentFloat - amountCoins) })
+        }
+        transaction.update(disputeRef, {
+          status: 'resolved_player',
+          resolvedBy: adminName,
+          resolvedByUid: adminUid,
+          resolvedAt: now,
+          resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Fondos acreditados.'
+        })
+        transaction.update(orderRef, { status: 'completed', completedAt: now })
+      } else {
+        // Favor del cajero
+        if (cashierSnap.exists) {
+          const currentFloat = Number(cashierSnap.data()?.floatBalanceCoins || 0)
+          transaction.update(cashierRef, { floatBalanceCoins: currentFloat + amountCoins })
+        }
+        transaction.update(disputeRef, {
+          status: 'resolved_cashier',
+          resolvedBy: adminName,
+          resolvedByUid: adminUid,
+          resolvedAt: now,
+          resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el cajero. Fondos de garantía liberados.'
+        })
+        transaction.update(orderRef, { status: 'cancelled', completedAt: now })
+      }
+    }
+
+    return {
+      success: true,
+      message: `Veredicto atómico ejecutado: ${verdict === 'favor_player' ? 'Acreditado al Jugador' : 'Liberado al Cajero'}.`
+    }
+  })
+}

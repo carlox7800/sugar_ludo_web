@@ -87,6 +87,8 @@ export interface CashierManagementProfile {
   name: string
   email: string
   avatarUrl?: string
+  phone?: string
+  idDocument?: string
   shiftStatus: 'on_shift' | 'off_shift' | 'break'
   floatBalanceCoins: number
   assignedShiftAt?: number
