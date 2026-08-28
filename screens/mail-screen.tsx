@@ -15,7 +15,10 @@ import {
   Info, 
   ShieldCheck, 
   Award,
-  ChevronRight
+  ChevronRight,
+  Headphones,
+  Send,
+  MessageSquare
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
@@ -26,18 +29,21 @@ import {
   fetchUserInbox, 
   claimMailReward, 
   claimAllRewards, 
-  markMailAsRead 
+  markMailAsRead,
+  replySupportMail
 } from '@/lib/mail-service'
 
 export function MailScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const { coins, setCoins } = usePlayer()
 
-  const [activeTab, setActiveTab] = useState<'rewards' | 'system'>('rewards')
+  const [activeTab, setActiveTab] = useState<'rewards' | 'system' | 'support'>('rewards')
   const [mailList, setMailList] = useState<MailItem[]>([])
   const [selectedMail, setSelectedMail] = useState<MailItem | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [replyInput, setReplyInput] = useState('')
+  const [isSendingReply, setIsSendingReply] = useState(false)
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -110,9 +116,47 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
+  const handleSendReply = async () => {
+    if (!replyInput.trim() || !selectedMail) return
+    setIsSendingReply(true)
+    try {
+      const success = await replySupportMail(
+        user?.uid,
+        selectedMail.id,
+        replyInput.trim(),
+        user?.displayName || 'Jugador',
+        'player'
+      )
+      if (success) {
+        const newReply = {
+          id: `rep_${Date.now()}`,
+          sender: user?.displayName || 'Jugador',
+          senderRole: 'player' as const,
+          message: replyInput.trim(),
+          timestamp: Date.now()
+        }
+        setSelectedMail(prev => prev ? {
+          ...prev,
+          replies: [...(prev.replies || []), newReply]
+        } : null)
+        setMailList(prev => prev.map(m => m.id === selectedMail.id ? {
+          ...m,
+          replies: [...(m.replies || []), newReply]
+        } : m))
+        setReplyInput('')
+        showToast('✉️ ¡Respuesta enviada al cajero con éxito!')
+      }
+    } catch {
+      showToast('Error al enviar respuesta')
+    } finally {
+      setIsSendingReply(false)
+    }
+  }
+
   const filteredMails = mailList.filter(m => m.category === activeTab)
   const unreadRewardsCount = mailList.filter(m => m.category === 'rewards' && !m.claimed).length
   const unreadSystemCount = mailList.filter(m => m.category === 'system' && !m.isRead).length
+  const unreadSupportCount = mailList.filter(m => m.category === 'support' && !m.isRead).length
 
   return (
     <section className="animate-slide-in mx-auto flex w-full max-w-5xl flex-col gap-5 p-2 sm:p-4">
@@ -124,7 +168,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {/* Top Header Bar (Homologado con Tienda, Billetera, Amigos y Eventos) */}
+      {/* Top Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
@@ -139,7 +183,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               Buzón de Correo <Mail className="size-6 text-[var(--candy-magenta)]" />
             </h1>
             <p className="text-xs text-muted-foreground font-medium hidden sm:block">
-              Recibe avisos del sistema, recompensas de torneos y regalos de la comunidad.
+              Recibe avisos del sistema, recompensas de torneos y soporte de cajeros P2P.
             </p>
           </div>
         </div>
@@ -156,8 +200,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {/* Main Navigation Tabs */}
-      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/80">
+      {/* Main Navigation Tabs: 3 TABS (Rewards, System, Support) */}
+      <div className="grid grid-cols-3 gap-2 rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/80">
         <button
           onClick={() => setActiveTab('rewards')}
           className={cn(
@@ -168,7 +212,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
           )}
         >
           <Gift className="size-4" />
-          <span>Recompensas & Regalos</span>
+          <span className="hidden sm:inline">Recompensas</span>
+          <span className="sm:hidden">Regalos</span>
           {unreadRewardsCount > 0 && (
             <span className="size-5 rounded-full bg-emerald-500 text-[10px] font-black text-white flex items-center justify-center shadow-md">
               {unreadRewardsCount}
@@ -186,10 +231,30 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
           )}
         >
           <Bell className="size-4" />
-          <span>Avisos del Sistema</span>
+          <span className="hidden sm:inline">Avisos del Sistema</span>
+          <span className="sm:hidden">Sistema</span>
           {unreadSystemCount > 0 && (
             <span className="size-5 rounded-full bg-[var(--candy-cyan)] text-[10px] font-black text-black flex items-center justify-center shadow-md">
               {unreadSystemCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('support')}
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative",
+            activeTab === 'support'
+              ? "bg-[linear-gradient(145deg,#06b6d4,#0891b2)] text-white shadow-lg shadow-cyan-500/25"
+              : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
+          )}
+        >
+          <Headphones className="size-4" />
+          <span className="hidden sm:inline">Soporte & Cajeros</span>
+          <span className="sm:hidden">Soporte</span>
+          {unreadSupportCount > 0 && (
+            <span className="size-5 rounded-full bg-amber-500 text-[10px] font-black text-white flex items-center justify-center shadow-md">
+              {unreadSupportCount}
             </span>
           )}
         </button>
@@ -202,7 +267,9 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
             <MailOpen className="size-12 text-muted-foreground/40" />
             <h3 className="font-display text-lg font-bold text-foreground">Tu buzón está vacío</h3>
             <p className="text-xs text-muted-foreground max-w-sm">
-              No tienes mensajes nuevos en esta categoría. Las recompensas y anuncios aparecerán aquí.
+              {activeTab === 'support'
+                ? 'No tienes consultas o mensajes de cajeros pendientes. Las notificaciones de soporte aparecerán aquí.'
+                : 'No tienes mensajes nuevos en esta categoría. Las recompensas y anuncios aparecerán aquí.'}
             </p>
           </div>
         ) : (
@@ -223,9 +290,17 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                     "size-12 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-inner border",
                     mail.category === 'rewards'
                       ? "bg-[var(--candy-gold)]/20 border-[var(--candy-gold)]/30 text-[var(--candy-gold)]"
+                      : mail.category === 'support'
+                      ? "bg-cyan-500/20 border-cyan-500/30 text-cyan-300"
                       : "bg-[var(--candy-cyan)]/20 border-[var(--candy-cyan)]/30 text-[var(--candy-cyan)]"
                   )}>
-                    {mail.category === 'rewards' ? <Gift className="size-6" /> : <Bell className="size-6" />}
+                    {mail.category === 'rewards' ? (
+                      <Gift className="size-6" />
+                    ) : mail.category === 'support' ? (
+                      <Headphones className="size-6" />
+                    ) : (
+                      <Bell className="size-6" />
+                    )}
                   </div>
 
                   <div className="flex flex-col min-w-0 flex-1">
@@ -234,8 +309,18 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                         {mail.title}
                       </h3>
                       {mail.badge && (
-                        <span className="rounded-full bg-[var(--candy-gold)]/20 px-2 py-0.5 text-[10px] font-black uppercase text-[var(--candy-gold)] border border-[var(--candy-gold)]/30">
+                        <span className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-black uppercase border",
+                          mail.category === 'support'
+                            ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
+                            : "bg-[var(--candy-gold)]/20 text-[var(--candy-gold)] border-[var(--candy-gold)]/30"
+                        )}>
                           {mail.badge}
+                        </span>
+                      )}
+                      {mail.orderId && (
+                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-mono text-slate-300 border border-white/10">
+                          Orden #{mail.orderId.slice(0, 8)}
                         </span>
                       )}
                       {!mail.isRead && (
@@ -291,17 +376,25 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
       {/* MODAL DETALLES DEL MENSAJE */}
       {selectedMail && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[3px] animate-in fade-in">
-          <div className="glass max-w-lg w-full rounded-3xl p-6 border border-[var(--candy-magenta)] shadow-2xl flex flex-col gap-4 text-left bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[4px] animate-in fade-in">
+          <div className="glass max-w-lg w-full rounded-3xl p-6 border border-[var(--candy-magenta)] shadow-2xl flex flex-col gap-4 text-left bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3 border-b border-border/40 pb-4">
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "size-12 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-inner border",
                   selectedMail.category === 'rewards'
                     ? "bg-[var(--candy-gold)]/20 border-[var(--candy-gold)]/30 text-[var(--candy-gold)]"
+                    : selectedMail.category === 'support'
+                    ? "bg-cyan-500/20 border-cyan-500/30 text-cyan-300"
                     : "bg-[var(--candy-cyan)]/20 border-[var(--candy-cyan)]/30 text-[var(--candy-cyan)]"
                 )}>
-                  {selectedMail.category === 'rewards' ? <Gift className="size-6" /> : <Bell className="size-6" />}
+                  {selectedMail.category === 'rewards' ? (
+                    <Gift className="size-6" />
+                  ) : selectedMail.category === 'support' ? (
+                    <Headphones className="size-6" />
+                  ) : (
+                    <Bell className="size-6" />
+                  )}
                 </div>
 
                 <div>
@@ -321,9 +414,62 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               )}
             </div>
 
-            <p className="text-sm text-muted-foreground leading-relaxed">
+            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
               {selectedMail.content}
             </p>
+
+            {/* Support Message Conversation Thread */}
+            {selectedMail.category === 'support' && (
+              <div className="space-y-3 pt-2 border-t border-white/10">
+                <h4 className="text-xs font-black uppercase text-cyan-300 tracking-wider flex items-center gap-1.5">
+                  <MessageSquare className="size-3.5" /> Hilo de Conversación
+                </h4>
+
+                {selectedMail.replies && selectedMail.replies.length > 0 && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {selectedMail.replies.map((rep) => (
+                      <div
+                        key={rep.id}
+                        className={cn(
+                          "p-3 rounded-2xl text-xs space-y-1",
+                          rep.senderRole === 'player'
+                            ? "bg-[var(--candy-magenta)]/15 border border-[var(--candy-magenta)]/30 ml-4"
+                            : "bg-cyan-500/15 border border-cyan-500/30 mr-4"
+                        )}
+                      >
+                        <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                          <strong className={rep.senderRole === 'player' ? 'text-pink-300' : 'text-cyan-300'}>
+                            {rep.sender} {rep.senderRole === 'cashier' ? '(Cajero)' : ''}
+                          </strong>
+                          <span>{new Date(rep.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <p className="text-foreground">{rep.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Interactive Reply Input */}
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={replyInput}
+                    onChange={(e) => setReplyInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
+                    placeholder="Escribe tu respuesta al cajero..."
+                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400"
+                  />
+                  <button
+                    onClick={handleSendReply}
+                    disabled={!replyInput.trim() || isSendingReply}
+                    className="btn-3d px-3.5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                  >
+                    <Send className="size-3.5" />
+                    <span>Enviar</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {selectedMail.rewardSC && (
               <div className="rounded-2xl bg-black/40 border border-white/10 p-4 flex items-center justify-between mt-2">

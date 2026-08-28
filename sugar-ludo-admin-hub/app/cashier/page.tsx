@@ -10,42 +10,65 @@ import { CashierAdminChatModal } from '../../components/cashier/CashierAdminChat
 import { useAdminAuth } from '../../lib/admin-auth-context'
 import { db } from '../../lib/firebase'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
-import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare } from 'lucide-react'
+import { OrdersCache } from '../../lib/orders-cache'
+import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins } from 'lucide-react'
 
 export default function CashierMainDeskPage() {
-  const { cashierList } = useAdminAuth()
-  const [orders, setOrders] = useState<CashierOrder[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const { cashierList, logout, adminUser } = useAdminAuth()
+  const [orders, setOrders] = useState<CashierOrder[]>(() => OrdersCache.get() || [])
+  const [isLoading, setIsLoading] = useState(() => (OrdersCache.get() && OrdersCache.get()!.length > 0 ? false : true))
   const [currentStatus, setCurrentStatus] = useState<FilterStatus>('all')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [notification, setNotification] = useState<string | null>(null)
   const [isAdminChatOpen, setIsAdminChatOpen] = useState(false)
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<CashierOrder | null>(null)
+  const [activeCashierSession, setActiveCashierSession] = useState<{ uid: string; name: string; floatBalanceCoins: number } | null>(null)
 
-  const currentCashier = cashierList[0] || {
+  // Resolve current active cashier profile from active session or registered cashiers
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedSession = localStorage.getItem('sugar_cashier_session')
+        if (savedSession) {
+          const parsed = JSON.parse(savedSession)
+          if (parsed && parsed.uid) {
+            setActiveCashierSession(parsed)
+            return
+          }
+        }
+      } catch {}
+    }
+    if (cashierList && cashierList.length > 0) {
+      setActiveCashierSession(cashierList[0])
+    }
+  }, [cashierList])
+
+  const currentCashier = activeCashierSession || cashierList[0] || {
     uid: 'csh_primary',
     name: 'Cajero Autorizado',
-    floatBalanceCoins: 0
+    floatBalanceCoins: 30000
   }
 
-  const fetchOrders = async () => {
-    setIsLoading(true)
+  const fetchOrders = async (isManualRefresh = false) => {
+    if (isManualRefresh) setIsLoading(true)
     try {
-      // 1. Cargar desde localStorage como fuente inmediata
-      if (typeof window !== 'undefined') {
-        const localOrders = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
-        if (localOrders.length > 0) {
-          setOrders(localOrders)
-        }
+      // 1. Instant check from cache
+      const cached = OrdersCache.get()
+      if (cached && cached.length > 0 && !isManualRefresh) {
+        setOrders(cached)
+        setIsLoading(false)
       }
 
-      // 2. Cargar desde API
-      const res = await fetch('/api/cashier/orders')
-      if (res.ok) {
-        const data = await res.json()
-        if (data.orders && data.orders.length > 0) {
-          setOrders(data.orders)
+      // 2. Fetch API only if stale or manual refresh
+      if (isManualRefresh || OrdersCache.isStale(20000)) {
+        const res = await fetch('/api/cashier/orders')
+        if (res.ok) {
+          const data = await res.json()
+          if (data.orders && Array.isArray(data.orders)) {
+            setOrders(data.orders)
+            OrdersCache.set(data.orders)
+          }
         }
       }
     } catch (e) {
@@ -58,7 +81,7 @@ export default function CashierMainDeskPage() {
   useEffect(() => {
     fetchOrders()
 
-    // 1. Escuchar canal BroadcastChannel local
+    // 1. Local BroadcastChannel for zero-latency peer updates
     let channel: BroadcastChannel | null = null
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -67,8 +90,9 @@ export default function CashierMainDeskPage() {
           if (event.data?.type === 'p2p_data' && event.data?.dataType === 'new_cashier_order' && event.data?.order) {
             const newOrd = event.data.order as CashierOrder
             setOrders((prev) => {
-              const filtered = prev.filter((o) => o.id !== newOrd.id)
-              return [newOrd, ...filtered]
+              const updated = [newOrd, ...prev.filter((o) => o.id !== newOrd.id)]
+              OrdersCache.set(updated)
+              return updated
             })
             setIsLoading(false)
           }
@@ -76,7 +100,7 @@ export default function CashierMainDeskPage() {
       }
     } catch {}
 
-    // 2. Suscripción en tiempo real a Firestore
+    // 2. Realtime subscription to Firestore (Spark Plan Cost $0 with limit)
     let unsubscribe: (() => void) | null = null
     try {
       const q = query(collection(db, 'cashier_orders'), limit(50))
@@ -87,6 +111,7 @@ export default function CashierMainDeskPage() {
         })
         if (liveOrders.length > 0 || snapshot.empty) {
           setOrders(liveOrders)
+          OrdersCache.set(liveOrders)
           setIsLoading(false)
         }
       }, (err) => {
@@ -96,49 +121,9 @@ export default function CashierMainDeskPage() {
       console.warn('[CashierDesk] Listener setup error:', e)
     }
 
-    // 3. Polling activo cada 3 segundos
-    const pollInterval = setInterval(() => {
-      fetch('/api/cashier/orders')
-        .then(res => res.json())
-        .then(data => {
-          if (data.orders && Array.isArray(data.orders)) {
-            setOrders(data.orders)
-          }
-        })
-        .catch(() => {})
-    }, 3000)
-
-    // 4. SSE Stream de actualización
-    let sseSource: EventSource | null = null
-    try {
-      if (typeof EventSource !== 'undefined') {
-        const sseUrls = [
-          'https://sugar-ludo-web.onrender.com/api/social/stream?uid=cashier_orders_desk',
-          'http://localhost:3000/api/social/stream?uid=cashier_orders_desk'
-        ]
-        const isRender = typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')
-        sseSource = new EventSource(isRender ? sseUrls[0] : sseUrls[1])
-        sseSource.onmessage = (event) => {
-          try {
-            const evData = JSON.parse(event.data)
-            if (evData.type === 'p2p_data' && evData.dataType === 'new_cashier_order' && evData.order) {
-              const newOrd = evData.order as CashierOrder
-              setOrders((prev) => {
-                const filtered = prev.filter((o) => o.id !== newOrd.id)
-                return [newOrd, ...filtered]
-              })
-              setIsLoading(false)
-            }
-          } catch {}
-        }
-      }
-    } catch {}
-
     return () => {
       if (channel) channel.close()
       if (unsubscribe) unsubscribe()
-      clearInterval(pollInterval)
-      if (sseSource) sseSource.close()
     }
   }, [])
 
@@ -181,58 +166,74 @@ export default function CashierMainDeskPage() {
       })
     } catch {}
 
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? { ...o, status: 'completed', completedAt: Date.now() }
-          : o
-      )
+    const updated = orders.map((o) =>
+      o.id === orderId
+        ? { ...o, status: 'completed' as const, completedAt: Date.now() }
+        : o
     )
+    setOrders(updated)
+    OrdersCache.set(updated)
     setNotification(`¡Orden #${orderId.slice(0, 8)} liberada con éxito! Saldo acreditado al jugador.`)
     setTimeout(() => setNotification(null), 4000)
+  }
+
+  const handleLogout = () => {
+    logout()
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('sugar_cashier_session')
+      localStorage.removeItem('sugar_admin_session')
+      window.location.href = '/admin'
+    }
   }
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col">
       {/* Top Navbar */}
       <header className="border-b border-white/10 bg-slate-900/80 backdrop-blur-xl px-6 py-4 flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/"
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title="Volver a Inicio"
-          >
-            <ArrowLeft className="size-5" />
-          </Link>
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-2xl bg-pink-500/10 border border-pink-500/30 text-pink-400">
+            <CreditCard className="size-5" />
+          </div>
           <div>
             <h1 className="font-black text-base text-white tracking-wide flex items-center gap-2">
-              <CreditCard className="size-5 text-pink-400" /> BANDEJA DE ÓRDENES P2P
+              BANDEJA DE ÓRDENES P2P
             </h1>
             <p className="text-[11px] text-slate-400 font-mono">
-              cajeros.sugarludo.com &bull; Gestión y Liquidación en Tiempo Real
+              cajeros.sugarludo.com &bull; Turno: <strong className="text-cyan-300">{currentCashier.name}</strong>
             </p>
           </div>
         </div>
 
-        {/* Action Controls & Float Balance */}
+        {/* Action Controls, Float Balance & Logout */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsAdminChatOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-all cursor-pointer shadow-sm"
           >
             <MessageSquare className="size-4" />
-            <span>Chat con Administrador</span>
+            <span className="hidden sm:inline">Chat con Administrador</span>
           </button>
 
-          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-cyan-500/10 border border-pink-500/30">
-            <Wallet className="size-4 text-pink-400" />
+          {/* Assigned Cashier Float Balance Badge */}
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-500/15 via-yellow-500/15 to-pink-500/15 border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+            <Coins className="size-4 text-amber-400 animate-pulse" />
             <div className="text-right">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block leading-none">Saldo Flotante</span>
+              <span className="text-[10px] uppercase font-bold text-amber-300 block leading-none">Saldo Flotante</span>
               <span className="text-sm font-black text-white font-mono">
                 {currentCashier.floatBalanceCoins.toLocaleString()} SC
               </span>
             </div>
           </div>
+
+          {/* Logout Button */}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            title="Cerrar Sesión de Cajero"
+          >
+            <LogOut className="size-4" />
+            <span className="hidden md:inline">Cerrar Sesión</span>
+          </button>
         </div>
       </header>
 
@@ -260,7 +261,7 @@ export default function CashierMainDeskPage() {
           </div>
 
           <button
-            onClick={fetchOrders}
+            onClick={() => fetchOrders(true)}
             disabled={isLoading}
             className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold border border-white/10 transition-colors cursor-pointer"
           >

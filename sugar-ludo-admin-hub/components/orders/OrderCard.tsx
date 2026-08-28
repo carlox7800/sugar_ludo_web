@@ -30,8 +30,17 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
     zelle: 'Zelle (USD)',
   }
 
+  const isPending = order.status === 'pending'
+
   return (
-    <div className="group p-5 rounded-3xl bg-slate-900/60 border border-white/10 hover:border-white/20 transition-all duration-200 space-y-4 hover:shadow-xl">
+    <div
+      className={clsx(
+        'group p-5 rounded-3xl transition-all duration-200 space-y-4 hover:shadow-xl',
+        isPending
+          ? 'bg-amber-950/25 border-2 border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.18)] ring-1 ring-amber-400/40 hover:border-amber-400'
+          : 'bg-slate-900/60 border border-white/10 hover:border-white/20'
+      )}
+    >
       {/* Top Meta Line */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-2">
@@ -50,13 +59,15 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
               <span className="font-mono font-bold text-white text-xs">#{order.id.slice(0, 8)}</span>
               <span
                 className={clsx(
-                  'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border',
+                  'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border',
                   isCompleted
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                     : isDisputed
                     ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                     : isPaid
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
+                    : isPending
+                    ? 'bg-amber-500/30 text-amber-300 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse font-extrabold'
                     : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
                 )}
               >

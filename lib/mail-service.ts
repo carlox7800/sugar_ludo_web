@@ -2,18 +2,30 @@ import { db } from './firebase'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { recordWalletTransaction } from './wallet-service'
 
+export interface SupportReply {
+  id: string
+  sender: string
+  senderRole: 'player' | 'cashier' | 'support'
+  message: string
+  timestamp: number
+  attachmentUrl?: string
+}
+
 export interface MailItem {
   id: string
   title: string
   sender: string
   date: string
-  category: 'rewards' | 'system'
+  category: 'rewards' | 'system' | 'support'
   isRead: boolean
   claimed?: boolean
   rewardSC?: number
   content: string
   badge?: string
   timestamp: number
+  orderId?: string
+  status?: 'pending' | 'resolved'
+  replies?: SupportReply[]
 }
 
 export const DEFAULT_INITIAL_MAILS: MailItem[] = [
@@ -260,4 +272,93 @@ export async function deleteMail(userId: string | undefined, mailId: string): Pr
 export async function getUnreadMailCount(userId?: string): Promise<number> {
   const inbox = await fetchUserInbox(userId)
   return inbox.filter(m => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
+}
+
+export async function sendSupportMail(
+  userId: string,
+  mailData: {
+    title: string
+    sender: string
+    content: string
+    orderId?: string
+    badge?: string
+  }
+): Promise<boolean> {
+  try {
+    const inbox = await fetchUserInbox(userId)
+    const newMail: MailItem = {
+      id: `mail_sup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: mailData.title,
+      sender: mailData.sender,
+      date: 'Hoy',
+      category: 'support',
+      isRead: false,
+      content: mailData.content,
+      badge: mailData.badge || 'Soporte P2P',
+      orderId: mailData.orderId,
+      status: 'pending',
+      timestamp: Date.now(),
+      replies: []
+    }
+
+    const updated = [newMail, ...inbox]
+
+    if (userId && !userId.startsWith('dev_')) {
+      const userRef = doc(db, 'users', userId)
+      await updateDoc(userRef, { inbox: updated })
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sugar_user_inbox', JSON.stringify(updated))
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
+
+    return true
+  } catch (e) {
+    console.warn('Error sending support mail:', e)
+    return false
+  }
+}
+
+export async function replySupportMail(
+  userId: string | undefined,
+  mailId: string,
+  replyText: string,
+  senderName: string,
+  senderRole: 'player' | 'cashier' | 'support' = 'player',
+  attachmentUrl?: string
+): Promise<boolean> {
+  try {
+    const inbox = await fetchUserInbox(userId)
+    const target = inbox.find(m => m.id === mailId)
+    if (!target) return false
+
+    const reply: SupportReply = {
+      id: `rep_${Date.now()}`,
+      sender: senderName,
+      senderRole,
+      message: replyText,
+      timestamp: Date.now(),
+      attachmentUrl
+    }
+
+    if (!target.replies) target.replies = []
+    target.replies.push(reply)
+    target.isRead = true
+
+    if (userId && !userId.startsWith('dev_')) {
+      const userRef = doc(db, 'users', userId)
+      await updateDoc(userRef, { inbox })
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
+
+    return true
+  } catch (e) {
+    console.warn('Error replying to support mail:', e)
+    return false
+  }
 }
