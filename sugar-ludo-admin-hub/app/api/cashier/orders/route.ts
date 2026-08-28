@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
 import { CashierOrder } from '@/types/cashier'
-import { MOCK_ORDERS } from '@/lib/mock-data'
+
+// Memoria compartida en el proceso de servidor para recepción instantánea de órdenes locales y en la nube
+const liveServerOrders: CashierOrder[] = []
 
 export async function GET(request: Request) {
   try {
@@ -38,7 +40,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // 2. Si adminDb no trajo registros (ej. en desarrollo local sin service account), consultar Firestore REST API directa
+    // 2. Si adminDb no trajo registros, consultar Firestore REST API directa
     if (ordersList.length === 0) {
       try {
         const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
@@ -85,17 +87,6 @@ export async function GET(request: Request) {
                 expiresAt: parseField(fields.expiresAt) || (Date.now() + 1800000)
               } as CashierOrder
             })
-
-            // Aplicar filtros
-            if (status && status !== 'all') {
-              ordersList = ordersList.filter(o => o.status === status)
-            }
-            if (type && type !== 'all') {
-              ordersList = ordersList.filter(o => o.type === type)
-            }
-            if (cashierUid && cashierUid !== 'all') {
-              ordersList = ordersList.filter(o => !o.cashierUid || o.cashierUid === cashierUid)
-            }
           }
         }
       } catch (restErr: any) {
@@ -103,12 +94,108 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      orders: ordersList,
-      totalCount: ordersList.length
-    })
+    // 3. Fusionar con las órdenes recibidas en memoria por POST directo
+    if (liveServerOrders.length > 0) {
+      const existingIds = new Set(ordersList.map(o => o.id))
+      for (const liveOrd of liveServerOrders) {
+        if (!existingIds.has(liveOrd.id)) {
+          ordersList.unshift(liveOrd)
+        }
+      }
+    }
+
+    // 4. Aplicar filtros
+    if (status && status !== 'all') {
+      ordersList = ordersList.filter(o => o.status === status)
+    }
+    if (type && type !== 'all') {
+      ordersList = ordersList.filter(o => o.type === type)
+    }
+    if (cashierUid && cashierUid !== 'all') {
+      ordersList = ordersList.filter(o => !o.cashierUid || o.cashierUid === cashierUid)
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        orders: ordersList,
+        totalCount: ordersList.length
+      },
+      {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Cache-Control': 'no-store, max-age=0'
+        }
+      }
+    )
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    if (!body || !body.id) {
+      return NextResponse.json({ success: false, error: 'Orden inválida' }, { status: 400 })
+    }
+
+    const orderData: CashierOrder = {
+      id: body.id,
+      type: body.type || 'deposit',
+      status: body.status || 'pending',
+      playerUid: body.playerUid || '',
+      playerName: body.playerName || 'Jugador',
+      amountFiat: Number(body.amountFiat || 0),
+      currency: body.currency || 'USDT',
+      exchangeRate: Number(body.exchangeRate || 100),
+      amountSugarCoins: Number(body.amountSugarCoins || 0),
+      cashierCommissionCoins: Number(body.cashierCommissionCoins || 0),
+      paymentMethod: body.paymentMethod || 'usdt_trc20',
+      receiptReferenceNumber: body.receiptReferenceNumber || '',
+      createdAt: body.createdAt || Date.now(),
+      expiresAt: body.expiresAt || (Date.now() + 1800000)
+    }
+
+    // Agregar a la memoria local del servidor
+    const idx = liveServerOrders.findIndex(o => o.id === orderData.id)
+    if (idx >= 0) {
+      liveServerOrders[idx] = orderData
+    } else {
+      liveServerOrders.unshift(orderData)
+    }
+
+    // Intentar guardar en Firestore con adminDb si está disponible
+    if (adminDb && adminDb.collection) {
+      try {
+        await adminDb.collection('cashier_orders').doc(orderData.id).set(orderData)
+      } catch {}
+    }
+
+    return NextResponse.json(
+      { success: true, order: orderData },
+      {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        }
+      }
+    )
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
+  }
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  })
 }

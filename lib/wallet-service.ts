@@ -141,7 +141,7 @@ export async function createDepositOrder(params: {
     createdAt: Date.now()
   }
 
-  // 1. Guardar en localStorage y emitir por canales locales/SSE
+  // 1. Guardar en localStorage y emitir por canales locales/SSE/HTTP a cajeros
   saveLocalOrder(orderData)
   try {
     broadcastLocalMessage({
@@ -149,6 +149,22 @@ export async function createDepositOrder(params: {
       dataType: 'new_cashier_order',
       order: orderData,
       timestamp: Date.now()
+    })
+  } catch {}
+
+  // Post directo al Hub de Cajeros (puerto 3001 en local y servidor Render)
+  try {
+    const hubEndpoints = [
+      'http://localhost:3001/api/cashier/orders',
+      'https://juego-de-servidor.onrender.com/api/cashier/orders'
+    ]
+    hubEndpoints.forEach((url) => {
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData),
+        mode: 'cors'
+      }).catch(() => {})
     })
   } catch {}
 
@@ -206,7 +222,7 @@ export async function createWithdrawOrder(params: {
     createdAt: Date.now()
   }
 
-  // 1. Guardar en localStorage y emitir por canales locales/SSE
+  // 1. Guardar en localStorage y emitir por canales locales/SSE/HTTP a cajeros
   saveLocalOrder(orderData)
   try {
     broadcastLocalMessage({
@@ -214,6 +230,22 @@ export async function createWithdrawOrder(params: {
       dataType: 'new_cashier_order',
       order: orderData,
       timestamp: Date.now()
+    })
+  } catch {}
+
+  // Post directo al Hub de Cajeros (puerto 3001 en local y servidor Render)
+  try {
+    const hubEndpoints = [
+      'http://localhost:3001/api/cashier/orders',
+      'https://juego-de-servidor.onrender.com/api/cashier/orders'
+    ]
+    hubEndpoints.forEach((url) => {
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData),
+        mode: 'cors'
+      }).catch(() => {})
     })
   } catch {}
 

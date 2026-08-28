@@ -110,9 +110,49 @@ export default function CashierPortalPage() {
       console.warn('[CashierPortal] Listener setup error:', e)
     }
 
+    // 3. Polling activo y sincronización cruzada (cada 3 segundos para desarrollo y producción)
+    const pollInterval = setInterval(() => {
+      fetch('/api/cashier/orders')
+        .then(res => res.json())
+        .then(data => {
+          if (data.orders && Array.isArray(data.orders)) {
+            setOrders(data.orders)
+          }
+        })
+        .catch(() => {})
+    }, 3000)
+
+    // 4. Suscripción a Server-Sent Events (SSE) en servidor local / Render
+    let sseSource: EventSource | null = null
+    try {
+      if (typeof EventSource !== 'undefined') {
+        const sseUrls = [
+          'http://localhost:3000/api/social/stream?uid=cashier_hub',
+          'https://juego-de-servidor.onrender.com/api/social/stream?uid=cashier_hub'
+        ]
+        // Conectar al endpoint local de SSE si está disponible
+        sseSource = new EventSource(sseUrls[0])
+        sseSource.onmessage = (event) => {
+          try {
+            const evData = JSON.parse(event.data)
+            if (evData.type === 'p2p_data' && evData.dataType === 'new_cashier_order' && evData.order) {
+              const newOrd = evData.order as CashierOrder
+              setOrders((prev) => {
+                const filtered = prev.filter((o) => o.id !== newOrd.id)
+                return [newOrd, ...filtered]
+              })
+              setIsLoading(false)
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+
     return () => {
       if (channel) channel.close()
       if (unsubscribe) unsubscribe()
+      clearInterval(pollInterval)
+      if (sseSource) sseSource.close()
     }
   }, [])
 
