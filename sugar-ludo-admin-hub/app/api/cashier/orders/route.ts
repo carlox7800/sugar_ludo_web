@@ -1,9 +1,33 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
 import { CashierOrder } from '@/types/cashier'
+import fs from 'fs'
+import path from 'path'
 
-// Memoria compartida en el proceso de servidor para recepción instantánea de órdenes locales y en la nube
-const liveServerOrders: CashierOrder[] = []
+const DATA_DIR = path.join(process.cwd(), '.data')
+const DATA_FILE = path.join(DATA_DIR, 'cashier_orders.json')
+
+function loadDiskOrders(): CashierOrder[] {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, 'utf-8')
+      return JSON.parse(raw || '[]')
+    }
+  } catch {}
+  return []
+}
+
+function saveDiskOrder(order: CashierOrder) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true })
+    }
+    const current = loadDiskOrders()
+    const filtered = current.filter(o => o.id !== order.id)
+    filtered.unshift(order)
+    fs.writeFileSync(DATA_FILE, JSON.stringify(filtered.slice(0, 100), null, 2), 'utf-8')
+  } catch {}
+}
 
 export async function GET(request: Request) {
   try {
@@ -94,12 +118,13 @@ export async function GET(request: Request) {
       }
     }
 
-    // 3. Fusionar con las órdenes recibidas en memoria por POST directo
-    if (liveServerOrders.length > 0) {
+    // 3. Fusionar con la persistencia en disco (.data/cashier_orders.json)
+    const diskOrders = loadDiskOrders()
+    if (diskOrders.length > 0) {
       const existingIds = new Set(ordersList.map(o => o.id))
-      for (const liveOrd of liveServerOrders) {
-        if (!existingIds.has(liveOrd.id)) {
-          ordersList.unshift(liveOrd)
+      for (const diskOrd of diskOrders) {
+        if (!existingIds.has(diskOrd.id)) {
+          ordersList.unshift(diskOrd)
         }
       }
     }
@@ -159,20 +184,43 @@ export async function POST(request: Request) {
       expiresAt: body.expiresAt || (Date.now() + 1800000)
     }
 
-    // Agregar a la memoria local del servidor
-    const idx = liveServerOrders.findIndex(o => o.id === orderData.id)
-    if (idx >= 0) {
-      liveServerOrders[idx] = orderData
-    } else {
-      liveServerOrders.unshift(orderData)
-    }
+    // 1. Guardar permanentemente en disco
+    saveDiskOrder(orderData)
 
-    // Intentar guardar en Firestore con adminDb si está disponible
+    // 2. Intentar guardar en Firestore con adminDb si está disponible
     if (adminDb && adminDb.collection) {
       try {
         await adminDb.collection('cashier_orders').doc(orderData.id).set(orderData)
       } catch {}
     }
+
+    // 3. Escribir a Firestore REST
+    try {
+      const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+      const firestoreRestDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders?documentId=${orderData.id}`
+      await fetch(firestoreRestDocUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            id: { stringValue: orderData.id },
+            type: { stringValue: orderData.type },
+            status: { stringValue: orderData.status },
+            playerUid: { stringValue: orderData.playerUid },
+            playerName: { stringValue: orderData.playerName },
+            amountFiat: { doubleValue: orderData.amountFiat },
+            currency: { stringValue: orderData.currency },
+            exchangeRate: { integerValue: String(orderData.exchangeRate) },
+            amountSugarCoins: { integerValue: String(orderData.amountSugarCoins) },
+            cashierCommissionCoins: { integerValue: String(orderData.cashierCommissionCoins) },
+            paymentMethod: { stringValue: orderData.paymentMethod },
+            receiptReferenceNumber: { stringValue: orderData.receiptReferenceNumber || '' },
+            createdAt: { integerValue: String(orderData.createdAt) },
+            expiresAt: { integerValue: String(orderData.expiresAt) }
+          }
+        })
+      })
+    } catch {}
 
     return NextResponse.json(
       { success: true, order: orderData },

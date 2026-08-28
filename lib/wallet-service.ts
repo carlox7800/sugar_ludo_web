@@ -179,8 +179,30 @@ export async function createDepositOrder(params: {
     console.warn('[WalletService] Error registrando historial:', histErr)
   }
 
-  // 3. Persistir en Firestore con timeout seguro para no bloquear la UI
+  // 3. Persistir en Firestore (SDK + REST con timeout seguro para no bloquear la UI)
   try {
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+    const firestoreRestDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders?documentId=${orderId}`
+    fetch(firestoreRestDocUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          id: { stringValue: orderData.id },
+          type: { stringValue: orderData.type },
+          status: { stringValue: orderData.status },
+          playerUid: { stringValue: orderData.playerUid },
+          playerName: { stringValue: orderData.playerName },
+          amountFiat: { doubleValue: orderData.amountFiat },
+          currency: { stringValue: orderData.currency },
+          amountSugarCoins: { integerValue: String(orderData.amountSugarCoins) },
+          paymentMethod: { stringValue: orderData.paymentMethod },
+          receiptReferenceNumber: { stringValue: orderData.receiptReferenceNumber || '' },
+          createdAt: { integerValue: String(orderData.createdAt) }
+        }
+      })
+    }).catch(() => {})
+
     const orderRef = doc(db, 'cashier_orders', orderId)
     await Promise.race([
       setDoc(orderRef, orderData),
@@ -260,8 +282,30 @@ export async function createWithdrawOrder(params: {
     console.warn('[WalletService] Error debitando monedas:', histErr)
   }
 
-  // 3. Persistir en Firestore con timeout seguro
+  // 3. Persistir en Firestore (SDK + REST con timeout seguro)
   try {
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+    const firestoreRestDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders?documentId=${orderId}`
+    fetch(firestoreRestDocUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          id: { stringValue: orderData.id },
+          type: { stringValue: orderData.type },
+          status: { stringValue: orderData.status },
+          playerUid: { stringValue: orderData.playerUid },
+          playerName: { stringValue: orderData.playerName },
+          amountFiat: { doubleValue: orderData.amountFiat },
+          currency: { stringValue: orderData.currency },
+          amountSugarCoins: { integerValue: String(orderData.amountSugarCoins) },
+          paymentMethod: { stringValue: orderData.paymentMethod },
+          receiptReferenceNumber: { stringValue: orderData.receiptReferenceNumber || '' },
+          createdAt: { integerValue: String(orderData.createdAt) }
+        }
+      })
+    }).catch(() => {})
+
     const orderRef = doc(db, 'cashier_orders', orderId)
     await Promise.race([
       setDoc(orderRef, orderData),
