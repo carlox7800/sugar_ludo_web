@@ -24,6 +24,9 @@ serviceAccountKey.json
 # Vercel
 .vercel
 
+# Local data cache
+.data/
+
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
