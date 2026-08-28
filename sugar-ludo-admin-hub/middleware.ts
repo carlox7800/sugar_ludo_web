@@ -8,6 +8,9 @@ import type { NextRequest } from 'next/server'
  * - admin.sugarludo.com   -> Enruta internamente a /admin
  * - cajeros.sugarludo.com -> Enruta internamente a /cashier
  * - Bloqueo inmediato de solicitudes no autorizadas en el borde.
+ *
+ * NOTA: Los dominios de Render (*.onrender.com) y localhost NO reciben
+ * rewrite de subdominio — el usuario verá el formulario de login en `/`.
  */
 
 export function middleware(request: NextRequest) {
@@ -24,11 +27,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Detección de subdominio
-  const isAdminDomain = hostname.startsWith('admin.') || hostname.includes('admin-')
-  const isCashierDomain = hostname.startsWith('cajeros.') || hostname.includes('cashier-')
+  // Solo hacer rewrite si es un subdominio REAL del dominio de producción (sugarludo.com)
+  // Excluir Render, localhost y cualquier otro dominio genérico
+  const isProductionDomain = hostname.endsWith('.sugarludo.com')
 
-  // Redirección inteligente
+  if (!isProductionDomain) {
+    return NextResponse.next()
+  }
+
+  // Detección de subdominio solo para dominios de producción reales
+  const isAdminDomain = hostname.startsWith('admin.')
+  const isCashierDomain = hostname.startsWith('cajeros.')
+
+  // Redirección inteligente solo para subdominios conocidos
   if (isAdminDomain && !url.pathname.startsWith('/admin')) {
     url.pathname = `/admin${url.pathname === '/' ? '' : url.pathname}`
     return NextResponse.rewrite(url)

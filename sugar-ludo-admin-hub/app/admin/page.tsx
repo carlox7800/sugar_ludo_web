@@ -141,12 +141,17 @@ export default function AdminDashboardPage() {
     router.push('/')
   }
 
-  if (isLoading || !isAuthenticated || !adminUser) {
+
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-[#090d16] flex items-center justify-center text-cyan-400 font-mono text-xs">
         Verificando sesión administrativa...
       </div>
     )
+  }
+
+  if (!isAuthenticated || !adminUser) {
+    return null
   }
 
   return (
