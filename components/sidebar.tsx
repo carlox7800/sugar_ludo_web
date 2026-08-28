@@ -13,6 +13,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
+import { db } from '@/lib/firebase'
+import { doc, onSnapshot } from 'firebase/firestore'
 import { getUnreadMailCount } from '@/lib/mail-service'
 import { subscribeToFriendRequests, subscribeToIncomingDuelInvites } from '@/lib/friends-service'
 
@@ -50,6 +52,23 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
     }
     updateCount()
 
+    // 1. Escuchar el buzón del usuario en tiempo real desde Firestore ($0 Spark Plan)
+    let unsubMail: (() => void) | null = null
+    if (user?.uid && !user.uid.startsWith('dev_')) {
+      try {
+        const userRef = doc(db, 'users', user.uid)
+        unsubMail = onSnapshot(userRef, (snap) => {
+          if (snap.exists()) {
+            const data = snap.data()
+            if (Array.isArray(data.inbox)) {
+              const unread = data.inbox.filter((m: any) => !m.isRead).length
+              setUnreadCount(unread)
+            }
+          }
+        }, () => {})
+      } catch {}
+    }
+
     if (typeof window !== 'undefined') {
       window.addEventListener('sugar_inbox_updated', updateCount)
     }
@@ -73,13 +92,14 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
     }
 
     return () => {
+      if (unsubMail) unsubMail()
       if (typeof window !== 'undefined') {
         window.removeEventListener('sugar_inbox_updated', updateCount)
       }
       unsubFriends()
       unsubChallenges()
     }
-  }, [user])
+  }, [user?.uid])
 
   const navItems: NavItem[] = BASE_NAV_ITEMS.map(item => {
     let badge: string | undefined
@@ -170,6 +190,23 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
     }
     updateCount()
 
+    // 1. Escuchar el buzón del usuario en tiempo real desde Firestore ($0 Spark Plan)
+    let unsubMail: (() => void) | null = null
+    if (user?.uid && !user.uid.startsWith('dev_')) {
+      try {
+        const userRef = doc(db, 'users', user.uid)
+        unsubMail = onSnapshot(userRef, (snap) => {
+          if (snap.exists()) {
+            const data = snap.data()
+            if (Array.isArray(data.inbox)) {
+              const unread = data.inbox.filter((m: any) => !m.isRead).length
+              setUnreadCount(unread)
+            }
+          }
+        }, () => {})
+      } catch {}
+    }
+
     if (typeof window !== 'undefined') {
       window.addEventListener('sugar_inbox_updated', updateCount)
     }
@@ -192,13 +229,14 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
     }
 
     return () => {
+      if (unsubMail) unsubMail()
       if (typeof window !== 'undefined') {
         window.removeEventListener('sugar_inbox_updated', updateCount)
       }
       unsubFriends()
       unsubChallenges()
     }
-  }, [user])
+  }, [user?.uid])
 
   const navItems: NavItem[] = BASE_NAV_ITEMS.map(item => {
     let badge: string | undefined
