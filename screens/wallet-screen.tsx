@@ -40,38 +40,28 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
     let unsubUser: (() => void) | null = null
     try {
       const userRef = doc(db, 'users', user.uid)
-      unsubUser = onSnapshot(userRef, (snap) => {
-        if (snap.exists()) {
-          const data = snap.data()
-          if (data.walletHistory && Array.isArray(data.walletHistory)) {
-            setTransactions(data.walletHistory)
+      unsubUser = onSnapshot(
+        userRef,
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data()
+            if (data.walletHistory && Array.isArray(data.walletHistory)) {
+              setTransactions(data.walletHistory)
+            }
           }
+        },
+        (err) => {
+          // Silently handle any permissions or network issues
+          console.debug('[WalletScreen] User snapshot notice:', err?.code || err?.message)
         }
-      })
+      )
     } catch {}
 
-    // 2. Escuchar órdenes activas del usuario en tiempo real
-    let unsubOrders: (() => void) | null = null
-    try {
-      const ordersQ = query(
-        collection(db, 'cashier_orders'),
-        where('playerUid', '==', user.uid)
-      )
-      unsubOrders = onSnapshot(ordersQ, (snap) => {
-        const list: PlayerP2POrder[] = []
-        snap.forEach((d) => {
-          const ord = { ...d.data(), id: d.id } as PlayerP2POrder
-          if (ord.status !== 'completed' && ord.status !== 'cancelled') {
-            list.push(ord)
-          }
-        })
-        setActiveOrders(list)
-      })
-    } catch {}
+    // 2. Órdenes activas del jugador desde almacenamiento local / servicio seguro
+    fetchActivePlayerOrders(user.uid).then(setActiveOrders)
 
     return () => {
       if (unsubUser) unsubUser()
-      if (unsubOrders) unsubOrders()
     }
   }, [user?.uid])
 
