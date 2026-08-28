@@ -13,6 +13,7 @@ import {
   fetchActivePlayerOrders,
   getStoredLocalOrders,
   cancelPlayerOrder,
+  updateLocalOrderStatus,
   WalletTransaction,
   PlayerP2POrder
 } from '@/lib/wallet-service'
@@ -21,13 +22,14 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const { coins, setCoins } = usePlayer()
   const [transactions, setTransactions] = useState<WalletTransaction[]>([])
-  const [activeOrders, setActiveOrders] = useState<PlayerP2POrder[]>([])
+  const [activeOrders, setActiveOrders] = useState<PlayerP2POrder[]>(() => {
+    return getStoredLocalOrders().filter(o => o.status !== 'completed' && o.status !== 'cancelled')
+  })
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   const refreshData = () => {
     if (user?.uid) {
       fetchWalletTransactions(user.uid).then(setTransactions)
-      fetchActivePlayerOrders(user.uid).then(setActiveOrders)
     } else {
       const local = getStoredLocalOrders()
       setActiveOrders(local.filter(o => o.status !== 'completed' && o.status !== 'cancelled'))
@@ -77,55 +79,60 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
           
           if (ord.status !== 'completed' && ord.status !== 'cancelled') {
             liveActive.push({ ...ord, id: orderId })
-          } else if (ord.status === 'completed' && ord.type === 'deposit') {
-            // Verificar si esta orden completada ya fue acreditada
-            const creditedKey = `sugar_credited_${orderId}`
-            const alreadyProcessed = typeof window !== 'undefined' && localStorage.getItem(creditedKey)
-            
-            if (!alreadyProcessed) {
-              if (typeof window !== 'undefined') {
-                localStorage.setItem(creditedKey, 'true')
-              }
+          } else if (ord.status === 'completed') {
+            // Asegurar que el almacenamiento local se actualice a completed de inmediato
+            updateLocalOrderStatus(orderId, 'completed')
+
+            if (ord.type === 'deposit') {
+              // Verificar si esta orden completada ya fue acreditada
+              const creditedKey = `sugar_credited_${orderId}`
+              const alreadyProcessed = typeof window !== 'undefined' && localStorage.getItem(creditedKey)
               
-              // Actualizar saldo y registrar historial en el usuario autenticado
-              const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
-              try {
-                const userDocRef = doc(db, 'users', user.uid)
-                const newTxEntry = {
-                  id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                  type: 'deposit' as const,
-                  amount: amountCoins,
-                  description: `Depósito P2P Aprobado (#${orderId.slice(0, 8)})`,
-                  timestamp: Date.now(),
-                  dateStr: new Date().toLocaleDateString('es-ES', { 
-                    day: '2-digit', 
-                    month: 'short', 
-                    year: 'numeric', 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
-                  })
+              if (!alreadyProcessed) {
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem(creditedKey, 'true')
+                }
+                
+                // Actualizar saldo y registrar historial en el usuario autenticado
+                const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
+                try {
+                  const userDocRef = doc(db, 'users', user.uid)
+                  const newTxEntry = {
+                    id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                    type: 'deposit' as const,
+                    amount: amountCoins,
+                    description: `Depósito P2P Aprobado (#${orderId.slice(0, 8)})`,
+                    timestamp: Date.now(),
+                    dateStr: new Date().toLocaleDateString('es-ES', { 
+                      day: '2-digit', 
+                      month: 'short', 
+                      year: 'numeric', 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })
+                  }
+
+                  const userSnap = await getDoc(userDocRef)
+                  if (userSnap.exists()) {
+                    const uData = userSnap.data() || {}
+                    const currentCoins = Number(uData.coins || 0)
+                    const oldHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+                    const updatedHistory = [newTxEntry, ...oldHistory.filter((t: any) => t.id !== newTxEntry.id)].slice(0, 50)
+                    
+                    await updateDoc(userDocRef, {
+                      coins: currentCoins + amountCoins,
+                      walletHistory: updatedHistory,
+                      lastActiveAt: Date.now()
+                    })
+                    setCoins(currentCoins + amountCoins)
+                    setTransactions(updatedHistory)
+                  }
+                } catch (syncErr) {
+                  console.warn('[WalletScreen] Error auto-syncing coins:', syncErr)
                 }
 
-                const userSnap = await getDoc(userDocRef)
-                if (userSnap.exists()) {
-                  const uData = userSnap.data() || {}
-                  const currentCoins = Number(uData.coins || 0)
-                  const oldHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
-                  const updatedHistory = [newTxEntry, ...oldHistory.filter((t: any) => t.id !== newTxEntry.id)].slice(0, 50)
-                  
-                  await updateDoc(userDocRef, {
-                    coins: currentCoins + amountCoins,
-                    walletHistory: updatedHistory,
-                    lastActiveAt: Date.now()
-                  })
-                  setCoins(currentCoins + amountCoins)
-                  setTransactions(updatedHistory)
-                }
-              } catch (syncErr) {
-                console.warn('[WalletScreen] Error auto-syncing coins:', syncErr)
+                showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
               }
-
-              showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
             }
           }
         }

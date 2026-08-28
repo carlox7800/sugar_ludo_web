@@ -11,7 +11,7 @@ import { useAdminAuth } from '../../lib/admin-auth-context'
 import { db } from '../../lib/firebase'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { OrdersCache } from '../../lib/orders-cache'
-import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins } from 'lucide-react'
+import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins, Calendar } from 'lucide-react'
 
 export default function CashierMainDeskPage() {
   const { cashierList, logout, adminUser } = useAdminAuth()
@@ -19,11 +19,60 @@ export default function CashierMainDeskPage() {
   const [isLoading, setIsLoading] = useState(() => (OrdersCache.get() && OrdersCache.get()!.length > 0 ? false : true))
   const [currentStatus, setCurrentStatus] = useState<FilterStatus>('all')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
+  const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'all'>('today')
   const [searchQuery, setSearchQuery] = useState('')
   const [notification, setNotification] = useState<string | null>(null)
   const [isAdminChatOpen, setIsAdminChatOpen] = useState(false)
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<CashierOrder | null>(null)
   const [activeCashierSession, setActiveCashierSession] = useState<{ uid: string; name: string; floatBalanceCoins: number } | null>(null)
+
+  // Filter Logic
+  const filteredOrders = orders.filter((o) => {
+    if (currentStatus !== 'all' && o.status !== currentStatus) return false
+    if (currentType !== 'all' && o.type !== currentType) return false
+    
+    // Date / Shift Filtering
+    if (dateFilter === 'today') {
+      const startOfToday = new Date()
+      startOfToday.setHours(0, 0, 0, 0)
+      if (o.createdAt < startOfToday.getTime()) return false
+    } else if (dateFilter === 'week') {
+      const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+      if (o.createdAt < oneWeekAgo) return false
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      return (
+        o.id.toLowerCase().includes(q) ||
+        o.playerName.toLowerCase().includes(q) ||
+        (o.receiptReferenceNumber && o.receiptReferenceNumber.toLowerCase().includes(q))
+      )
+    }
+    return true
+  })
+
+  // Counts for tabs (computed against the selected date scope for clarity)
+  const dateScopedOrders = orders.filter((o) => {
+    if (dateFilter === 'today') {
+      const startOfToday = new Date()
+      startOfToday.setHours(0, 0, 0, 0)
+      return o.createdAt >= startOfToday.getTime()
+    } else if (dateFilter === 'week') {
+      const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+      return o.createdAt >= oneWeekAgo
+    }
+    return true
+  })
+
+  const counts: Record<string, number> = {
+    all: dateScopedOrders.length,
+    pending: dateScopedOrders.filter((o) => o.status === 'pending').length,
+    paid: dateScopedOrders.filter((o) => o.status === 'paid').length,
+    verified: dateScopedOrders.filter((o) => o.status === 'verified').length,
+    completed: dateScopedOrders.filter((o) => o.status === 'completed').length,
+    disputed: dateScopedOrders.filter((o) => o.status === 'disputed').length,
+  }
 
   // Resolve current active cashier profile from active session or registered cashiers
   useEffect(() => {
@@ -127,31 +176,6 @@ export default function CashierMainDeskPage() {
     }
   }, [])
 
-  // Filter Logic
-  const filteredOrders = orders.filter((o) => {
-    if (currentStatus !== 'all' && o.status !== currentStatus) return false
-    if (currentType !== 'all' && o.type !== currentType) return false
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
-      return (
-        o.id.toLowerCase().includes(q) ||
-        o.playerName.toLowerCase().includes(q) ||
-        (o.receiptReferenceNumber && o.receiptReferenceNumber.toLowerCase().includes(q))
-      )
-    }
-    return true
-  })
-
-  // Counts for tabs
-  const counts: Record<string, number> = {
-    all: orders.length,
-    pending: orders.filter((o) => o.status === 'pending').length,
-    paid: orders.filter((o) => o.status === 'paid').length,
-    verified: orders.filter((o) => o.status === 'verified').length,
-    completed: orders.filter((o) => o.status === 'completed').length,
-    disputed: orders.filter((o) => o.status === 'disputed').length,
-  }
-
   const handleApprove = async (orderId: string) => {
     try {
       await fetch(`/api/cashier/orders/${orderId}/action`, {
@@ -247,9 +271,9 @@ export default function CashierMainDeskPage() {
 
       {/* Main Container */}
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
-        {/* Search and Action Bar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="relative w-full sm:w-96">
+        {/* Search and Action Bar with Date Range Selector */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="relative w-full md:w-80">
             <Search className="size-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -260,14 +284,50 @@ export default function CashierMainDeskPage() {
             />
           </div>
 
-          <button
-            onClick={() => fetchOrders(true)}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold border border-white/10 transition-colors cursor-pointer"
-          >
-            <RefreshCw className={`size-3.5 text-cyan-400 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refrescar Órdenes</span>
-          </button>
+          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+            {/* Shift / Date Range Filter */}
+            <div className="flex items-center p-1 bg-slate-900/90 rounded-2xl border border-white/10 text-xs">
+              <button
+                onClick={() => setDateFilter('today')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                  dateFilter === 'today'
+                    ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Hoy (Turno)
+              </button>
+              <button
+                onClick={() => setDateFilter('week')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                  dateFilter === 'week'
+                    ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                7 Días
+              </button>
+              <button
+                onClick={() => setDateFilter('all')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                  dateFilter === 'all'
+                    ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Historial Todo
+              </button>
+            </div>
+
+            <button
+              onClick={() => fetchOrders(true)}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold border border-white/10 transition-colors cursor-pointer shrink-0"
+            >
+              <RefreshCw className={`size-3.5 text-cyan-400 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refrescar</span>
+            </button>
+          </div>
         </div>
 
         {/* Filter Tabs */}

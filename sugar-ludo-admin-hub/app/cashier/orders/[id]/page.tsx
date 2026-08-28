@@ -9,7 +9,7 @@ import { OrderChatPanel } from '../../../../components/chat/OrderChatPanel'
 import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/WithdrawalAuditInspectorCard'
 import { db } from '../../../../lib/firebase'
 import { doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore'
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check, Copy } from 'lucide-react'
+import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check, Copy, RefreshCw } from 'lucide-react'
 import { clsx } from 'clsx'
 import { OrdersCache } from '../../../../lib/orders-cache'
 
@@ -118,6 +118,8 @@ export default function OrderDetailPage() {
   const isCompleted = order.status === 'completed'
   const isWithdraw = order.type === 'withdraw'
 
+  const [isValidating, setIsValidating] = useState(false)
+
   const handleSendMessage = async (text: string, attachmentUrl?: string) => {
     const newMsg: OrderChatMessage = {
       id: `msg_${Date.now()}`,
@@ -143,7 +145,8 @@ export default function OrderDetailPage() {
           senderName: 'carlosandroid (Cajero)',
           senderUid: 'csh_carlosandroid_001',
           senderRole: 'cashier',
-          attachmentUrl
+          attachmentUrl,
+          playerUid: order.playerUid
         })
       })
     } catch (e) {
@@ -153,6 +156,7 @@ export default function OrderDetailPage() {
 
   const handleApprove = async (verifiedTxId?: string) => {
     const finalRef = verifiedTxId || order.receiptReferenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
+    setIsValidating(true)
     
     // 1. LocalStorage & OrdersCache instant optimistic update
     const updatedOrder = {
@@ -199,6 +203,8 @@ export default function OrderDetailPage() {
       })
     } catch (e) {
       console.warn('[OrderDetail] Approve notice:', e)
+    } finally {
+      setIsValidating(false)
     }
 
     setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalRef } : null))
@@ -523,16 +529,24 @@ export default function OrderDetailPage() {
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setIsDirectValidationModalOpen(false)}
-                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer"
+                disabled={isValidating}
+                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 onClick={() => handleApprove(directTxId.trim())}
-                disabled={!directTxId.trim()}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] disabled:opacity-50 cursor-pointer"
+                disabled={!directTxId.trim() || isValidating}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
               >
-                Confirmar y Liberar Saldo
+                {isValidating ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin" />
+                    <span>Procesando validación...</span>
+                  </>
+                ) : (
+                  <span>Confirmar y Liberar Saldo</span>
+                )}
               </button>
             </div>
           </div>

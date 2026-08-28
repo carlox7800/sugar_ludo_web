@@ -6,6 +6,7 @@ import path from 'path'
 
 const DATA_DIR = path.join(process.cwd(), '.data')
 const DATA_FILE = path.join(DATA_DIR, 'cashier_orders.json')
+const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
 
 export async function POST(
   request: Request,
@@ -14,7 +15,7 @@ export async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { message, senderName, senderUid, senderRole, attachmentUrl } = body
+    const { message, senderName, senderUid, senderRole, attachmentUrl, playerUid: passedPlayerUid } = body
 
     if (!orderId || !message) {
       return NextResponse.json({ success: false, error: 'Mensaje u orden inválida' }, { status: 400 })
@@ -36,53 +37,83 @@ export async function POST(
       isRead: false
     }
 
-    let playerUid = ''
+    let playerUid = passedPlayerUid || ''
     let orderData: any = null
 
-    // 1. Resolver playerUid desde disco local o Firestore
+    // 1. Resolver playerUid desde disco local
     try {
-      if (fs.existsSync(DATA_FILE)) {
+      if (!playerUid && fs.existsSync(DATA_FILE)) {
         const raw = fs.readFileSync(DATA_FILE, 'utf-8')
         const orders = JSON.parse(raw || '[]')
         orderData = orders.find((o: any) => o.id === orderId)
-        if (orderData) {
+        if (orderData?.playerUid) {
           playerUid = orderData.playerUid
         }
       }
     } catch {}
 
+    // 2. Si aún no tenemos playerUid, intentar obtenerlo de Firestore REST API
+    if (!playerUid) {
+      try {
+        const getDocUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/cashier_orders/${orderId}`
+        const res = await fetch(getDocUrl)
+        if (res.ok) {
+          const docJson = await res.json()
+          playerUid = docJson.fields?.playerUid?.stringValue || ''
+        }
+      } catch {}
+    }
+
+    // 3. Escribir mensaje en subcolección cashier_orders/{orderId}/messages via Firestore REST
+    try {
+      const postMsgUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/cashier_orders/${orderId}/messages?documentId=${msgId}`
+      fetch(postMsgUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            id: { stringValue: msgId },
+            orderId: { stringValue: orderId },
+            senderUid: { stringValue: senderUid || 'csh_primary' },
+            senderName: { stringValue: senderName || 'Cajero' },
+            senderRole: { stringValue: senderRole || 'cashier' },
+            message: { stringValue: message.trim() },
+            timestamp: { integerValue: String(timestamp) },
+            isRead: { booleanValue: false },
+            ...(attachmentUrl ? { attachmentUrl: { stringValue: attachmentUrl } } : {})
+          }
+        })
+      }).catch((e) => console.warn('[MessageAPI] Error posting message to Firestore REST:', e))
+    } catch {}
+
+    // 4. Intentar con adminDb si está disponible
     if (adminDb && adminDb.collection) {
       try {
-        if (!playerUid) {
-          const orderDoc = await adminDb.collection('cashier_orders').doc(orderId).get()
-          if (orderDoc.exists) {
-            orderData = orderDoc.data()
-            playerUid = orderData.playerUid
-          }
-        }
-
-        // Guardar mensaje en subcolección de chat de la orden
         await adminDb.collection('cashier_orders').doc(orderId).collection('messages').doc(msgId).set(newChatMessage)
+      } catch {}
+    }
 
-        // Inyectar / Actualizar correo en la bandeja de Soporte del jugador
-        if (playerUid) {
+    // 5. Inyectar/actualizar correo en el inbox del jugador via Firestore REST y adminDb
+    if (playerUid) {
+      const replyItem = {
+        id: msgId,
+        sender: senderName || 'Cajero',
+        senderRole: 'cashier',
+        message: message.trim(),
+        timestamp,
+        attachmentUrl
+      }
+
+      // Vía adminDb
+      if (adminDb && adminDb.collection) {
+        try {
           const userRef = adminDb.collection('users').doc(playerUid)
           const userDoc = await userRef.get()
           if (userDoc.exists) {
             const userData = userDoc.data() || {}
             const inbox = Array.isArray(userData.inbox) ? userData.inbox : []
-            
             const supportMailId = `mail_sup_${orderId}`
             const existingMailIndex = inbox.findIndex((m: any) => m.id === supportMailId || m.orderId === orderId)
-            
-            const replyItem = {
-              id: msgId,
-              sender: senderName || 'Cajero',
-              senderRole: 'cashier',
-              message: message.trim(),
-              timestamp,
-              attachmentUrl
-            }
 
             if (existingMailIndex !== -1) {
               const currentMail = inbox[existingMailIndex]
@@ -112,12 +143,56 @@ export async function POST(
               }
               inbox.unshift(newSupportMail)
             }
-
             await userRef.update({ inbox: inbox.slice(0, 50) })
           }
+        } catch {}
+      }
+
+      // Vía REST API get/patch
+      try {
+        const userDocUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${playerUid}`
+        const userDocRes = await fetch(userDocUrl)
+        if (userDocRes.ok) {
+          const uDoc = await userDocRes.json()
+          const currentInboxValues = uDoc.fields?.inbox?.arrayValue?.values || []
+          
+          const newSupportMailRest = {
+            mapValue: {
+              fields: {
+                id: { stringValue: `mail_sup_${orderId}` },
+                title: { stringValue: `Consulta de Cajero sobre Orden #${orderId.slice(0, 8)}` },
+                sender: { stringValue: senderName || 'Cajero Autorizado' },
+                date: { stringValue: 'Hoy' },
+                category: { stringValue: 'support' },
+                isRead: { booleanValue: false },
+                content: { stringValue: message.trim() },
+                badge: { stringValue: 'Soporte P2P' },
+                orderId: { stringValue: orderId },
+                status: { stringValue: 'pending' },
+                timestamp: { integerValue: String(timestamp) }
+              }
+            }
+          }
+
+          // Prepend new or updated mail
+          const updatedInbox = [newSupportMailRest, ...currentInboxValues.filter((v: any) => v.mapValue?.fields?.orderId?.stringValue !== orderId)].slice(0, 50)
+
+          fetch(`${userDocUrl}?updateMask.fieldPaths=inbox`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: {
+                inbox: {
+                  arrayValue: {
+                    values: updatedInbox
+                  }
+                }
+              }
+            })
+          }).catch(() => {})
         }
-      } catch (err) {
-        console.warn('[OrderMessageAPI] Firestore sync notice:', err)
+      } catch (restErr) {
+        console.warn('[MessageAPI] REST inbox patch notice:', restErr)
       }
     }
 

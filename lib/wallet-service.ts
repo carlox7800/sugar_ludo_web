@@ -48,6 +48,15 @@ export function getStoredLocalOrders(): PlayerP2POrder[] {
   }
 }
 
+export function updateLocalOrderStatus(orderId: string, status: 'completed' | 'cancelled' | 'paid' | 'verified') {
+  if (typeof window === 'undefined') return
+  try {
+    const existing = getStoredLocalOrders()
+    const updated = existing.map((o) => (o.id === orderId ? { ...o, status } : o))
+    localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(updated))
+  } catch {}
+}
+
 export async function recordWalletTransaction(userId: string, tx: Omit<WalletTransaction, 'id' | 'timestamp' | 'dateStr'>, skipCoinUpdate = false) {
   if (!userId || userId.startsWith('dev_')) return
 
