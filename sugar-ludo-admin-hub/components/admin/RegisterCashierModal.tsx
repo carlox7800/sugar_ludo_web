@@ -1,13 +1,13 @@
 'use client'
 
 import React, { useState } from 'react'
-import { UserPlus, X, ShieldCheck, Upload, Eye, Lock, Mail, CreditCard, DollarSign } from 'lucide-react'
+import { UserPlus, X, ShieldCheck, Upload, Eye, EyeOff, Lock, Mail, CreditCard, DollarSign } from 'lucide-react'
 import { CashierManagementProfile } from '../../types/admin-expanded'
 
 interface RegisterCashierModalProps {
   isOpen: boolean
   onClose: () => void
-  onRegister: (newCashier: CashierManagementProfile) => void
+  onRegister: (newCashier: CashierManagementProfile, pass?: string) => void
 }
 
 export function RegisterCashierModal({ isOpen, onClose, onRegister }: RegisterCashierModalProps) {
@@ -15,6 +15,7 @@ export function RegisterCashierModal({ isOpen, onClose, onRegister }: RegisterCa
   const [idDocument, setIdDocument] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [initialFloat, setInitialFloat] = useState(25000)
   const [idPhotoUrl, setIdPhotoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +47,7 @@ export function RegisterCashierModal({ isOpen, onClose, onRegister }: RegisterCa
       paymentMethodsCount: 2
     }
 
-    onRegister(newCashier)
+    onRegister(newCashier, password.trim())
     onClose()
   }
 
@@ -119,14 +120,24 @@ export function RegisterCashierModal({ isOpen, onClose, onRegister }: RegisterCa
 
             <div className="space-y-1">
               <label className="text-[10px] text-slate-400 font-bold uppercase block">Contraseña Inicial de Acceso *</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-cyan-400"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 pr-10 py-2 text-white font-mono focus:outline-none focus:border-cyan-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1 cursor-pointer"
+                  title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                >
+                  {showPassword ? <EyeOff className="size-4 text-pink-400" /> : <Eye className="size-4" />}
+                </button>
+              </div>
             </div>
           </div>
 

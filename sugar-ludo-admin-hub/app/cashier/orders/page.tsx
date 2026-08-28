@@ -1,20 +1,47 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { MOCK_ORDERS } from '../../../lib/mock-data'
 import { CashierOrder, OrderType } from '../../../types/cashier'
 import { OrderFilterTabs, FilterStatus } from '../../../components/orders/OrderFilterTabs'
 import { OrderCard } from '../../../components/orders/OrderCard'
 import { ReceiptImageViewer } from '../../../components/receipts/ReceiptImageViewer'
+import { useAdminAuth } from '../../../lib/admin-auth-context'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock } from 'lucide-react'
 
 export default function CashierOrdersPage() {
-  const [orders, setOrders] = useState<CashierOrder[]>(MOCK_ORDERS)
+  const { cashierList } = useAdminAuth()
+  const [orders, setOrders] = useState<CashierOrder[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [currentStatus, setCurrentStatus] = useState<FilterStatus>('all')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [notification, setNotification] = useState<string | null>(null)
+
+  const currentCashier = cashierList[0] || {
+    uid: 'csh_primary',
+    name: 'Cajero Autorizado',
+    floatBalanceCoins: 0
+  }
+
+  const fetchOrders = async () => {
+    setIsLoading(true)
+    try {
+      const res = await fetch('/api/cashier/orders')
+      if (res.ok) {
+        const data = await res.json()
+        setOrders(data.orders || [])
+      }
+    } catch (e) {
+      console.warn('Error fetching orders:', e)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchOrders()
+  }, [])
 
   // Receipt Modal State
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<CashierOrder | null>(null)
@@ -44,7 +71,20 @@ export default function CashierOrdersPage() {
     disputed: orders.filter((o) => o.status === 'disputed').length,
   }
 
-  const handleApprove = (orderId: string) => {
+  const handleApprove = async (orderId: string) => {
+    try {
+      await fetch(`/api/cashier/orders/${orderId}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve_deposit',
+          cashierUid: currentCashier.uid,
+          actorUid: currentCashier.uid,
+          actorRole: 'cashier'
+        })
+      })
+    } catch {}
+
     setOrders((prev) =>
       prev.map((o) =>
         o.id === orderId
@@ -82,7 +122,9 @@ export default function CashierOrdersPage() {
           <Wallet className="size-4 text-pink-400" />
           <div className="text-right">
             <span className="text-[10px] uppercase font-bold text-slate-400 block leading-none">Saldo Flotante</span>
-            <span className="text-sm font-black text-white font-mono">50,000 SC</span>
+            <span className="text-sm font-black text-white font-mono">
+              {currentCashier.floatBalanceCoins.toLocaleString()} SC
+            </span>
           </div>
         </div>
       </header>
@@ -111,10 +153,11 @@ export default function CashierOrdersPage() {
           </div>
 
           <button
-            onClick={() => setOrders([...MOCK_ORDERS])}
+            onClick={fetchOrders}
+            disabled={isLoading}
             className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold border border-white/10 transition-colors cursor-pointer"
           >
-            <RefreshCw className="size-3.5 text-cyan-400" />
+            <RefreshCw className={`size-3.5 text-cyan-400 ${isLoading ? 'animate-spin' : ''}`} />
             <span>Refrescar Órdenes</span>
           </button>
         </div>
@@ -130,9 +173,9 @@ export default function CashierOrdersPage() {
 
         {/* Orders Grid */}
         {filteredOrders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 text-center rounded-3xl bg-slate-900/40 border border-white/5 space-y-2">
+          <div className="flex flex-col items-center justify-center p-16 text-center rounded-3xl bg-slate-900/40 border border-white/5 space-y-2">
             <Clock className="size-10 text-slate-600 mb-1" />
-            <p className="text-sm font-bold text-white">No hay órdenes con este criterio</p>
+            <p className="text-sm font-bold text-white">No hay órdenes con este criterio (0 Casos)</p>
             <p className="text-xs text-slate-500 max-w-sm">
               Las nuevas solicitudes de depósito o retiro de los jugadores aparecerán automáticamente aquí.
             </p>

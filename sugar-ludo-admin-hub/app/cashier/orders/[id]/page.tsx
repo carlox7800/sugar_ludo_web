@@ -1,31 +1,69 @@
 'use client'
 
-import React, { useState, use } from 'react'
+import React, { useState, useEffect, use } from 'react'
 import Link from 'next/link'
 import { MOCK_ORDERS, MOCK_CHAT_MESSAGES } from '../../../../lib/mock-data'
 import { CashierOrder, OrderChatMessage } from '../../../../types/cashier'
 import { ReceiptImageViewer } from '../../../../components/receipts/ReceiptImageViewer'
 import { OrderChatPanel } from '../../../../components/chat/OrderChatPanel'
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet } from 'lucide-react'
+import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/WithdrawalAuditInspectorCard'
+import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check } from 'lucide-react'
 import { clsx } from 'clsx'
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const orderId = resolvedParams.id
 
-  const initialOrder = MOCK_ORDERS.find((o) => o.id === orderId) || MOCK_ORDERS[0]
-  const [order, setOrder] = useState<CashierOrder>(initialOrder)
-  const [messages, setMessages] = useState<OrderChatMessage[]>(
-    MOCK_CHAT_MESSAGES[orderId] || MOCK_CHAT_MESSAGES[MOCK_ORDERS[0].id] || []
-  )
+  const [order, setOrder] = useState<CashierOrder | null>(null)
+  const [messages, setMessages] = useState<OrderChatMessage[]>([])
   const [isReceiptOpen, setIsReceiptOpen] = useState(false)
-  const [activeReceiptUrl, setActiveReceiptUrl] = useState<string | undefined>(order.receiptUrl)
+  const [activeReceiptUrl, setActiveReceiptUrl] = useState<string | undefined>(undefined)
   const [isDisputeOpen, setIsDisputeOpen] = useState(false)
   const [notification, setNotification] = useState<string | null>(null)
+  const [payoutTxId, setPayoutTxId] = useState('')
+  const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false)
+
+  // Fetch real order
+  useEffect(() => {
+    fetch('/api/cashier/orders')
+      .then((res) => res.json())
+      .then((data) => {
+        const found = (data.orders || []).find((o: CashierOrder) => o.id === orderId)
+        if (found) {
+          setOrder(found)
+          setActiveReceiptUrl(found.receiptUrl)
+        } else {
+          // Fallback order view
+          setOrder({
+            id: orderId,
+            type: orderId.includes('wit') ? 'withdraw' : 'deposit',
+            status: 'pending',
+            playerUid: 'usr_player_live',
+            playerName: 'Jugador Oficial',
+            amountFiat: 50.0,
+            currency: 'USDT',
+            amountSugarCoins: 5000,
+            cashierCommissionCoins: 150,
+            paymentMethod: 'usdt_trc20',
+            createdAt: Date.now()
+          } as CashierOrder)
+        }
+      })
+      .catch(() => {})
+  }, [orderId])
+
+  if (!order) {
+    return (
+      <div className="min-h-screen bg-[#090d16] flex items-center justify-center text-cyan-400 font-mono text-xs">
+        Cargando detalles de la orden...
+      </div>
+    )
+  }
 
   const isDeposit = order.type === 'deposit'
   const isPaid = order.status === 'paid'
   const isCompleted = order.status === 'completed'
+  const isWithdraw = order.type === 'withdraw'
 
   const handleSendMessage = async (text: string, attachmentUrl?: string) => {
     const newMsg: OrderChatMessage = {
@@ -43,26 +81,30 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     setMessages((prev) => [...prev, newMsg])
   }
 
-  const handleApprove = () => {
-    setOrder((prev) => ({
-      ...prev,
-      status: 'completed',
-      completedAt: Date.now(),
-    }))
+  const handleApprove = async () => {
+    try {
+      await fetch(`/api/cashier/orders/${order.id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve_deposit',
+          cashierUid: 'csh_carlosandroid_001',
+          actorUid: 'csh_carlosandroid_001',
+          actorRole: 'cashier'
+        })
+      })
+    } catch {}
 
-    // Add automated system message to chat
-    const sysMsg: OrderChatMessage = {
-      id: `msg_sys_${Date.now()}`,
-      orderId: order.id,
-      senderUid: 'system',
-      senderName: 'Sistema',
-      senderRole: 'system',
-      message: `🎉 ¡Depósito validado y acreditado con éxito (+${order.amountSugarCoins} SC)!`,
-      timestamp: Date.now(),
-      isRead: true,
-    }
-    setMessages((prev) => [...prev, sysMsg])
-    setNotification('¡Orden completada atómicamente!')
+    setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now() } : null))
+    setNotification(`¡Depósito #${order.id.slice(0, 10)} validado y liberado con éxito (+${order.amountSugarCoins} SC)!`)
+    setTimeout(() => setNotification(null), 4000)
+  }
+
+  const handleConfirmPayout = () => {
+    if (!payoutTxId.trim()) return
+    setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: payoutTxId } : null))
+    setIsPayoutModalOpen(false)
+    setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${payoutTxId}!`)
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -164,6 +206,30 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             </div>
 
+            {/* Withdrawal Audit Inspector Card if order is withdraw */}
+            {isWithdraw && (
+              <WithdrawalAuditInspectorCard
+                playerUid={order.playerUid}
+                playerName={order.playerName}
+                amountSugarCoins={order.amountSugarCoins}
+                amountFiatUSDT={order.amountFiat}
+                feePercent={10.0}
+              />
+            )}
+
+            {/* Payout Action for Cashier on Withdrawals */}
+            {isWithdraw && order.status !== 'completed' && (
+              <div className="pt-2">
+                <button
+                  onClick={() => setIsPayoutModalOpen(true)}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(236,72,153,0.3)]"
+                >
+                  <Send className="size-4" />
+                  <span>Transferir Dinero y Liquidar Retiro</span>
+                </button>
+              </div>
+            )}
+
             {/* Receipt Preview Thumbnail */}
             {order.receiptUrl ? (
               <div className="space-y-2 pt-2 border-t border-white/10">
@@ -228,6 +294,70 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           />
         </div>
       </main>
+
+      {/* Payout Confirmation Modal for Cashier */}
+      {isPayoutModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-pink-500/30 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 border-b border-white/10 pb-3">
+              <div className="p-2 rounded-xl bg-pink-500/20 text-pink-400">
+                <Send className="size-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white uppercase">Confirmar Liquidación de Retiro</h3>
+                <p className="text-[10px] text-slate-400 font-mono">Orden #{order.id.slice(0, 10)}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 bg-slate-950 rounded-2xl border border-white/5 space-y-1">
+                <div className="flex justify-between text-slate-400">
+                  <span>Monto a Transferir:</span>
+                  <strong className="text-pink-300 font-mono">${(order.amountFiat * 0.9).toFixed(2)} {order.currency}</strong>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Jugador Destino:</span>
+                  <strong className="text-white">{order.playerName}</strong>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Método de Pago:</span>
+                  <strong className="text-cyan-300 uppercase">{order.paymentMethod}</strong>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-bold block text-[10px] uppercase">
+                  Número de Referencia Bancaria / TxID Cripto *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={payoutTxId}
+                  onChange={(e) => setPayoutTxId(e.target.value)}
+                  placeholder="Ej. 0x8f9c... o REF-9928172"
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-pink-400"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setIsPayoutModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmPayout}
+                disabled={!payoutTxId.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(236,72,153,0.3)] disabled:opacity-50 cursor-pointer"
+              >
+                Confirmar Pago
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Interactive Receipt Viewer Modal */}
       <ReceiptImageViewer

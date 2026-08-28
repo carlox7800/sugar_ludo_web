@@ -23,7 +23,9 @@ import {
   LogOut,
   Trash2,
   AlertTriangle,
-  CreditCard
+  CreditCard,
+  Eye,
+  EyeOff
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -52,6 +54,8 @@ export default function AdminPerfilPage() {
   const [email, setEmail] = useState(adminUser?.email || '')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   // New Admin Form State
   const [newAdminUser, setNewAdminUser] = useState('')
@@ -59,6 +63,7 @@ export default function AdminPerfilPage() {
   const [newAdminDisplayName, setNewAdminDisplayName] = useState('')
   const [newAdminRole, setNewAdminRole] = useState<'super_admin' | 'financial_admin' | 'support_admin'>('financial_admin')
   const [newAdminPass, setNewAdminPass] = useState('')
+  const [showNewAdminPass, setShowNewAdminPass] = useState(false)
 
   // Modal para alta de cajero
   const [isRegisterCashierModalOpen, setIsRegisterCashierModalOpen] = useState(false)
@@ -275,26 +280,46 @@ export default function AdminPerfilPage() {
 
                 <div className="space-y-1">
                   <label className="text-slate-400 font-bold">Nueva Contraseña (Opcional)</label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Dejar en blanco para conservar actual"
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono placeholder:text-slate-600"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Dejar en blanco para conservar actual"
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 pr-10 py-2 text-white font-mono placeholder:text-slate-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1 cursor-pointer"
+                      title={showNewPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      {showNewPassword ? <EyeOff className="size-4 text-cyan-400" /> : <Eye className="size-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {newPassword && (
                   <div className="space-y-1">
                     <label className="text-slate-400 font-bold">Confirmar Nueva Contraseña</label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Repita la nueva contraseña"
-                      className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono placeholder:text-slate-600"
-                      required
-                    />
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Repita la nueva contraseña"
+                        className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 pr-10 py-2 text-white font-mono placeholder:text-slate-600"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1 cursor-pointer"
+                        title={showConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                      >
+                        {showConfirmPassword ? <EyeOff className="size-4 text-cyan-400" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -401,14 +426,24 @@ export default function AdminPerfilPage() {
 
                     <div className="space-y-1 sm:col-span-2">
                       <label className="text-slate-400 font-bold">Contraseña Temporal</label>
-                      <input
-                        type="password"
-                        value={newAdminPass}
-                        onChange={(e) => setNewAdminPass(e.target.value)}
-                        placeholder="Mínimo 6 caracteres"
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono"
-                        required
-                      />
+                      <div className="relative">
+                        <input
+                          type={showNewAdminPass ? 'text' : 'password'}
+                          value={newAdminPass}
+                          onChange={(e) => setNewAdminPass(e.target.value)}
+                          placeholder="Mínimo 6 caracteres"
+                          className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 pr-10 py-2 text-white font-mono"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewAdminPass(!showNewAdminPass)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1 cursor-pointer"
+                          title={showNewAdminPass ? 'Ocultar contraseña' : 'Ver contraseña'}
+                        >
+                          {showNewAdminPass ? <EyeOff className="size-4 text-purple-400" /> : <Eye className="size-4" />}
+                        </button>
+                      </div>
                     </div>
 
                     <button
@@ -546,8 +581,8 @@ export default function AdminPerfilPage() {
       <RegisterCashierModal
         isOpen={isRegisterCashierModalOpen}
         onClose={() => setIsRegisterCashierModalOpen(false)}
-        onRegister={(newCashier) => {
-          const res = createNewCashier(newCashier)
+        onRegister={(newCashier, pass) => {
+          const res = createNewCashier(newCashier, pass)
           if (res.success) {
             showToast(res.message)
           } else {

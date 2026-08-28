@@ -14,7 +14,9 @@ import {
   Loader2,
   CheckCircle2,
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  Eye,
+  EyeOff
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -26,6 +28,7 @@ export default function HubLandingPage() {
   const [accessMode, setAccessMode] = useState<'admin' | 'cashier'>('admin')
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
@@ -179,13 +182,21 @@ export default function HubLandingPage() {
               <div className="relative">
                 <Lock className="size-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full bg-slate-950 border border-white/10 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-mono transition-colors"
+                  className="w-full bg-slate-950 border border-white/10 rounded-2xl pl-10 pr-11 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-mono transition-colors"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1 cursor-pointer"
+                  title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                >
+                  {showPassword ? <EyeOff className="size-4 text-cyan-400" /> : <Eye className="size-4" />}
+                </button>
               </div>
             </div>
 
@@ -225,7 +236,7 @@ export default function HubLandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-white/10 p-6 text-center text-xs text-slate-500">
-        Sugar Ludo Decentralized Cashier Hub &bull; Protocolo Seguro de Liquidación Financiera &bull; v1.0.1
+        Sugar Ludo Decentralized Cashier Hub &bull; Protocolo Seguro de Liquidación Financiera &bull; v1.0.2
       </footer>
     </div>
   )
