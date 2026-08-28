@@ -127,11 +127,11 @@ export default function CashierPortalPage() {
     try {
       if (typeof EventSource !== 'undefined') {
         const sseUrls = [
-          'http://localhost:3000/api/social/stream?uid=cashier_hub',
-          'https://juego-de-servidor.onrender.com/api/social/stream?uid=cashier_hub'
+          'https://sugar-ludo-web.onrender.com/api/social/stream?uid=cashier_hub',
+          'http://localhost:3000/api/social/stream?uid=cashier_hub'
         ]
-        // Conectar al endpoint local de SSE si está disponible
-        sseSource = new EventSource(sseUrls[0])
+        const isRender = typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')
+        sseSource = new EventSource(isRender ? sseUrls[0] : sseUrls[1])
         sseSource.onmessage = (event) => {
           try {
             const evData = JSON.parse(event.data)

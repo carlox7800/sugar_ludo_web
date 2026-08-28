@@ -1,7 +1,15 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { MessageSquare, X, Send, ShieldCheck, UserCheck } from 'lucide-react'
+
+interface ChatMsg {
+  id: string
+  sender: string
+  text: string
+  time: string
+  isAdmin: boolean
+}
 
 interface CashierAdminChatModalProps {
   isOpen: boolean
@@ -9,24 +17,42 @@ interface CashierAdminChatModalProps {
   cashierName: string
 }
 
+const STORAGE_KEY = 'sugar_cashier_admin_chat_messages'
+
 export function CashierAdminChatModal({ isOpen, onClose, cashierName }: CashierAdminChatModalProps) {
-  const [messages, setMessages] = useState<{ id: string; sender: string; text: string; time: string; isAdmin: boolean }[]>([
-    {
-      id: '1',
-      sender: 'Super Admin',
-      text: 'Hola carlosandroid. Tu turno está activo. Saldo flotante recargado con 50,000 SC. Cualquier duda con pagos en VES nos avisas por aquí.',
-      time: '09:00 AM',
-      isAdmin: true
-    },
-    {
-      id: '2',
-      sender: cashierName,
-      text: 'Recibido administrador. Pendiente de la bandeja de órdenes.',
-      time: '09:05 AM',
-      isAdmin: false
-    }
-  ])
+  const [messages, setMessages] = useState<ChatMsg[]>([])
   const [inputText, setInputText] = useState('')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        try {
+          setMessages(JSON.parse(saved))
+          return
+        } catch {}
+      }
+    }
+    // Mensaje de bienvenida inicial del sistema
+    setMessages([
+      {
+        id: '1',
+        sender: 'Super Admin',
+        text: `Hola ${cashierName || 'Cajero'}. Tu turno está activo en el protocolo P2P. Cualquier incidencia con pagos, comprobantes o liquidaciones nos escribes por este canal directo.`,
+        time: '09:00 AM',
+        isAdmin: true
+      }
+    ])
+  }, [cashierName])
+
+  const saveMessages = (msgs: ChatMsg[]) => {
+    setMessages(msgs)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-50)))
+      } catch {}
+    }
+  }
 
   if (!isOpen) return null
 
@@ -34,16 +60,16 @@ export function CashierAdminChatModal({ isOpen, onClose, cashierName }: CashierA
     e.preventDefault()
     if (!inputText.trim()) return
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        sender: cashierName,
-        text: inputText.trim(),
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isAdmin: false
-      }
-    ])
+    const newMsg: ChatMsg = {
+      id: Date.now().toString(),
+      sender: cashierName || 'Cajero Autorizado',
+      text: inputText.trim(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isAdmin: false
+    }
+
+    const updated = [...messages, newMsg]
+    saveMessages(updated)
     setInputText('')
   }
 
@@ -61,7 +87,7 @@ export function CashierAdminChatModal({ isOpen, onClose, cashierName }: CashierA
               <p className="text-[11px] text-slate-400 font-mono">Canal oficial de soporte y auditoría</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer">
             <X className="size-4" />
           </button>
         </div>
@@ -107,12 +133,12 @@ export function CashierAdminChatModal({ isOpen, onClose, cashierName }: CashierA
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Escribir al Super Admin..."
-            className="flex-1 bg-slate-800 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"
+            className="flex-1 bg-slate-800 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 font-sans"
           />
           <button
             type="submit"
             disabled={!inputText.trim()}
-            className="p-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold transition-all"
+            className="p-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold transition-all cursor-pointer"
           >
             <Send className="size-4" />
           </button>

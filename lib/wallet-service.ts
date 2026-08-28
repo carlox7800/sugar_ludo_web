@@ -152,11 +152,12 @@ export async function createDepositOrder(params: {
     })
   } catch {}
 
-  // Post directo al Hub de Cajeros (puerto 3001 en local y servidor Render)
+  // Post directo al Hub de Cajeros (puerto 3001 en local y servidor Render oficial)
   try {
     const hubEndpoints = [
+      'https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders',
       'http://localhost:3001/api/cashier/orders',
-      'https://juego-de-servidor.onrender.com/api/cashier/orders'
+      ...(process.env.NEXT_PUBLIC_ADMIN_HUB_URL ? [`${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/cashier/orders`] : [])
     ]
     hubEndpoints.forEach((url) => {
       fetch(url, {
@@ -255,11 +256,12 @@ export async function createWithdrawOrder(params: {
     })
   } catch {}
 
-  // Post directo al Hub de Cajeros (puerto 3001 en local y servidor Render)
+  // Post directo al Hub de Cajeros (puerto 3001 en local y servidor Render oficial)
   try {
     const hubEndpoints = [
+      'https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders',
       'http://localhost:3001/api/cashier/orders',
-      'https://juego-de-servidor.onrender.com/api/cashier/orders'
+      ...(process.env.NEXT_PUBLIC_ADMIN_HUB_URL ? [`${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/cashier/orders`] : [])
     ]
     hubEndpoints.forEach((url) => {
       fetch(url, {
