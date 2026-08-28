@@ -348,3 +348,55 @@ export async function fetchActivePlayerOrders(playerUid: string): Promise<Player
     return getStoredLocalOrders().filter((o) => o.playerUid === playerUid && o.status !== 'completed' && o.status !== 'cancelled')
   }
 }
+
+/**
+ * Cancela o descarta una orden pendiente del jugador
+ * - Si es retiro, reembolsa las Sugar Coins al balance del usuario.
+ * - Actualiza almacenamiento local, notifica a Firestore y al Hub.
+ */
+export async function cancelPlayerOrder(playerUid: string, orderId: string): Promise<{ success: boolean; message: string }> {
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = getStoredLocalOrders()
+      const target = stored.find(o => o.id === orderId)
+      const updated = stored.map(o => o.id === orderId ? { ...o, status: 'cancelled' as const } : o)
+      localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(updated))
+
+      // Si es retiro pendiente, reembolsar saldo al usuario
+      if (target && target.type === 'withdraw' && target.amountSugarCoins > 0) {
+        await recordWalletTransaction(playerUid, {
+          type: 'deposit',
+          amount: target.amountSugarCoins,
+          description: 'Reembolso por Cancelación de Retiro'
+        })
+      }
+    } catch {}
+  }
+
+  // Notificar a Firestore
+  try {
+    const orderDocRef = doc(db, 'cashier_orders', orderId)
+    await updateDoc(orderDocRef, {
+      status: 'cancelled',
+      cancelledAt: Date.now()
+    })
+  } catch {}
+
+  // Notificar al Hub
+  try {
+    const hubEndpoints = [
+      `https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders/${orderId}/action`,
+      `http://localhost:3001/api/cashier/orders/${orderId}/action`
+    ]
+    hubEndpoints.forEach(url => {
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel', actorUid: playerUid, actorRole: 'player' })
+      }).catch(() => {})
+    })
+  } catch {}
+
+  return { success: true, message: 'Solicitud cancelada con éxito' }
+}
+

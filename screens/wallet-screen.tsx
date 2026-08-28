@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle, X, Trash2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { db } from '@/lib/firebase'
 import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'
@@ -11,6 +11,7 @@ import {
   createWithdrawOrder,
   fetchActivePlayerOrders,
   getStoredLocalOrders,
+  cancelPlayerOrder,
   WalletTransaction,
   PlayerP2POrder
 } from '@/lib/wallet-service'
@@ -174,6 +175,19 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
       showNotification('Error al procesar la solicitud de retiro', 'error')
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleCancelOrder = async (orderId: string) => {
+    if (!user?.uid) return
+    try {
+      const res = await cancelPlayerOrder(user.uid, orderId)
+      if (res.success) {
+        showNotification('Solicitud cancelada con éxito', 'info')
+        refreshData()
+      }
+    } catch {
+      showNotification('Error al cancelar la solicitud', 'error')
     }
   }
 
@@ -416,9 +430,20 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                         </span>
                       </div>
                     </div>
-                    <span className="text-[10px] text-amber-300/80 font-semibold text-right">
-                      Esperando<br />Cajero
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] text-amber-300/80 font-semibold text-right leading-tight hidden sm:block">
+                        Esperando<br />Cajero
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCancelOrder(ord.id)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[10px] font-bold transition-all cursor-pointer"
+                        title="Cancelar solicitud"
+                      >
+                        <Trash2 className="size-3" />
+                        <span>Cancelar</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
