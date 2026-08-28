@@ -3,11 +3,14 @@
 import React, { useState, useEffect } from 'react'
 import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
+import { db } from '@/lib/firebase'
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'
 import {
   fetchWalletTransactions,
   createDepositOrder,
   createWithdrawOrder,
   fetchActivePlayerOrders,
+  getStoredLocalOrders,
   WalletTransaction,
   PlayerP2POrder
 } from '@/lib/wallet-service'
@@ -23,11 +26,53 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
     if (user?.uid) {
       fetchWalletTransactions(user.uid).then(setTransactions)
       fetchActivePlayerOrders(user.uid).then(setActiveOrders)
+    } else {
+      const local = getStoredLocalOrders()
+      setActiveOrders(local.filter(o => o.status !== 'completed' && o.status !== 'cancelled'))
     }
   }
 
   useEffect(() => {
     refreshData()
+    if (!user?.uid) return
+
+    // 1. Escuchar cambios de billetera / historial del usuario en tiempo real
+    let unsubUser: (() => void) | null = null
+    try {
+      const userRef = doc(db, 'users', user.uid)
+      unsubUser = onSnapshot(userRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data()
+          if (data.walletHistory && Array.isArray(data.walletHistory)) {
+            setTransactions(data.walletHistory)
+          }
+        }
+      })
+    } catch {}
+
+    // 2. Escuchar órdenes activas del usuario en tiempo real
+    let unsubOrders: (() => void) | null = null
+    try {
+      const ordersQ = query(
+        collection(db, 'cashier_orders'),
+        where('playerUid', '==', user.uid)
+      )
+      unsubOrders = onSnapshot(ordersQ, (snap) => {
+        const list: PlayerP2POrder[] = []
+        snap.forEach((d) => {
+          const ord = { ...d.data(), id: d.id } as PlayerP2POrder
+          if (ord.status !== 'completed' && ord.status !== 'cancelled') {
+            list.push(ord)
+          }
+        })
+        setActiveOrders(list)
+      })
+    } catch {}
+
+    return () => {
+      if (unsubUser) unsubUser()
+      if (unsubOrders) unsubOrders()
+    }
   }, [user?.uid])
 
   // Tab State
@@ -284,9 +329,9 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="btn-3d w-full rounded-xl bg-[var(--candy-cyan)] py-4 font-display text-base font-extrabold text-[oklch(0.18_0.03_285)] shadow-[0_4px_12px_oklch(0.82_0.15_200/0.4)] disabled:opacity-50"
+                  className="btn-3d w-full rounded-xl bg-[var(--candy-cyan)] py-4 font-display text-base font-extrabold text-[oklch(0.18_0.03_285)] shadow-[0_4px_12px_oklch(0.82_0.15_200/0.4)] disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmitting ? 'ENVIANDO SOLICITUD...' : 'INFORMAR DEPÓSITO (P2P)'}
+                  {isSubmitting ? 'ENVIANDO...' : 'Realizar Depósito'}
                 </button>
               </form>
             ) : (
@@ -339,9 +384,9 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="btn-3d w-full rounded-xl bg-[var(--candy-magenta)] py-4 font-display text-base font-extrabold text-primary-foreground shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)] disabled:opacity-50"
+                  className="btn-3d w-full rounded-xl bg-[var(--candy-magenta)] py-4 font-display text-base font-extrabold text-primary-foreground shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)] disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmitting ? 'PROCESANDO RETIRO...' : 'SOLICITAR RETIRO EN ESCROW'}
+                  {isSubmitting ? 'PROCESANDO...' : 'Realizar Retiro'}
                 </button>
               </form>
             )}

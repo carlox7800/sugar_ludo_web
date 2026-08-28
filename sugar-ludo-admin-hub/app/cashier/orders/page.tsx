@@ -7,6 +7,8 @@ import { OrderFilterTabs, FilterStatus } from '../../../components/orders/OrderF
 import { OrderCard } from '../../../components/orders/OrderCard'
 import { ReceiptImageViewer } from '../../../components/receipts/ReceiptImageViewer'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
+import { db } from '../../../lib/firebase'
+import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock } from 'lucide-react'
 
 export default function CashierOrdersPage() {
@@ -27,10 +29,21 @@ export default function CashierOrdersPage() {
   const fetchOrders = async () => {
     setIsLoading(true)
     try {
+      // 1. Cargar desde localStorage como fuente inmediata
+      if (typeof window !== 'undefined') {
+        const localOrders = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+        if (localOrders.length > 0) {
+          setOrders(localOrders)
+        }
+      }
+
+      // 2. Cargar desde API
       const res = await fetch('/api/cashier/orders')
       if (res.ok) {
         const data = await res.json()
-        setOrders(data.orders || [])
+        if (data.orders && data.orders.length > 0) {
+          setOrders(data.orders)
+        }
       }
     } catch (e) {
       console.warn('Error fetching orders:', e)
@@ -41,6 +54,49 @@ export default function CashierOrdersPage() {
 
   useEffect(() => {
     fetchOrders()
+
+    // 1. Escuchar canal BroadcastChannel local
+    let channel: BroadcastChannel | null = null
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('sugar_ludo_social_channel')
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'p2p_data' && event.data?.dataType === 'new_cashier_order' && event.data?.order) {
+            const newOrd = event.data.order as CashierOrder
+            setOrders((prev) => {
+              const filtered = prev.filter((o) => o.id !== newOrd.id)
+              return [newOrd, ...filtered]
+            })
+            setIsLoading(false)
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Suscripción en tiempo real a Firestore
+    let unsubscribe: (() => void) | null = null
+    try {
+      const q = query(collection(db, 'cashier_orders'), limit(50))
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        const liveOrders: CashierOrder[] = []
+        snapshot.forEach((docSnap) => {
+          liveOrders.push({ ...docSnap.data(), id: docSnap.id } as CashierOrder)
+        })
+        if (liveOrders.length > 0 || snapshot.empty) {
+          setOrders(liveOrders)
+          setIsLoading(false)
+        }
+      }, (err) => {
+        console.warn('[CashierOrders] Firestore onSnapshot notice:', err.message)
+      })
+    } catch (e) {
+      console.warn('[CashierOrders] Listener setup error:', e)
+    }
+
+    return () => {
+      if (channel) channel.close()
+      if (unsubscribe) unsubscribe()
+    }
   }, [])
 
   // Receipt Modal State

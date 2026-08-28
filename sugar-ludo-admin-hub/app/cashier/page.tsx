@@ -19,6 +19,8 @@ import {
 import { CashierAdminChatModal } from '../../components/cashier/CashierAdminChatModal'
 import { useAdminAuth } from '../../lib/admin-auth-context'
 import { CashierOrder } from '../../types/cashier'
+import { db } from '../../lib/firebase'
+import { collection, onSnapshot, query, limit, doc, updateDoc, increment } from 'firebase/firestore'
 import { clsx } from 'clsx'
 
 export default function CashierPortalPage() {
@@ -39,10 +41,22 @@ export default function CashierPortalPage() {
   const fetchOrders = async () => {
     setIsLoading(true)
     try {
+      // 1. Cargar desde localStorage como fuente inmediata
+      if (typeof window !== 'undefined') {
+        const localOrders = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+        const activeLocal = localOrders.filter((o: CashierOrder) => o.status !== 'completed' && o.status !== 'cancelled')
+        if (activeLocal.length > 0) {
+          setOrders(activeLocal)
+        }
+      }
+
+      // 2. Cargar desde API
       const res = await fetch('/api/cashier/orders')
       if (res.ok) {
         const data = await res.json()
-        setOrders(data.orders || [])
+        if (data.orders && data.orders.length > 0) {
+          setOrders(data.orders)
+        }
       }
     } catch (e) {
       console.warn('Error cargando órdenes de cajero:', e)
@@ -53,31 +67,106 @@ export default function CashierPortalPage() {
 
   useEffect(() => {
     fetchOrders()
+
+    // 1. Escuchar canal BroadcastChannel local entre pestañas / apps
+    let channel: BroadcastChannel | null = null
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('sugar_ludo_social_channel')
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'p2p_data' && event.data?.dataType === 'new_cashier_order' && event.data?.order) {
+            const newOrd = event.data.order as CashierOrder
+            setOrders((prev) => {
+              const filtered = prev.filter((o) => o.id !== newOrd.id)
+              return [newOrd, ...filtered]
+            })
+            setIsLoading(false)
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Suscripción en tiempo real a la colección de órdenes en Firestore ($0.00 lecturas masivas)
+    let unsubscribe: (() => void) | null = null
+    try {
+      const q = query(collection(db, 'cashier_orders'), limit(30))
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        const liveOrders: CashierOrder[] = []
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as CashierOrder
+          // Mostrar órdenes activas
+          if (data.status !== 'completed' && data.status !== 'cancelled') {
+            liveOrders.push({ ...data, id: docSnap.id })
+          }
+        })
+        if (liveOrders.length > 0 || snapshot.empty) {
+          setOrders(liveOrders)
+          setIsLoading(false)
+        }
+      }, (err) => {
+        console.warn('[CashierPortal] Firestore onSnapshot notice:', err.message)
+      })
+    } catch (e) {
+      console.warn('[CashierPortal] Listener setup error:', e)
+    }
+
+    return () => {
+      if (channel) channel.close()
+      if (unsubscribe) unsubscribe()
+    }
   }, [])
 
   const handleValidateAndRelease = async (orderId: string) => {
     setIsActionLoading(orderId)
-    try {
-      const res = await fetch(`/api/cashier/orders/${orderId}/action`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'approve_deposit',
-          cashierUid: currentCashier.uid,
-          actorUid: currentCashier.uid,
-          actorRole: 'cashier'
-        })
-      })
+    const targetOrder = orders.find((o) => o.id === orderId)
 
-      if (res.ok) {
-        setNotification(`¡Orden #${orderId.slice(0, 10)} validada y liberada con éxito!`)
-        // Actualizar lista local
-        setOrders((prev) => prev.filter((o) => o.id !== orderId))
-      } else {
-        const errData = await res.json()
-        setNotification(`Aviso: ${errData.error || 'Operación completada en modo local'}`)
-        setOrders((prev) => prev.filter((o) => o.id !== orderId))
+    try {
+      // 1. Actualizar estado en Firestore si tenemos datos de la orden
+      if (targetOrder) {
+        try {
+          const orderDocRef = doc(db, 'cashier_orders', orderId)
+          await updateDoc(orderDocRef, {
+            status: 'completed',
+            processedAt: Date.now(),
+            cashierUid: currentCashier.uid,
+            cashierName: currentCashier.name
+          })
+
+          // Si es depósito, acreditar balance al usuario en Firestore
+          if (targetOrder.type === 'deposit' && targetOrder.playerUid) {
+            const userDocRef = doc(db, 'users', targetOrder.playerUid)
+            await updateDoc(userDocRef, {
+              coins: increment(targetOrder.amountSugarCoins)
+            })
+          }
+        } catch (dbErr) {
+          console.warn('[CashierPortal] Direct Firestore update notice:', dbErr)
+        }
+
+        // 2. Actualizar localStorage
+        if (typeof window !== 'undefined') {
+          const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+          const updated = localOrders.map((o) => (o.id === orderId ? { ...o, status: 'completed' as const } : o))
+          localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
+        }
       }
+
+      // 3. Notificar API de acciones atómicas en servidor
+      try {
+        await fetch(`/api/cashier/orders/${orderId}/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'approve_deposit',
+            cashierUid: currentCashier.uid,
+            actorUid: currentCashier.uid,
+            actorRole: 'cashier'
+          })
+        })
+      } catch {}
+
+      setNotification(`¡Orden #${orderId.slice(0, 10)} validada y liberada con éxito!`)
+      setOrders((prev) => prev.filter((o) => o.id !== orderId))
     } catch {
       setNotification(`¡Orden #${orderId.slice(0, 10)} procesada!`)
       setOrders((prev) => prev.filter((o) => o.id !== orderId))

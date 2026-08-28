@@ -7,6 +7,8 @@ import { CashierOrder, OrderChatMessage } from '../../../../types/cashier'
 import { ReceiptImageViewer } from '../../../../components/receipts/ReceiptImageViewer'
 import { OrderChatPanel } from '../../../../components/chat/OrderChatPanel'
 import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/WithdrawalAuditInspectorCard'
+import { db } from '../../../../lib/firebase'
+import { doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore'
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -23,30 +25,39 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [payoutTxId, setPayoutTxId] = useState('')
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false)
 
-  // Fetch real order
+  // Fetch & listen real order
   useEffect(() => {
+    // 1. Direct real-time Firestore Document listener
+    try {
+      const orderDocRef = doc(db, 'cashier_orders', orderId)
+      const unsub = onSnapshot(orderDocRef, (snap) => {
+        if (snap.exists()) {
+          const data = { ...snap.data(), id: snap.id } as CashierOrder
+          setOrder(data)
+          if (data.receiptUrl) setActiveReceiptUrl(data.receiptUrl)
+        }
+      })
+      return () => unsub()
+    } catch {}
+
+    // 2. LocalStorage fast check
+    if (typeof window !== 'undefined') {
+      const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+      const foundLocal = localOrders.find((o) => o.id === orderId)
+      if (foundLocal) {
+        setOrder(foundLocal)
+        if (foundLocal.receiptUrl) setActiveReceiptUrl(foundLocal.receiptUrl)
+      }
+    }
+
+    // 3. Fallback via API
     fetch('/api/cashier/orders')
       .then((res) => res.json())
       .then((data) => {
         const found = (data.orders || []).find((o: CashierOrder) => o.id === orderId)
         if (found) {
           setOrder(found)
-          setActiveReceiptUrl(found.receiptUrl)
-        } else {
-          // Fallback order view
-          setOrder({
-            id: orderId,
-            type: orderId.includes('wit') ? 'withdraw' : 'deposit',
-            status: 'pending',
-            playerUid: 'usr_player_live',
-            playerName: 'Jugador Oficial',
-            amountFiat: 50.0,
-            currency: 'USDT',
-            amountSugarCoins: 5000,
-            cashierCommissionCoins: 150,
-            paymentMethod: 'usdt_trc20',
-            createdAt: Date.now()
-          } as CashierOrder)
+          if (found.receiptUrl) setActiveReceiptUrl(found.receiptUrl)
         }
       })
       .catch(() => {})
@@ -83,6 +94,28 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const handleApprove = async () => {
     try {
+      // 1. Direct Firestore update
+      const orderDocRef = doc(db, 'cashier_orders', order.id)
+      await updateDoc(orderDocRef, {
+        status: 'completed',
+        completedAt: Date.now()
+      })
+
+      if (order.type === 'deposit' && order.playerUid) {
+        const userDocRef = doc(db, 'users', order.playerUid)
+        await updateDoc(userDocRef, {
+          coins: increment(order.amountSugarCoins)
+        })
+      }
+
+      // 2. LocalStorage update
+      if (typeof window !== 'undefined') {
+        const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+        const updated = localOrders.map((o) => (o.id === order.id ? { ...o, status: 'completed' as const } : o))
+        localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
+      }
+
+      // 3. API notification
       await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -93,15 +126,37 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           actorRole: 'cashier'
         })
       })
-    } catch {}
+    } catch (e) {
+      console.warn('[OrderDetail] Approve notice:', e)
+    }
 
     setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now() } : null))
     setNotification(`¡Depósito #${order.id.slice(0, 10)} validado y liberado con éxito (+${order.amountSugarCoins} SC)!`)
     setTimeout(() => setNotification(null), 4000)
   }
 
-  const handleConfirmPayout = () => {
+  const handleConfirmPayout = async () => {
     if (!payoutTxId.trim()) return
+
+    try {
+      // 1. Direct Firestore update
+      const orderDocRef = doc(db, 'cashier_orders', order.id)
+      await updateDoc(orderDocRef, {
+        status: 'completed',
+        completedAt: Date.now(),
+        receiptReferenceNumber: payoutTxId
+      })
+
+      // 2. LocalStorage update
+      if (typeof window !== 'undefined') {
+        const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+        const updated = localOrders.map((o) => (o.id === order.id ? { ...o, status: 'completed' as const, receiptReferenceNumber: payoutTxId } : o))
+        localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
+      }
+    } catch (e) {
+      console.warn('[OrderDetail] Payout update notice:', e)
+    }
+
     setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: payoutTxId } : null))
     setIsPayoutModalOpen(false)
     setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${payoutTxId}!`)
