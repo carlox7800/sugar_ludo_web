@@ -64,7 +64,46 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     loadInbox()
-  }, [user])
+    if (!user?.uid || user?.uid.startsWith('dev_')) return
+
+    // 1. Escuchar el buzón en tiempo real desde Firestore ($0 Spark Plan)
+    let unsubscribe: (() => void) | null = null
+    try {
+      const userRef = doc(db, 'users', user.uid)
+      unsubscribe = onSnapshot(
+        userRef,
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data()
+            if (Array.isArray(data.inbox)) {
+              setMailList(data.inbox)
+              if (selectedMail) {
+                const refreshed = data.inbox.find((m: any) => m.id === selectedMail.id)
+                if (refreshed) setSelectedMail(refreshed)
+              }
+            }
+          }
+        },
+        (err) => {
+          console.debug('[MailScreen] Inbox snapshot notice:', err?.message)
+        }
+      )
+    } catch {}
+
+    const handleLocalUpdate = () => {
+      loadInbox()
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('sugar_inbox_updated', handleLocalUpdate)
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('sugar_inbox_updated', handleLocalUpdate)
+      }
+    }
+  }, [user?.uid, selectedMail?.id])
 
   const handleOpenMail = (mail: MailItem) => {
     markMailAsRead(user?.uid, mail.id)

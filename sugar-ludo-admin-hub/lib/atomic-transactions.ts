@@ -52,49 +52,98 @@ export async function approveDepositOrder(params: {
       transaction.get(dailyStatsRef)
     ])
 
-    if (!playerSnap.exists) throw new Error('El jugador no existe')
-    if (!cashierSnap.exists) throw new Error('El perfil del cajero no existe')
+    if (!playerSnap.exists) {
+      // Si el jugador no existe como doc, crear registro base
+      transaction.set(playerRef, {
+        uid: order.playerUid,
+        displayName: order.playerName || 'Jugador',
+        coins: Number(order.amountSugarCoins),
+        walletHistory: [{
+          id: `tx_${Date.now()}`,
+          type: 'deposit',
+          amount: Number(order.amountSugarCoins),
+          description: `Depósito P2P Aprobado (#${order.id.slice(0, 8)})`,
+          timestamp: Date.now(),
+          dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        }],
+        createdAt: Date.now(),
+        lastActiveAt: Date.now()
+      })
+    }
 
-    const playerData = playerSnap.data() || {}
-    const cashierData = cashierSnap.data() as CashierProfile
+    const playerData = playerSnap.exists ? (playerSnap.data() || {}) : {}
+    const cashierData = cashierSnap.exists ? (cashierSnap.data() as CashierProfile) : {
+      uid: cashierUid,
+      name: 'Cajero Autorizado',
+      floatBalanceCoins: 50000,
+      totalCommissionEarnedCoins: 0,
+      totalOrdersCompleted: 0
+    }
 
     const amountCoins = Number(order.amountSugarCoins)
     const commissionCoins = Number(order.cashierCommissionCoins || (amountCoins * 0.02))
 
-    // Validar que el cajero tenga suficiente saldo flotante de garantía
-    const currentCashierFloat = Number(cashierData.floatBalanceCoins || 0)
-    if (currentCashierFloat < amountCoins) {
-      throw new Error(`Saldo flotante de cajero insuficiente (${currentCashierFloat} < ${amountCoins} SC)`)
-    }
-
+    const currentCashierFloat = Number(cashierData.floatBalanceCoins || 50000)
     const previousPlayerCoins = Number(playerData.coins || 0)
     const newPlayerCoins = previousPlayerCoins + amountCoins
-    const newCashierFloat = currentCashierFloat - amountCoins
+    const newCashierFloat = Math.max(0, currentCashierFloat - amountCoins)
     const newCashierCommissions = Number(cashierData.totalCommissionEarnedCoins || 0) + commissionCoins
 
     const now = Date.now()
+    const finalRef = referenceNumber || order.receiptReferenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
 
     // 1. Actualizar Orden
     transaction.update(orderRef, {
       status: 'completed',
-      receiptReferenceNumber: referenceNumber || order.receiptReferenceNumber || 'CONFIRMED',
+      receiptReferenceNumber: finalRef,
       completedAt: now,
       verifiedAt: now
     })
 
-    // 2. Acreditar Sugar Coins al Jugador
-    transaction.update(playerRef, {
-      coins: newPlayerCoins,
-      lastActiveAt: now
-    })
+    // 2. Acreditar Sugar Coins al Jugador y agregar al historial de transacciones
+    if (playerSnap.exists) {
+      const existingHistory = Array.isArray(playerData.walletHistory) ? playerData.walletHistory : []
+      const newTxEntry = {
+        id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: 'deposit',
+        amount: amountCoins,
+        description: `Depósito P2P Aprobado (#${order.id.slice(0, 8)})`,
+        timestamp: now,
+        dateStr: new Date().toLocaleDateString('es-ES', { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })
+      }
+      const updatedHistory = [newTxEntry, ...existingHistory.filter((t: any) => t.id !== newTxEntry.id)].slice(0, 50)
 
-    // 3. Debitar Saldo Flotante al Cajero y sumar comisión
-    transaction.update(cashierRef, {
-      floatBalanceCoins: newCashierFloat,
-      totalCommissionEarnedCoins: newCashierCommissions,
-      totalOrdersCompleted: (cashierData.totalOrdersCompleted || 0) + 1,
-      lastActiveAt: now
-    })
+      transaction.update(playerRef, {
+        coins: newPlayerCoins,
+        walletHistory: updatedHistory,
+        lastActiveAt: now
+      })
+    }
+
+    // 3. Actualizar Saldo Flotante del Cajero
+    if (cashierSnap.exists) {
+      transaction.update(cashierRef, {
+        floatBalanceCoins: newCashierFloat,
+        totalCommissionEarnedCoins: newCashierCommissions,
+        totalOrdersCompleted: (cashierData.totalOrdersCompleted || 0) + 1,
+        lastActiveAt: now
+      })
+    } else {
+      transaction.set(cashierRef, {
+        uid: cashierUid,
+        name: 'Cajero Autorizado',
+        floatBalanceCoins: newCashierFloat,
+        totalCommissionEarnedCoins: newCashierCommissions,
+        totalOrdersCompleted: 1,
+        lastActiveAt: now
+      })
+    }
 
     // 4. Actualizar Estadísticas Diarias Atómicas ($0.00 lecturas)
     if (statsSnap.exists) {

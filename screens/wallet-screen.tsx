@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle, X, Trash2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
+import { usePlayer } from '@/lib/player-context'
 import { db } from '@/lib/firebase'
 import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'
 import {
@@ -18,7 +19,7 @@ import {
 
 export function WalletScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
-  const coins = user ? Number(user.coins || 0) : 0
+  const { coins, setCoins } = usePlayer()
   const [transactions, setTransactions] = useState<WalletTransaction[]>([])
   const [activeOrders, setActiveOrders] = useState<PlayerP2POrder[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -49,20 +50,41 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
             if (data.walletHistory && Array.isArray(data.walletHistory)) {
               setTransactions(data.walletHistory)
             }
+            if (typeof data.coins === 'number') {
+              setCoins(data.coins)
+            }
           }
         },
         (err) => {
-          // Silently handle any permissions or network issues
           console.debug('[WalletScreen] User snapshot notice:', err?.code || err?.message)
         }
       )
     } catch {}
 
-    // 2. Órdenes activas del jugador desde almacenamiento local / servicio seguro
-    fetchActivePlayerOrders(user.uid).then(setActiveOrders)
+    // 2. Escuchar órdenes activas del jugador en tiempo real (Cost $0 Spark Plan)
+    let unsubOrders: (() => void) | null = null
+    try {
+      const q = query(
+        collection(db, 'cashier_orders'),
+        where('playerUid', '==', user.uid)
+      )
+      unsubOrders = onSnapshot(q, (snapshot) => {
+        const liveActive: PlayerP2POrder[] = []
+        snapshot.forEach((docSnap) => {
+          const ord = docSnap.data() as PlayerP2POrder
+          if (ord.status !== 'completed' && ord.status !== 'cancelled') {
+            liveActive.push({ ...ord, id: docSnap.id })
+          }
+        })
+        setActiveOrders(liveActive)
+      }, (err) => {
+        console.debug('[WalletScreen] Orders snapshot notice:', err?.message)
+      })
+    } catch {}
 
     return () => {
       if (unsubUser) unsubUser()
+      if (unsubOrders) unsubOrders()
     }
   }, [user?.uid])
 

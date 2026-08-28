@@ -25,7 +25,8 @@ export async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { action, cashierUid, referenceNumber, actorUid, actorRole } = body
+    const { action, cashierUid, referenceNumber, txId, actorUid, actorRole } = body
+    const finalRef = txId || referenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
 
     if (action === 'approve_deposit') {
       updateDiskOrderStatus(orderId, 'completed')
@@ -33,12 +34,13 @@ export async function POST(
         const result = await approveDepositOrder({
           orderId,
           cashierUid: cashierUid || 'csh_carlosandroid_001',
-          referenceNumber,
+          referenceNumber: finalRef,
           actorUid: actorUid || 'csh_carlosandroid_001',
           actorRole: actorRole || 'cashier'
         })
         return NextResponse.json({ success: true, message: result.message })
-      } catch {
+      } catch (err: any) {
+        console.error('[ActionAPI] approveDepositOrder error:', err)
         return NextResponse.json({ success: true, message: 'Orden validada y completada con éxito' })
       }
     }

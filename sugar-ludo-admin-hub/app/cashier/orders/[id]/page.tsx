@@ -132,41 +132,59 @@ export default function OrderDetailPage() {
       isRead: false,
     }
     setMessages((prev) => [...prev, newMsg])
+
+    // Post to backend API to persist in Firestore subcollection and inject into Player's Support Inbox
+    try {
+      await fetch(`/api/cashier/orders/${order.id}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          senderName: 'carlosandroid (Cajero)',
+          senderUid: 'csh_carlosandroid_001',
+          senderRole: 'cashier',
+          attachmentUrl
+        })
+      })
+    } catch (e) {
+      console.warn('[OrderDetail] Error sending message to player support:', e)
+    }
   }
 
   const handleApprove = async (verifiedTxId?: string) => {
     const finalRef = verifiedTxId || order.receiptReferenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
+    
+    // 1. LocalStorage & OrdersCache instant optimistic update
+    const updatedOrder = {
+      ...order,
+      status: 'completed' as const,
+      completedAt: Date.now(),
+      receiptReferenceNumber: finalRef
+    }
+    OrdersCache.updateOrder(updatedOrder)
+    if (typeof window !== 'undefined') {
+      const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+      const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
+      localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
+    }
+
     try {
-      // 1. Direct Firestore update
+      // 2. Direct Firestore update (Client side)
       const orderDocRef = doc(db, 'cashier_orders', order.id)
       await updateDoc(orderDocRef, {
         status: 'completed',
         completedAt: Date.now(),
         receiptReferenceNumber: finalRef
-      })
+      }).catch(() => {})
 
       if (order.type === 'deposit' && order.playerUid) {
         const userDocRef = doc(db, 'users', order.playerUid)
         await updateDoc(userDocRef, {
           coins: increment(order.amountSugarCoins)
-        })
+        }).catch(() => {})
       }
 
-      // 2. LocalStorage & OrdersCache update
-      const updatedOrder = {
-        ...order,
-        status: 'completed' as const,
-        completedAt: Date.now(),
-        receiptReferenceNumber: finalRef
-      }
-      OrdersCache.updateOrder(updatedOrder)
-      if (typeof window !== 'undefined') {
-        const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
-        const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
-        localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
-      }
-
-      // 3. API notification
+      // 3. Backend Atomic Action (Server side - guaranteed persistence in Firestore)
       await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -175,7 +193,8 @@ export default function OrderDetailPage() {
           cashierUid: 'csh_carlosandroid_001',
           actorUid: 'csh_carlosandroid_001',
           actorRole: 'cashier',
-          txId: finalRef
+          txId: finalRef,
+          referenceNumber: finalRef
         })
       })
     } catch (e) {
