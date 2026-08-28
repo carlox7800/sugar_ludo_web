@@ -2,6 +2,7 @@ import { db } from './firebase'
 import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore'
 import { recordWalletTransaction } from './wallet-service'
 import { APP_VERSION } from './constants'
+import { getLiveCoinPackages } from './economy-service'
 
 export type ItemRarity = 'common' | 'rare' | 'epic' | 'legendary'
 export type ItemCategory = 'board' | 'token' | 'dice' | 'emote' | 'booster'

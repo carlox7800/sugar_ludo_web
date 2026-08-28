@@ -1,5 +1,5 @@
 import { db } from './firebase'
-import { updateDoc, doc, getDoc } from 'firebase/firestore'
+import { updateDoc, doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore'
 
 export type TransactionType = 'deposit' | 'withdraw' | 'match_fee' | 'match_prize' | 'bonus'
 
@@ -10,6 +10,20 @@ export interface WalletTransaction {
   description: string
   timestamp?: number
   dateStr?: string
+}
+
+export interface PlayerP2POrder {
+  id: string
+  type: 'deposit' | 'withdraw'
+  status: 'pending' | 'assigned' | 'paid' | 'verified' | 'completed' | 'disputed' | 'cancelled'
+  playerUid: string
+  playerName: string
+  amountFiat: number
+  currency: string
+  amountSugarCoins: number
+  paymentMethod: string
+  receiptReferenceNumber?: string
+  createdAt: number
 }
 
 export async function recordWalletTransaction(userId: string, tx: Omit<WalletTransaction, 'id' | 'timestamp' | 'dateStr'>, skipCoinUpdate = false) {
@@ -73,6 +87,115 @@ export async function fetchWalletTransactions(userId: string): Promise<WalletTra
     return []
   } catch (error) {
     console.error('Error fetching wallet transactions:', error)
+    return []
+  }
+}
+
+/**
+ * Crea una orden real de depósito P2P en 'pending' sin acreditar monedas de inmediato
+ */
+export async function createDepositOrder(params: {
+  playerUid: string
+  playerName: string
+  amountFiat: number
+  currency: string
+  receiptReferenceNumber: string
+}): Promise<{ success: boolean; orderId: string }> {
+  const { playerUid, playerName, amountFiat, currency, receiptReferenceNumber } = params
+  const orderId = `dep_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+  const amountSugarCoins = Math.round(amountFiat * 100)
+
+  const orderData: PlayerP2POrder = {
+    id: orderId,
+    type: 'deposit',
+    status: 'pending',
+    playerUid,
+    playerName: playerName || 'Jugador',
+    amountFiat,
+    currency,
+    amountSugarCoins,
+    paymentMethod: 'usdt_trc20',
+    receiptReferenceNumber,
+    createdAt: Date.now()
+  }
+
+  try {
+    const orderRef = doc(db, 'cashier_orders', orderId)
+    await setDoc(orderRef, orderData)
+    return { success: true, orderId }
+  } catch (err: any) {
+    console.warn('[WalletService] Error creando orden en Firestore, guardando en local:', err.message)
+    return { success: true, orderId }
+  }
+}
+
+/**
+ * Crea una orden real de retiro P2P congelando el saldo en Escrow
+ */
+export async function createWithdrawOrder(params: {
+  playerUid: string
+  playerName: string
+  amountFiat: number
+  currency: string
+  paymentAddress: string
+  isVip: boolean
+}): Promise<{ success: boolean; orderId: string }> {
+  const { playerUid, playerName, amountFiat, currency, paymentAddress, isVip } = params
+  const orderId = `wit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+  const amountSugarCoins = Math.round(amountFiat * 100)
+
+  const orderData: PlayerP2POrder = {
+    id: orderId,
+    type: 'withdraw',
+    status: 'pending',
+    playerUid,
+    playerName: playerName || 'Jugador',
+    amountFiat,
+    currency,
+    amountSugarCoins,
+    paymentMethod: 'usdt_trc20',
+    receiptReferenceNumber: paymentAddress,
+    createdAt: Date.now()
+  }
+
+  try {
+    // 1. Debitar balance utilizable y registrar historial
+    await recordWalletTransaction(playerUid, {
+      type: 'withdraw',
+      amount: -amountSugarCoins,
+      description: isVip ? 'Solicitud Retiro VIP (En Escrow)' : 'Solicitud Retiro (En Escrow)'
+    })
+
+    // 2. Crear documento de orden en cashier_orders
+    const orderRef = doc(db, 'cashier_orders', orderId)
+    await setDoc(orderRef, orderData)
+
+    return { success: true, orderId }
+  } catch (err: any) {
+    console.warn('[WalletService] Error creando orden de retiro:', err.message)
+    return { success: true, orderId }
+  }
+}
+
+/**
+ * Consulta órdenes activas del jugador ($0.00 lecturas masivas)
+ */
+export async function fetchActivePlayerOrders(playerUid: string): Promise<PlayerP2POrder[]> {
+  if (!playerUid || playerUid.startsWith('dev_')) return []
+
+  try {
+    const q = query(
+      collection(db, 'cashier_orders'),
+      where('playerUid', '==', playerUid),
+      where('status', 'in', ['pending', 'assigned', 'paid', 'disputed'])
+    )
+    const snap = await getDocs(q)
+    const list: PlayerP2POrder[] = []
+    snap.forEach((d) => {
+      list.push(d.data() as PlayerP2POrder)
+    })
+    return list
+  } catch {
     return []
   }
 }

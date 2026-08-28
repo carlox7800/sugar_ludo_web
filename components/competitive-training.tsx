@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useSocket } from '@/lib/useSocket'
 import { useAuth } from '@/lib/auth-context'
 import { GameGuideModal } from '@/components/game-guide-modal'
+import { getLiveEconomyMatrix, subscribeToEconomyUpdates } from '@/lib/economy-service'
 
 const PLAYER_OPTIONS = [2, 3, 4, 5, 6]
 
@@ -26,6 +27,14 @@ export function CompetitiveTraining({
 }) {
   const { connect, status, getSocketInstance } = useSocket()
   const { user, deductCoins } = useAuth()
+  const [economyMatrix, setEconomyMatrix] = useState(getLiveEconomyMatrix())
+
+  useEffect(() => {
+    const unsub = subscribeToEconomyUpdates(() => {
+      setEconomyMatrix({ ...getLiveEconomyMatrix() })
+    })
+    return () => unsub()
+  }, [])
 
   // Tabs: 'quick' | 'friends'
   const [mainTab, setMainTab] = useState<'quick' | 'friends'>('quick')

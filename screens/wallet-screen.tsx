@@ -1,19 +1,33 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-import { fetchWalletTransactions, recordWalletTransaction, WalletTransaction } from '@/lib/wallet-service'
+import {
+  fetchWalletTransactions,
+  createDepositOrder,
+  createWithdrawOrder,
+  fetchActivePlayerOrders,
+  WalletTransaction,
+  PlayerP2POrder
+} from '@/lib/wallet-service'
 
 export function WalletScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const coins = user ? Number(user.coins || 0) : 0
   const [transactions, setTransactions] = useState<WalletTransaction[]>([])
+  const [activeOrders, setActiveOrders] = useState<PlayerP2POrder[]>([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
   
-  useEffect(() => {
+  const refreshData = () => {
     if (user?.uid) {
       fetchWalletTransactions(user.uid).then(setTransactions)
+      fetchActivePlayerOrders(user.uid).then(setActiveOrders)
     }
+  }
+
+  useEffect(() => {
+    refreshData()
   }, [user?.uid])
 
   // Tab State
@@ -30,7 +44,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
   // UI States
   const [isCopied, setIsCopied] = useState(false)
-  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'info' } | null>(null)
+  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'info' | 'error' } | null>(null)
 
   const usdtEquivalent = (coins / 100).toFixed(2)
 
@@ -40,9 +54,9 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
     setTimeout(() => setIsCopied(false), 2000)
   }
 
-  const showNotification = (message: string) => {
-    setNotification({ message, type: 'success' })
-    setTimeout(() => setNotification(null), 3000)
+  const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setNotification({ message, type })
+    setTimeout(() => setNotification(null), 4500)
   }
 
   const handleDepositSubmit = async (e: React.FormEvent) => {
@@ -51,23 +65,36 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
     const amount = parseInt(depositAmount, 10)
     if (isNaN(amount) || amount <= 0) {
-      setNotification({ message: 'Ingrese un monto válido', type: 'info' })
+      showNotification('Ingrese un monto válido mayor a 0', 'error')
       return
     }
-    
-    const coinsToAdd = amount * 100
-    await recordWalletTransaction(user.uid, {
-      type: 'deposit',
-      amount: coinsToAdd,
-      description: 'Depósito simulado USDT',
-    })
-    
-    setDepositAmount('')
-    setTxId('')
-    showNotification(`Depósito acreditado con éxito (+${coinsToAdd} Coins)`)
-    
-    // Refresh local UI data
-    fetchWalletTransactions(user.uid).then(setTransactions)
+
+    if (!txId.trim()) {
+      showNotification('Ingrese el comprobante / Hash TxID', 'error')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const res = await createDepositOrder({
+        playerUid: user.uid,
+        playerName: user.nickname || user.displayName || 'Jugador',
+        amountFiat: amount,
+        currency: 'USDT',
+        receiptReferenceNumber: txId.trim()
+      })
+
+      if (res.success) {
+        setDepositAmount('')
+        setTxId('')
+        showNotification(`Solicitud #${res.orderId.slice(0, 10)} enviada al cajero. Se acreditará al validar.`, 'success')
+        refreshData()
+      }
+    } catch {
+      showNotification('Error al registrar la solicitud de depósito', 'error')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
@@ -76,29 +103,43 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
     const amount = parseInt(withdrawAmount, 10)
     if (isNaN(amount) || amount <= 0) {
-      setNotification({ message: 'Ingrese un monto válido', type: 'info' })
+      showNotification('Ingrese un monto válido', 'error')
       return
     }
 
     const coinsToDeduct = amount * 100
     if (coins < coinsToDeduct) {
-      setNotification({ message: 'Saldo insuficiente', type: 'info' })
-      setTimeout(() => setNotification(null), 3000)
+      showNotification('Saldo insuficiente de Sugar Coins', 'error')
       return
     }
 
-    await recordWalletTransaction(user.uid, {
-      type: 'withdraw',
-      amount: -coinsToDeduct,
-      description: isVipWithdraw ? 'Retiro VIP' : 'Retiro Estándar',
-    })
+    if (!withdrawAddress.trim()) {
+      showNotification('Ingrese la dirección TRC20 de destino', 'error')
+      return
+    }
 
-    setWithdrawAmount('')
-    setWithdrawAddress('')
-    showNotification(`Retiro procesado con éxito (-${coinsToDeduct} Coins)`)
-    
-    // Refresh local UI data
-    fetchWalletTransactions(user.uid).then(setTransactions)
+    setIsSubmitting(true)
+    try {
+      const res = await createWithdrawOrder({
+        playerUid: user.uid,
+        playerName: user.nickname || user.displayName || 'Jugador',
+        amountFiat: amount,
+        currency: 'USDT',
+        paymentAddress: withdrawAddress.trim(),
+        isVip: isVipWithdraw
+      })
+
+      if (res.success) {
+        setWithdrawAmount('')
+        setWithdrawAddress('')
+        showNotification(`Solicitud de retiro enviada (-${coinsToDeduct} SC en Escrow).`, 'success')
+        refreshData()
+      }
+    } catch {
+      showNotification('Error al procesar la solicitud de retiro', 'error')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -178,9 +219,13 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
           {/* Notification Toast */}
           {notification && (
-            <div className="animate-slide-in flex items-center gap-3 rounded-2xl border border-[var(--candy-cyan)]/30 bg-[var(--candy-cyan)]/10 p-4 text-[var(--candy-cyan)]">
-              <Check className="size-5 shrink-0" />
-              <span className="font-display text-sm font-bold">{notification.message}</span>
+            <div className={`animate-slide-in flex items-center gap-3 rounded-2xl border p-4 text-sm font-bold ${
+              notification.type === 'error'
+                ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                : 'border-[var(--candy-cyan)]/30 bg-[var(--candy-cyan)]/10 text-[var(--candy-cyan)]'
+            }`}>
+              {notification.type === 'error' ? <AlertCircle className="size-5 shrink-0" /> : <Check className="size-5 shrink-0" />}
+              <span className="font-display">{notification.message}</span>
             </div>
           )}
 
@@ -191,7 +236,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                 {/* TRC20 Address */}
                 <div className="flex flex-col gap-2 rounded-2xl border border-border bg-[oklch(1_0_0/0.02)] p-5">
                   <span className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    1. Envía USDT a esta Dirección TRC20
+                    1. Envía USDT a esta Dirección TRC20 Oficial
                   </span>
                   <div className="mt-1 flex items-center justify-between rounded-xl bg-[oklch(0_0_0/0.2)] p-3 border border-border/50">
                     <span className="font-mono text-sm tracking-tight text-foreground truncate mr-3">
@@ -210,7 +255,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                 {/* Deposit Details */}
                 <div className="flex flex-col gap-3 rounded-2xl border border-border bg-[oklch(1_0_0/0.02)] p-5">
                   <span className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    2. Detalles del Pago
+                    2. Informar Comprobante para Validación
                   </span>
                   <div className="flex flex-col gap-3 mt-1">
                     <div className="relative">
@@ -236,8 +281,12 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                   </div>
                 </div>
                 
-                <button type="submit" className="btn-3d w-full rounded-xl bg-[var(--candy-cyan)] py-4 font-display text-base font-extrabold text-[oklch(0.18_0.03_285)] shadow-[0_4px_12px_oklch(0.82_0.15_200/0.4)]">
-                  INFORMAR DEPÓSITO
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="btn-3d w-full rounded-xl bg-[var(--candy-cyan)] py-4 font-display text-base font-extrabold text-[oklch(0.18_0.03_285)] shadow-[0_4px_12px_oklch(0.82_0.15_200/0.4)] disabled:opacity-50"
+                >
+                  {isSubmitting ? 'ENVIANDO SOLICITUD...' : 'INFORMAR DEPÓSITO (P2P)'}
                 </button>
               </form>
             ) : (
@@ -287,39 +336,86 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                   </button>
                 </div>
 
-                <button type="submit" className="btn-3d w-full rounded-xl bg-[var(--candy-magenta)] py-4 font-display text-base font-extrabold text-primary-foreground shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)]">
-                  SOLICITAR RETIRO
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="btn-3d w-full rounded-xl bg-[var(--candy-magenta)] py-4 font-display text-base font-extrabold text-primary-foreground shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)] disabled:opacity-50"
+                >
+                  {isSubmitting ? 'PROCESANDO RETIRO...' : 'SOLICITAR RETIRO EN ESCROW'}
                 </button>
               </form>
             )}
           </div>
         </div>
 
-        {/* Columna Derecha: Movimientos (Scroll independiente) */}
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2 px-1">
-            <History className="size-5 text-muted-foreground" />
-            <h3 className="font-display text-base font-bold text-muted-foreground">Movimientos Recientes</h3>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar max-h-[550px] flex flex-col gap-3">
-            {transactions.length === 0 ? (
-              <div className="text-center text-muted-foreground p-8 font-display text-sm">
-                No hay movimientos recientes
+        {/* Columna Derecha: Órdenes P2P Activas + Historial */}
+        <div className="flex flex-col gap-5">
+          {/* Órdenes P2P Activas en Proceso */}
+          {activeOrders.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 px-1 text-amber-300">
+                <Clock className="size-4 animate-spin" />
+                <h3 className="font-display text-sm font-bold uppercase tracking-wider">Órdenes en Validación (P2P)</h3>
               </div>
-            ) : (
-              transactions.map(tx => (
-                <TransactionItem 
-                  key={tx.id}
-                  type={tx.amount > 0 ? 'deposit' : 'withdrawal'}
-                  title={tx.description}
-                  date={tx.dateStr || 'Reciente'}
-                  amount={`${tx.amount > 0 ? '+' : ''}${tx.amount}`}
-                  usdtEquivalent={Math.abs(tx.amount / 100).toFixed(2)}
-                  color={tx.amount > 0 ? (tx.type === 'match_prize' ? 'var(--candy-gold)' : 'var(--candy-cyan)') : 'var(--candy-magenta)'}
-                />
-              ))
-            )}
+              <div className="flex flex-col gap-2">
+                {activeOrders.map((ord) => (
+                  <div
+                    key={ord.id}
+                    className="glass flex items-center justify-between p-3.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300">
+                        {ord.type === 'deposit' ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-foreground">
+                            {ord.type === 'deposit' ? 'Depósito' : 'Retiro'} #{ord.id.slice(0, 8)}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-extrabold text-[10px] uppercase">
+                            {ord.status === 'pending' ? 'En Cola' : ord.status}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground font-mono">
+                          {ord.amountFiat} {ord.currency} ➔ {ord.amountSugarCoins.toLocaleString()} SC
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-amber-300/80 font-semibold text-right">
+                      Esperando<br />Cajero
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Historial de Movimientos */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 px-1">
+              <History className="size-5 text-muted-foreground" />
+              <h3 className="font-display text-base font-bold text-muted-foreground">Movimientos Recientes</h3>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar max-h-[450px] flex flex-col gap-3">
+              {transactions.length === 0 ? (
+                <div className="text-center text-muted-foreground p-8 font-display text-sm">
+                  No hay movimientos recientes
+                </div>
+              ) : (
+                transactions.map(tx => (
+                  <TransactionItem 
+                    key={tx.id}
+                    type={tx.amount > 0 ? 'deposit' : 'withdrawal'}
+                    title={tx.description}
+                    date={tx.dateStr || 'Reciente'}
+                    amount={`${tx.amount > 0 ? '+' : ''}${tx.amount}`}
+                    usdtEquivalent={Math.abs(tx.amount / 100).toFixed(2)}
+                    color={tx.amount > 0 ? (tx.type === 'match_prize' ? 'var(--candy-gold)' : 'var(--candy-cyan)') : 'var(--candy-magenta)'}
+                  />
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
