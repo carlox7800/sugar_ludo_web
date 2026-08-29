@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { CashierOrder } from '../../types/cashier'
 import { ArrowDownLeft, ArrowUpRight, MessageSquare, Clock, ShieldCheck, Eye, AlertTriangle } from 'lucide-react'
 import { clsx } from 'clsx'
+import { cashierLogger } from '../../lib/cashier-logger'
 
 interface OrderCardProps {
   order: CashierOrder
@@ -129,6 +130,14 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
         <Link
           href={`/cashier/orders/${order.id}`}
+          onClick={() => {
+            cashierLogger.click(`Gestionar / Chat para orden #${order.id.slice(0, 8)}`, {
+              id: order.id,
+              type: order.type,
+              status: order.status,
+              player: order.playerName
+            })
+          }}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-bold transition-colors"
         >
           <MessageSquare className="size-3.5 text-cyan-400" />
@@ -138,7 +147,10 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
         <div className="flex items-center gap-2">
           {order.receiptUrl && onViewReceipt && (
             <button
-              onClick={() => onViewReceipt(order)}
+              onClick={() => {
+                cashierLogger.click(`Ver Comprobante de orden #${order.id.slice(0, 8)}`)
+                onViewReceipt(order)
+              }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-colors cursor-pointer"
             >
               <Eye className="size-3.5" />
@@ -148,7 +160,10 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
 
           {isPaid && onApproveOrder && (
             <button
-              onClick={() => onApproveOrder(order.id)}
+              onClick={() => {
+                cashierLogger.click(`Liberar Saldo directo para orden #${order.id.slice(0, 8)}`)
+                onApproveOrder(order.id)
+              }}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 text-xs font-black shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all cursor-pointer"
             >
               <ShieldCheck className="size-4" />

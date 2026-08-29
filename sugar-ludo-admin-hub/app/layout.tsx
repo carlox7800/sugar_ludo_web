@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { AdminAuthProvider } from '../lib/admin-auth-context'
+import { CashierLogPanel } from '../components/cashier/CashierLogPanel'
 
 export const metadata: Metadata = {
   title: 'Sugar Ludo - Hub Administrativo & Cajeros',
@@ -17,6 +18,7 @@ export default function RootLayout({
       <body className="bg-[#090d16] text-slate-100 min-h-screen antialiased selection:bg-cyan-500 selection:text-black">
         <AdminAuthProvider>
           {children}
+          <CashierLogPanel />
         </AdminAuthProvider>
       </body>
     </html>

@@ -8,6 +8,7 @@ import { OrderCard } from '../../components/orders/OrderCard'
 import { ReceiptImageViewer } from '../../components/receipts/ReceiptImageViewer'
 import { CashierAdminChatModal } from '../../components/cashier/CashierAdminChatModal'
 import { CashierLogPanel } from '../../components/cashier/CashierLogPanel'
+import { cashierLogger } from '../../lib/cashier-logger'
 import { useAdminAuth } from '../../lib/admin-auth-context'
 import { db } from '../../lib/firebase'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
@@ -102,12 +103,14 @@ export default function CashierMainDeskPage() {
 
   const fetchOrders = async (isManualRefresh = false) => {
     if (isManualRefresh) setIsLoading(true)
+    cashierLogger.api(`Consultando órdenes en /api/cashier/orders`, { isManualRefresh })
     try {
       // 1. Instant check from cache
       const cached = OrdersCache.get()
       if (cached && cached.length > 0 && !isManualRefresh) {
         setOrders(cached)
         setIsLoading(false)
+        cashierLogger.info(`Órdenes cargadas desde caché de memoria (${cached.length} órdenes)`)
       }
 
       // 2. Fetch API only if stale or manual refresh
@@ -118,17 +121,25 @@ export default function CashierMainDeskPage() {
           if (data.orders && Array.isArray(data.orders)) {
             setOrders(data.orders)
             OrdersCache.set(data.orders)
+            cashierLogger.api(`Fetch /api/cashier/orders exitoso`, { totalOrders: data.orders.length })
           }
+        } else {
+          cashierLogger.error(`Error HTTP ${res.status} al consultar /api/cashier/orders`)
         }
       }
-    } catch (e) {
-      console.warn('[CashierDesk] Error fetching orders:', e)
+    } catch (e: any) {
+      cashierLogger.error(`Error al consultar /api/cashier/orders`, { message: e?.message })
     } finally {
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
+    cashierLogger.info(`Bandeja principal de cajero montada`, {
+      cajero: currentCashier.name,
+      uid: currentCashier.uid,
+      float: currentCashier.floatBalanceCoins
+    })
     fetchOrders()
 
     // 1. Local BroadcastChannel for zero-latency peer updates
@@ -139,6 +150,7 @@ export default function CashierMainDeskPage() {
         channel.onmessage = (event) => {
           if (event.data?.type === 'p2p_data' && event.data?.dataType === 'new_cashier_order' && event.data?.order) {
             const newOrd = event.data.order as CashierOrder
+            cashierLogger.info(`Nueva orden recibida vía BroadcastChannel local`, { id: newOrd.id, type: newOrd.type })
             setOrders((prev) => {
               const updated = [newOrd, ...prev.filter((o) => o.id !== newOrd.id)]
               OrdersCache.set(updated)
@@ -153,22 +165,27 @@ export default function CashierMainDeskPage() {
     // 2. Realtime subscription to Firestore (Spark Plan Cost $0 with limit)
     let unsubscribe: (() => void) | null = null
     try {
+      cashierLogger.firestore(`Iniciando listener onSnapshot en colección cashier_orders (limit 50)`)
       const q = query(collection(db, 'cashier_orders'), limit(50))
       unsubscribe = onSnapshot(q, (snapshot) => {
         const liveOrders: CashierOrder[] = []
         snapshot.forEach((docSnap) => {
           liveOrders.push({ ...docSnap.data(), id: docSnap.id } as CashierOrder)
         })
+        cashierLogger.firestore(`Listener onSnapshot recibió actualización de colección`, { totalDocs: liveOrders.length })
         if (liveOrders.length > 0 || snapshot.empty) {
           setOrders(liveOrders)
           OrdersCache.set(liveOrders)
           setIsLoading(false)
         }
       }, (err) => {
-        console.debug('[CashierDesk] Firestore onSnapshot notice:', err.message)
+        cashierLogger.error(`Error en listener onSnapshot de cashier_orders`, {
+          code: err?.code,
+          message: err?.message
+        })
       })
-    } catch (e) {
-      console.warn('[CashierDesk] Listener setup error:', e)
+    } catch (e: any) {
+      cashierLogger.error(`Excepción al conectar listener de cashier_orders`, { message: e?.message })
     }
 
     return () => {
@@ -178,8 +195,9 @@ export default function CashierMainDeskPage() {
   }, [])
 
   const handleApprove = async (orderId: string) => {
+    cashierLogger.action(`Aprobando depósito rápido desde la bandeja`, { orderId })
     try {
-      await fetch(`/api/cashier/orders/${orderId}/action`, {
+      const res = await fetch(`/api/cashier/orders/${orderId}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -189,7 +207,15 @@ export default function CashierMainDeskPage() {
           actorRole: 'cashier'
         })
       })
-    } catch {}
+      const actionRes = await res.json()
+      if (res.ok) {
+        cashierLogger.api(`Respuesta exitosa de approve_deposit rápido`, { actionRes })
+      } else {
+        cashierLogger.error(`Error en respuesta de approve_deposit rápido`, { actionRes })
+      }
+    } catch (e: any) {
+      cashierLogger.error(`Excepción al ejecutar approve_deposit rápido`, { message: e?.message })
+    }
 
     const updated = orders.map((o) =>
       o.id === orderId
@@ -203,6 +229,7 @@ export default function CashierMainDeskPage() {
   }
 
   const handleLogout = () => {
+    cashierLogger.click(`Cerrar Sesión de Cajero`)
     logout()
     if (typeof window !== 'undefined') {
       localStorage.removeItem('sugar_cashier_session')
@@ -289,7 +316,10 @@ export default function CashierMainDeskPage() {
             {/* Shift / Date Range Filter */}
             <div className="flex items-center p-1 bg-slate-900/90 rounded-2xl border border-white/10 text-xs">
               <button
-                onClick={() => setDateFilter('today')}
+                onClick={() => {
+                  cashierLogger.click(`Filtro Rango Fecha: Hoy (Turno)`)
+                  setDateFilter('today')
+                }}
                 className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
                   dateFilter === 'today'
                     ? 'bg-cyan-500 text-slate-950 shadow-sm'
@@ -299,7 +329,10 @@ export default function CashierMainDeskPage() {
                 Hoy (Turno)
               </button>
               <button
-                onClick={() => setDateFilter('week')}
+                onClick={() => {
+                  cashierLogger.click(`Filtro Rango Fecha: 7 Días`)
+                  setDateFilter('week')
+                }}
                 className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
                   dateFilter === 'week'
                     ? 'bg-cyan-500 text-slate-950 shadow-sm'
@@ -309,7 +342,10 @@ export default function CashierMainDeskPage() {
                 7 Días
               </button>
               <button
-                onClick={() => setDateFilter('all')}
+                onClick={() => {
+                  cashierLogger.click(`Filtro Rango Fecha: Historial Todo`)
+                  setDateFilter('all')
+                }}
                 className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
                   dateFilter === 'all'
                     ? 'bg-cyan-500 text-slate-950 shadow-sm'
@@ -321,7 +357,10 @@ export default function CashierMainDeskPage() {
             </div>
 
             <button
-              onClick={() => fetchOrders(true)}
+              onClick={() => {
+                cashierLogger.click(`Botón Refrescar Órdenes Manualmente`)
+                fetchOrders(true)
+              }}
               disabled={isLoading}
               className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold border border-white/10 transition-colors cursor-pointer shrink-0"
             >
@@ -381,9 +420,6 @@ export default function CashierMainDeskPage() {
         onClose={() => setIsAdminChatOpen(false)}
         cashierName={currentCashier.name}
       />
-
-      {/* Floating Diagnostic Log Console */}
-      <CashierLogPanel />
     </div>
   )
 }

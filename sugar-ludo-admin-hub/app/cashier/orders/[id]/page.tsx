@@ -8,6 +8,7 @@ import { ReceiptImageViewer } from '../../../../components/receipts/ReceiptImage
 import { OrderChatPanel } from '../../../../components/chat/OrderChatPanel'
 import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/WithdrawalAuditInspectorCard'
 import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
+import { cashierLogger } from '../../../../lib/cashier-logger'
 import { db } from '../../../../lib/firebase'
 import { doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore'
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check, Copy, RefreshCw } from 'lucide-react'
@@ -39,29 +40,36 @@ export default function OrderDetailPage() {
   // Baseline instant fallback to guarantee immediate UI rendering (<50ms)
   useEffect(() => {
     if (!orderId) return
+    cashierLogger.info(`Abriendo vista de detalle para Orden #${orderId.slice(0, 10)}`, { orderId })
 
     // 1. Check local storage / OrdersCache
     const cached = OrdersCache.get()
     const foundCached = cached?.find((o) => o.id === orderId)
     if (foundCached) {
       setOrder(foundCached)
+      cashierLogger.info(`Orden cargada desde caché local de memoria`, { id: foundCached.id, status: foundCached.status, type: foundCached.type })
       if (foundCached.receiptUrl) setActiveReceiptUrl(foundCached.receiptUrl)
     }
 
     // 2. Fetch single order API directly (/api/cashier/orders/[id])
+    cashierLogger.api(`Consultando API interna /api/cashier/orders/${orderId}`)
     fetch(`/api/cashier/orders/${orderId}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.order) {
           setOrder(data.order)
+          cashierLogger.api(`Respuesta exitosa de /api/cashier/orders/${orderId}`, { status: data.order.status, player: data.order.playerName })
           if (data.order.receiptUrl) setActiveReceiptUrl(data.order.receiptUrl)
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        cashierLogger.error(`Error al consultar /api/cashier/orders/${orderId}`, { message: err?.message })
+      })
 
     // 3. Direct Firestore live subscription
     let unsub: (() => void) | null = null
     try {
+      cashierLogger.firestore(`Iniciando listener onSnapshot en cashier_orders/${orderId}`)
       const orderDocRef = doc(db, 'cashier_orders', orderId)
       unsub = onSnapshot(
         orderDocRef,
@@ -69,32 +77,52 @@ export default function OrderDetailPage() {
           if (snap.exists()) {
             const data = { ...snap.data(), id: snap.id } as CashierOrder
             setOrder(data)
+            cashierLogger.firestore(`Evento onSnapshot recibido para orden #${orderId.slice(0, 8)}`, {
+              status: data.status,
+              type: data.type,
+              amount: data.amountFiat,
+              currency: data.currency,
+              refNumber: data.receiptReferenceNumber
+            })
             if (data.receiptUrl) setActiveReceiptUrl(data.receiptUrl)
+          } else {
+            cashierLogger.firestore(`Documento cashier_orders/${orderId} no existe en Firestore`)
           }
         },
         (err) => {
-          console.debug('[OrderDetail] Firestore snapshot notice:', err?.message)
+          cashierLogger.error(`Error en listener onSnapshot de orden #${orderId.slice(0, 8)}`, {
+            code: err?.code,
+            message: err?.message
+          })
         }
       )
-    } catch {}
+    } catch (e: any) {
+      cashierLogger.error(`Excepción al conectar listener Firestore`, { message: e?.message })
+    }
 
     // 4. Fallback timeout: if still null after 800ms, populate standard object so UI renders
     const timer = setTimeout(() => {
-      setOrder((prev) => prev || {
-        id: orderId,
-        type: orderId.includes('wit') ? 'withdraw' : 'deposit',
-        status: 'pending',
-        playerUid: 'usr_player',
-        playerName: 'Jugador',
-        amountFiat: 50.0,
-        currency: 'USDT',
-        exchangeRate: 100,
-        amountSugarCoins: 5000,
-        cashierCommissionCoins: orderId.includes('wit') ? 150 : 100,
-        paymentMethod: 'usdt_trc20',
-        createdAt: Date.now(),
-        expiresAt: Date.now() + 1800000
-      } as CashierOrder)
+      setOrder((prev) => {
+        if (!prev) {
+          cashierLogger.info(`Inicializando objeto de orden predeterminado tras timeout de 800ms`)
+          return {
+            id: orderId,
+            type: orderId.includes('wit') ? 'withdraw' : 'deposit',
+            status: 'pending',
+            playerUid: 'usr_player',
+            playerName: 'Jugador',
+            amountFiat: 50.0,
+            currency: 'USDT',
+            exchangeRate: 100,
+            amountSugarCoins: 5000,
+            cashierCommissionCoins: orderId.includes('wit') ? 150 : 100,
+            paymentMethod: 'usdt_trc20',
+            createdAt: Date.now(),
+            expiresAt: Date.now() + 1800000
+          } as CashierOrder
+        }
+        return prev
+      })
     }, 800)
 
     return () => {
@@ -122,6 +150,13 @@ export default function OrderDetailPage() {
   const [isValidating, setIsValidating] = useState(false)
 
   const handleSendMessage = async (text: string, attachmentUrl?: string) => {
+    cashierLogger.click(`Enviar Mensaje de Chat`, {
+      orderId: order.id,
+      playerUid: order.playerUid,
+      messagePreview: text.slice(0, 40),
+      hasAttachment: !!attachmentUrl
+    })
+
     const newMsg: OrderChatMessage = {
       id: `msg_${Date.now()}`,
       orderId: order.id,
@@ -139,6 +174,7 @@ export default function OrderDetailPage() {
     // 1. Client-Side direct Firestore update for zero latency
     try {
       if (order.playerUid) {
+        cashierLogger.firestore(`Intentando actualizar users/${order.playerUid}.inbox vía Client SDK`)
         const userDocRef = doc(db, 'users', order.playerUid)
         const userSnap = await getDoc(userDocRef)
         if (userSnap.exists()) {
@@ -187,16 +223,23 @@ export default function OrderDetailPage() {
 
           await updateDoc(userDocRef, {
             inbox: inbox.slice(0, 50)
-          }).catch(() => {})
+          })
+          cashierLogger.firestore(`Escritura exitosa en users/${order.playerUid}.inbox (Client SDK)`)
+        } else {
+          cashierLogger.firestore(`Documento users/${order.playerUid} no encontrado en Firestore`)
         }
       }
-    } catch (clientErr) {
-      console.warn('[OrderDetail] Client-side Firestore message sync notice:', clientErr)
+    } catch (clientErr: any) {
+      cashierLogger.error(`Error en escritura Client SDK a users/${order.playerUid}.inbox`, {
+        code: clientErr?.code,
+        message: clientErr?.message
+      })
     }
 
     // 2. Post to backend API to guarantee backup persistence
     try {
-      await fetch(`/api/cashier/orders/${order.id}/message`, {
+      cashierLogger.api(`POST /api/cashier/orders/${order.id}/message`)
+      const res = await fetch(`/api/cashier/orders/${order.id}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -208,13 +251,26 @@ export default function OrderDetailPage() {
           playerUid: order.playerUid
         })
       })
-    } catch (e) {
-      console.warn('[OrderDetail] Error sending message to player support:', e)
+      const data = await res.json()
+      if (res.ok) {
+        cashierLogger.api(`Respuesta exitosa de /api/cashier/orders/${order.id}/message`, { data })
+      } else {
+        cashierLogger.error(`Respuesta con error de /api/cashier/orders/${order.id}/message (HTTP ${res.status})`, { data })
+      }
+    } catch (e: any) {
+      cashierLogger.error(`Excepción en fetch /api/cashier/orders/${order.id}/message`, { message: e?.message })
     }
   }
 
   const handleApprove = async (verifiedTxId?: string) => {
     const finalRef = verifiedTxId || order.receiptReferenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
+    cashierLogger.action(`Iniciando Validación y Liberación de Depósito`, {
+      orderId: order.id,
+      amountFiat: order.amountFiat,
+      amountSugarCoins: order.amountSugarCoins,
+      playerUid: order.playerUid,
+      referenceNumber: finalRef
+    })
     setIsValidating(true)
     
     // 1. LocalStorage & OrdersCache instant optimistic update
@@ -230,25 +286,31 @@ export default function OrderDetailPage() {
       const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
       localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
     }
+    cashierLogger.info(`Actualización optimista de orden en caché local completada`)
 
     try {
       // 2. Direct Firestore update (Client side)
+      cashierLogger.firestore(`Actualizando cashier_orders/${order.id} a status: completed`)
       const orderDocRef = doc(db, 'cashier_orders', order.id)
       await updateDoc(orderDocRef, {
         status: 'completed',
         completedAt: Date.now(),
         receiptReferenceNumber: finalRef
-      }).catch(() => {})
+      })
+      cashierLogger.firestore(`Firestore update exitoso en cashier_orders/${order.id}`)
 
       if (order.type === 'deposit' && order.playerUid) {
+        cashierLogger.firestore(`Acreditando saldo +${order.amountSugarCoins} SC a users/${order.playerUid}`)
         const userDocRef = doc(db, 'users', order.playerUid)
         await updateDoc(userDocRef, {
           coins: increment(order.amountSugarCoins)
-        }).catch(() => {})
+        })
+        cashierLogger.firestore(`Saldo acreditado exitosamente a users/${order.playerUid}`)
       }
 
       // 3. Backend Atomic Action (Server side - guaranteed persistence in Firestore)
-      await fetch(`/api/cashier/orders/${order.id}/action`, {
+      cashierLogger.api(`Llamando backend /api/cashier/orders/${order.id}/action con approve_deposit`)
+      const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -260,8 +322,17 @@ export default function OrderDetailPage() {
           referenceNumber: finalRef
         })
       })
-    } catch (e) {
-      console.warn('[OrderDetail] Approve notice:', e)
+      const actionData = await res.json()
+      if (res.ok) {
+        cashierLogger.api(`Respuesta exitosa de acción backend approve_deposit`, { actionData })
+      } else {
+        cashierLogger.error(`Error en acción backend approve_deposit (HTTP ${res.status})`, { actionData })
+      }
+    } catch (e: any) {
+      cashierLogger.error(`Error durante la validación del depósito #${order.id.slice(0, 8)}`, {
+        code: e?.code,
+        message: e?.message
+      })
     } finally {
       setIsValidating(false)
     }
@@ -275,7 +346,17 @@ export default function OrderDetailPage() {
   const [isValidatingPayout, setIsValidatingPayout] = useState(false)
 
   const handleConfirmPayout = async () => {
-    if (!payoutTxId.trim()) return
+    if (!payoutTxId.trim()) {
+      cashierLogger.click(`Intento de Confirmar Pago sin TxID (cancelado)`)
+      return
+    }
+    
+    cashierLogger.action(`Iniciando Liquidación de Retiro`, {
+      orderId: order.id,
+      playerUid: order.playerUid,
+      amountFiat: order.amountFiat,
+      payoutTxId: payoutTxId.trim()
+    })
     setIsValidatingPayout(true)
 
     // 1. LocalStorage & OrdersCache instant optimistic update
@@ -291,18 +372,22 @@ export default function OrderDetailPage() {
       const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
       localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
     }
+    cashierLogger.info(`Actualización optimista de retiro en caché local completada`)
 
     try {
       // 2. Direct Firestore update (Client side)
+      cashierLogger.firestore(`Actualizando cashier_orders/${order.id} a status: completed`)
       const orderDocRef = doc(db, 'cashier_orders', order.id)
       await updateDoc(orderDocRef, {
         status: 'completed',
         completedAt: Date.now(),
         receiptReferenceNumber: payoutTxId.trim()
-      }).catch(() => {})
+      })
+      cashierLogger.firestore(`Firestore update exitoso en cashier_orders/${order.id}`)
 
       // 3. Backend Atomic Action (Server side - guaranteed persistence in Firestore)
-      await fetch(`/api/cashier/orders/${order.id}/action`, {
+      cashierLogger.api(`Llamando backend /api/cashier/orders/${order.id}/action con complete_withdrawal`)
+      const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -313,8 +398,17 @@ export default function OrderDetailPage() {
           payoutTxId: payoutTxId.trim()
         })
       })
-    } catch (e) {
-      console.warn('[OrderDetail] Payout update notice:', e)
+      const resData = await res.json()
+      if (res.ok) {
+        cashierLogger.api(`Respuesta exitosa de acción backend complete_withdrawal`, { resData })
+      } else {
+        cashierLogger.error(`Error en acción backend complete_withdrawal (HTTP ${res.status})`, { resData })
+      }
+    } catch (e: any) {
+      cashierLogger.error(`Error durante la liquidación de retiro #${order.id.slice(0, 8)}`, {
+        code: e?.code,
+        message: e?.message
+      })
     } finally {
       setIsValidatingPayout(false)
     }
@@ -326,6 +420,7 @@ export default function OrderDetailPage() {
   }
 
   const handleCopyHash = (text: string) => {
+    cashierLogger.click(`Copiar Hash/TxID al portapapeles`, { hash: text })
     if (typeof navigator !== 'undefined') {
       navigator.clipboard.writeText(text)
       setCopiedHash(true)
@@ -334,6 +429,7 @@ export default function OrderDetailPage() {
   }
 
   const handleViewCustomImage = (url: string) => {
+    cashierLogger.click(`Abrir visor de imagen comprobante`, { url })
     setActiveReceiptUrl(url)
     setIsReceiptOpen(true)
   }
@@ -380,7 +476,10 @@ export default function OrderDetailPage() {
           <div className="flex items-center gap-2">
             {isPaid ? (
               <button
-                onClick={() => handleApprove()}
+                onClick={() => {
+                  cashierLogger.click(`Botón Validar y Liberar Saldo (Depósito Pagado)`)
+                  handleApprove()
+                }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 text-xs font-black shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-all cursor-pointer"
               >
                 <ShieldCheck className="size-4" />
@@ -389,6 +488,7 @@ export default function OrderDetailPage() {
             ) : (
               <button
                 onClick={() => {
+                  cashierLogger.click(`Botón Validar con Hash / TxID (Abrir modal)`)
                   setDirectTxId(order.receiptReferenceNumber || '')
                   setIsDirectValidationModalOpen(true)
                 }}
@@ -487,7 +587,10 @@ export default function OrderDetailPage() {
             {isWithdraw && order.status !== 'completed' && (
               <div className="pt-2">
                 <button
-                  onClick={() => setIsPayoutModalOpen(true)}
+                  onClick={() => {
+                    cashierLogger.click(`Botón Transferir Dinero y Liquidar Retiro (Abrir modal)`)
+                    setIsPayoutModalOpen(true)
+                  }}
                   className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(236,72,153,0.3)]"
                 >
                   <Send className="size-4" />
@@ -550,7 +653,10 @@ export default function OrderDetailPage() {
             onSendMessage={handleSendMessage}
             onViewImage={handleViewCustomImage}
             isDisputed={order.status === 'disputed'}
-            onOpenDisputeModal={() => setIsDisputeOpen(true)}
+            onOpenDisputeModal={() => {
+              cashierLogger.click(`Abrir Modal de Disputa`)
+              setIsDisputeOpen(true)
+            }}
           />
         </div>
       </main>
@@ -711,9 +817,6 @@ export default function OrderDetailPage() {
         bankName={order.paymentMethod}
         amount={`${order.amountFiat.toLocaleString()} ${order.currency}`}
       />
-
-      {/* Floating Diagnostic Log Console */}
-      <CashierLogPanel />
     </div>
   )
 }
