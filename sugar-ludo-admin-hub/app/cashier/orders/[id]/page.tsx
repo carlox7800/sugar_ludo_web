@@ -573,8 +573,8 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Receipt Preview Thumbnail */}
-            {order.receiptUrl ? (
+            {/* Receipt Preview Thumbnail (solo si existe comprobante adjunto) */}
+            {order.receiptUrl && (
               <div className="space-y-2 pt-2 border-t border-white/10">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-300">Comprobante Bancario</span>
@@ -608,10 +608,6 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="p-6 text-center rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-xs text-slate-500">
-                Esperando que el jugador suba la captura del comprobante bancario...
-              </div>
             )}
           </div>
         </div>
@@ -624,6 +620,8 @@ export default function OrderDetailPage() {
             currentUserName="carlosandroid (Cajero)"
             currentUserRole="cashier"
             messages={messages}
+            counterpartReadAt={order.playerReadAt || 0}
+            isOrderResolved={order.status === 'completed'}
             onSendMessage={handleSendMessage}
             onViewImage={handleViewCustomImage}
             isDisputed={order.status === 'disputed'}

@@ -8,10 +8,11 @@ import { clsx } from 'clsx'
 interface OrderChatMessageItemProps {
   message: OrderChatMessage
   isCurrentUser: boolean
+  isRead?: boolean
   onViewImage?: (imageUrl: string) => void
 }
 
-export function OrderChatMessageItem({ message, isCurrentUser, onViewImage }: OrderChatMessageItemProps) {
+export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, onViewImage }: OrderChatMessageItemProps) {
   const isSystem = message.senderRole === 'system'
   const isAdmin = message.senderRole === 'admin'
   const isCashier = message.senderRole === 'cashier'
@@ -109,7 +110,7 @@ export function OrderChatMessageItem({ message, isCurrentUser, onViewImage }: Or
           )}>
             <span>{formattedTime}</span>
             {isCurrentUser && (
-              message.isRead ? (
+              isRead ? (
                 <CheckCheck className="size-3 text-cyan-200 inline" />
               ) : (
                 <Check className="size-3 text-cyan-200/60 inline" />

@@ -83,6 +83,13 @@ export interface CashierOrder {
   completedAt?: number
   expiresAt: number
 
+  // Lectura y Notificaciones de Soporte
+  playerReadAt?: number
+  cashierReadAt?: number
+  lastMessageTime?: number
+  hasUnreadPlayerMessage?: boolean
+  hasUnreadCashierMessage?: boolean
+
   // Mediación y Disputas
   disputeReason?: string
   disputeOpenedBy?: string

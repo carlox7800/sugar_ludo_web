@@ -191,6 +191,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                 badge: ord.status === 'completed' ? 'Completado' : 'Soporte P2P',
                 orderId: orderId,
                 status: ord.status === 'completed' ? 'resolved' : 'pending',
+                cashierReadAt: Number(ord.cashierReadAt || 0),
+                playerReadAt: Number(ord.playerReadAt || 0),
                 timestamp: lastMsg.timestamp || Date.now(),
                 replies
               })
@@ -230,6 +232,19 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
       }
     }
   }, [user?.uid, selectedMail?.id])
+
+  // Sync real-time read timestamp to Firestore whenever chat modal is open
+  useEffect(() => {
+    if (selectedMail && selectedMail.orderId) {
+      try {
+        const orderRef = doc(db, 'cashier_orders', selectedMail.orderId)
+        updateDoc(orderRef, {
+          playerReadAt: Date.now(),
+          hasUnreadCashierMessage: false
+        }).catch(() => {})
+      } catch {}
+    }
+  }, [selectedMail?.id, selectedMail?.replies?.length])
 
   const handleOpenMail = async (mail: MailItem) => {
     markMailAsRead(user?.uid, mail.id)

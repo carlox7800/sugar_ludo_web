@@ -25,6 +25,8 @@ export interface MailItem {
   timestamp: number
   orderId?: string
   status?: 'pending' | 'resolved'
+  cashierReadAt?: number
+  playerReadAt?: number
   replies?: SupportReply[]
 }
 

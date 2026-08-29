@@ -11,6 +11,8 @@ interface OrderChatPanelProps {
   currentUserName: string
   currentUserRole: 'player' | 'cashier' | 'admin'
   messages: OrderChatMessage[]
+  counterpartReadAt?: number
+  isOrderResolved?: boolean
   onSendMessage: (text: string, attachmentUrl?: string) => Promise<void>
   onViewImage?: (imageUrl: string) => void
   isDisputed?: boolean
@@ -23,6 +25,8 @@ export function OrderChatPanel({
   currentUserName,
   currentUserRole,
   messages,
+  counterpartReadAt,
+  isOrderResolved,
   onSendMessage,
   onViewImage,
   isDisputed,
@@ -109,14 +113,23 @@ export function OrderChatPanel({
             <p className="text-[10px]">Usa el chat para coordinar el pago o resolver dudas con el compañero.</p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <OrderChatMessageItem
-              key={msg.id}
-              message={msg}
-              isCurrentUser={msg.senderUid === currentUserUid}
-              onViewImage={onViewImage}
-            />
-          ))
+          messages.map((msg) => {
+            const isRead = Boolean(
+              msg.isRead || 
+              isOrderResolved || 
+              (counterpartReadAt && counterpartReadAt >= msg.timestamp)
+            )
+
+            return (
+              <OrderChatMessageItem
+                key={msg.id}
+                message={msg}
+                isCurrentUser={msg.senderUid === currentUserUid}
+                isRead={isRead}
+                onViewImage={onViewImage}
+              />
+            )
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
