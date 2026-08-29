@@ -183,13 +183,15 @@ export default function OrderDetailPage() {
           const supportMailId = `mail_sup_${order.id}`
           const existingMailIndex = inbox.findIndex((m: any) => m.id === supportMailId || m.orderId === order.id)
 
-          const replyItem = {
+          const replyItem: any = {
             id: newMsg.id,
             sender: 'carlosandroid (Cajero)',
             senderRole: 'cashier',
             message: text.trim(),
-            timestamp: Date.now(),
-            attachmentUrl
+            timestamp: Date.now()
+          }
+          if (attachmentUrl) {
+            replyItem.attachmentUrl = attachmentUrl
           }
 
           if (existingMailIndex !== -1) {
@@ -204,7 +206,7 @@ export default function OrderDetailPage() {
               replies: [...currentReplies, replyItem]
             }
           } else {
-            const newSupportMail = {
+            const newSupportMail: any = {
               id: supportMailId,
               title: `Consulta de Cajero sobre Orden #${order.id.slice(0, 8)}`,
               sender: 'carlosandroid (Cajero)',
@@ -217,6 +219,9 @@ export default function OrderDetailPage() {
               status: 'pending',
               timestamp: Date.now(),
               replies: [replyItem]
+            }
+            if (attachmentUrl) {
+              newSupportMail.attachmentUrl = attachmentUrl
             }
             inbox.unshift(newSupportMail)
           }
@@ -346,16 +351,14 @@ export default function OrderDetailPage() {
   const [isValidatingPayout, setIsValidatingPayout] = useState(false)
 
   const handleConfirmPayout = async () => {
-    if (!payoutTxId.trim()) {
-      cashierLogger.click(`Intento de Confirmar Pago sin TxID (cancelado)`)
-      return
-    }
+    const finalPayoutRef = payoutTxId.trim() || `TX-PAYOUT-${Date.now().toString(36).toUpperCase()}`
+    setPayoutTxId(finalPayoutRef)
     
     cashierLogger.action(`Iniciando Liquidación de Retiro`, {
       orderId: order.id,
       playerUid: order.playerUid,
       amountFiat: order.amountFiat,
-      payoutTxId: payoutTxId.trim()
+      payoutTxId: finalPayoutRef
     })
     setIsValidatingPayout(true)
 
@@ -364,7 +367,7 @@ export default function OrderDetailPage() {
       ...order,
       status: 'completed' as const,
       completedAt: Date.now(),
-      receiptReferenceNumber: payoutTxId.trim()
+      receiptReferenceNumber: finalPayoutRef
     }
     OrdersCache.updateOrder(updatedOrder)
     if (typeof window !== 'undefined') {
@@ -376,12 +379,12 @@ export default function OrderDetailPage() {
 
     try {
       // 2. Direct Firestore update (Client side)
-      cashierLogger.firestore(`Actualizando cashier_orders/${order.id} a status: completed`)
+      cashierLogger.firestore(`Actualizando cashier_orders/${order.id} a status: completed con ref: ${finalPayoutRef}`)
       const orderDocRef = doc(db, 'cashier_orders', order.id)
       await updateDoc(orderDocRef, {
         status: 'completed',
         completedAt: Date.now(),
-        receiptReferenceNumber: payoutTxId.trim()
+        receiptReferenceNumber: finalPayoutRef
       })
       cashierLogger.firestore(`Firestore update exitoso en cashier_orders/${order.id}`)
 
@@ -395,7 +398,7 @@ export default function OrderDetailPage() {
           cashierUid: 'csh_carlosandroid_001',
           actorUid: 'csh_carlosandroid_001',
           actorRole: 'cashier',
-          payoutTxId: payoutTxId.trim()
+          payoutTxId: finalPayoutRef
         })
       })
       const resData = await res.json()
@@ -413,9 +416,9 @@ export default function OrderDetailPage() {
       setIsValidatingPayout(false)
     }
 
-    setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: payoutTxId.trim() } : null))
+    setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalPayoutRef } : null))
     setIsPayoutModalOpen(false)
-    setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${payoutTxId.trim()}!`)
+    setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${finalPayoutRef}!`)
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -766,32 +769,55 @@ export default function OrderDetailPage() {
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-slate-300 font-bold block text-[10px] uppercase">
-                  Número de Referencia Bancaria / TxID Cripto *
-                </label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-slate-300 font-bold block text-[10px] uppercase">
+                    Número de Referencia Bancaria / TxID Cripto *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const autoRef = `TX-PAYOUT-${Date.now().toString(36).toUpperCase()}`
+                      setPayoutTxId(autoRef)
+                      cashierLogger.click(`Generar Referencia Automática de Retiro`, { autoRef })
+                    }}
+                    className="text-[10px] text-pink-400 hover:text-pink-300 font-bold underline cursor-pointer"
+                  >
+                    ⚡ Generar Automático
+                  </button>
+                </div>
                 <input
                   type="text"
-                  required
                   value={payoutTxId}
                   onChange={(e) => setPayoutTxId(e.target.value)}
                   placeholder="Ej. 0x8f9c... o REF-9928172"
                   className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-pink-400"
                 />
+                <p className="text-[10px] text-slate-400">
+                  Ingresa el código tras transferir los fondos o usa <strong>⚡ Generar Automático</strong>.
+                </p>
               </div>
             </div>
 
             <div className="flex gap-3 pt-2">
               <button
-                onClick={() => setIsPayoutModalOpen(false)}
+                onClick={() => {
+                  cashierLogger.click(`Cancelar Liquidación de Retiro`)
+                  setIsPayoutModalOpen(false)
+                }}
                 disabled={isValidatingPayout}
                 className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
-                onClick={handleConfirmPayout}
-                disabled={!payoutTxId.trim() || isValidatingPayout}
+                onClick={() => {
+                  cashierLogger.click(`Clic en botón Confirmar Pago Retiro`, {
+                    payoutTxId: payoutTxId.trim() || 'auto-generada'
+                  })
+                  handleConfirmPayout()
+                }}
+                disabled={isValidatingPayout}
                 className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(236,72,153,0.3)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
               >
                 {isValidatingPayout ? (

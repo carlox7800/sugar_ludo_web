@@ -95,13 +95,15 @@ export async function POST(
 
     // 5. Inyectar/actualizar correo en el inbox del jugador via Firestore REST y adminDb
     if (playerUid) {
-      const replyItem = {
+      const replyItem: any = {
         id: msgId,
         sender: senderName || 'Cajero',
         senderRole: 'cashier',
         message: message.trim(),
         timestamp,
-        attachmentUrl
+      }
+      if (attachmentUrl) {
+        replyItem.attachmentUrl = attachmentUrl
       }
 
       // Vía adminDb
@@ -127,7 +129,7 @@ export async function POST(
                 replies: [...currentReplies, replyItem]
               }
             } else {
-              const newSupportMail = {
+              const newSupportMail: any = {
                 id: supportMailId,
                 title: `Consulta de Cajero sobre Orden #${orderId.slice(0, 8)}`,
                 sender: senderName || 'Cajero Autorizado',
@@ -140,6 +142,9 @@ export async function POST(
                 status: 'pending',
                 timestamp,
                 replies: [replyItem]
+              }
+              if (attachmentUrl) {
+                newSupportMail.attachmentUrl = attachmentUrl
               }
               inbox.unshift(newSupportMail)
             }
