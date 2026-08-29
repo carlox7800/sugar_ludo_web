@@ -265,7 +265,7 @@ export default function OrderDetailPage() {
     cashierLogger.info(`Actualización optimista de orden en caché local completada`)
 
     try {
-      // 2. Direct Firestore update (Client side)
+      // 2. Direct Firestore update (Client side on cashier_orders where write is allowed)
       cashierLogger.firestore(`Actualizando cashier_orders/${order.id} a status: completed`)
       const orderDocRef = doc(db, 'cashier_orders', order.id)
       await updateDoc(orderDocRef, {
@@ -275,16 +275,7 @@ export default function OrderDetailPage() {
       })
       cashierLogger.firestore(`Firestore update exitoso en cashier_orders/${order.id}`)
 
-      if (order.type === 'deposit' && order.playerUid) {
-        cashierLogger.firestore(`Acreditando saldo +${order.amountSugarCoins} SC a users/${order.playerUid}`)
-        const userDocRef = doc(db, 'users', order.playerUid)
-        await updateDoc(userDocRef, {
-          coins: increment(order.amountSugarCoins)
-        })
-        cashierLogger.firestore(`Saldo acreditado exitosamente a users/${order.playerUid}`)
-      }
-
-      // 3. Backend Atomic Action (Server side - guaranteed persistence in Firestore)
+      // 3. Backend Atomic Action (Server side with Firebase Admin privileges to credit player balance safely)
       cashierLogger.api(`Llamando backend /api/cashier/orders/${order.id}/action con approve_deposit`)
       const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',

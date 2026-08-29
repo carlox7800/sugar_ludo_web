@@ -671,9 +671,9 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                     {Array.from(new Map((selectedMail.replies || []).map(r => [r.id || `${r.timestamp}_${r.message}`, r])).values()).map((rep) => {
                       const isMe = rep.senderRole === 'player'
                       const isReadByCashier = Boolean(
-                        (rep as any).isRead || 
                         selectedMail.status === 'resolved' || 
-                        ((selectedMail as any).cashierReadAt && (selectedMail as any).cashierReadAt >= rep.timestamp)
+                        selectedMail.badge === 'Completado' ||
+                        ((selectedMail as any).cashierReadAt && (selectedMail as any).cashierReadAt > rep.timestamp)
                       )
 
                       return (

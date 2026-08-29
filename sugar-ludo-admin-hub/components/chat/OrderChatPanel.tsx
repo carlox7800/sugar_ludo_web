@@ -115,9 +115,8 @@ export function OrderChatPanel({
         ) : (
           messages.map((msg) => {
             const isRead = Boolean(
-              msg.isRead || 
               isOrderResolved || 
-              (counterpartReadAt && counterpartReadAt >= msg.timestamp)
+              (counterpartReadAt && counterpartReadAt > msg.timestamp)
             )
 
             return (
