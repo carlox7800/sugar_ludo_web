@@ -38,8 +38,11 @@ export function OrderChatPanel({
   }
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    const timer = setTimeout(() => {
+      scrollToBottom()
+    }, 50)
+    return () => clearTimeout(timer)
+  }, [messages?.length, messages])
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()

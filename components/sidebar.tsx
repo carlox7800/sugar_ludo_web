@@ -198,7 +198,7 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
       >
         <Icon className="size-5" strokeWidth={2.4} />
         {item.hasGlow && (
-          <span className="absolute -top-1 -right-1 size-3 rounded-full bg-cyan-400 animate-ping" />
+          <span className="absolute -top-1 -right-1 size-3 rounded-full bg-amber-400 animate-ping" />
         )}
       </span>
       <span className="font-display text-[15px] font-bold">{item.label}</span>
@@ -207,7 +207,7 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
         <span className={cn(
           "ml-auto flex size-6 items-center justify-center rounded-full font-display text-xs font-extrabold shadow-lg animate-pulse",
           item.hasGlow
-            ? "bg-cyan-400 text-slate-950 shadow-cyan-500/50"
+            ? "bg-amber-400 text-slate-950 shadow-amber-500/50"
             : "bg-[var(--candy-orange)] text-[oklch(0.2_0.05_40)] shadow-[0_0_12px_oklch(0.78_0.18_55/0.9)]"
         )}>
           {item.badge}
@@ -343,14 +343,14 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
             <div className="relative">
               <Icon className="size-[18px]" strokeWidth={2.4} />
               {item.hasGlow && (
-                <span className="absolute -top-1 -right-1 size-2 rounded-full bg-cyan-400 animate-ping" />
+                <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber-400 animate-ping" />
               )}
             </div>
             {item.badge && (
               <span className={cn(
                 "absolute right-0.5 top-0 flex size-3.5 items-center justify-center rounded-full font-display text-[9px] font-extrabold animate-pulse",
                 item.hasGlow
-                  ? "bg-cyan-400 text-slate-950"
+                  ? "bg-amber-400 text-slate-950"
                   : "bg-[var(--candy-orange)] text-[oklch(0.2_0.05_40)]"
               )}>
                 {item.badge}

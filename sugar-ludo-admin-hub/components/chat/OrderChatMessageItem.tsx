@@ -68,17 +68,11 @@ export function OrderChatMessageItem({ message, isCurrentUser, onViewImage }: Or
               Moderador
             </span>
           )}
-          <div className="flex items-center gap-1 text-[10px] text-slate-500 font-mono">
-            <span>{formattedTime}</span>
-            {isCurrentUser && (
-              <CheckCheck className="size-3 text-cyan-300 inline" />
-            )}
-          </div>
         </div>
 
         <div
           className={clsx(
-            'p-3.5 rounded-2xl text-xs leading-relaxed shadow-md',
+            'p-3.5 rounded-2xl text-xs leading-relaxed shadow-md relative',
             isCurrentUser
               ? 'bg-gradient-to-br from-cyan-600 to-cyan-700 text-white rounded-tr-none'
               : isAdmin
@@ -107,6 +101,21 @@ export function OrderChatMessageItem({ message, isCurrentUser, onViewImage }: Or
               </div>
             </div>
           )}
+
+          {/* Timestamp & WhatsApp Status Checks in bottom-right */}
+          <div className={clsx(
+            "flex items-center justify-end gap-1 text-[9px] font-mono mt-1.5 select-none",
+            isCurrentUser ? "text-cyan-200/80" : "text-slate-400"
+          )}>
+            <span>{formattedTime}</span>
+            {isCurrentUser && (
+              message.isRead ? (
+                <CheckCheck className="size-3 text-cyan-200 inline" />
+              ) : (
+                <Check className="size-3 text-cyan-200/60 inline" />
+              )
+            )}
+          </div>
         </div>
       </div>
     </div>

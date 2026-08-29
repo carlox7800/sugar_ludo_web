@@ -52,14 +52,51 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   const [replyInput, setReplyInput] = useState('')
   const [isSendingReply, setIsSendingReply] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setIsMounted(true)
   }, [])
 
+  // Auto-scroll to latest message when chat modal is open or new message arrives
+  useEffect(() => {
+    if (selectedMail && selectedMail.category === 'support') {
+      const timer = setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 60)
+      return () => clearTimeout(timer)
+    }
+  }, [selectedMail?.replies?.length, selectedMail?.id])
+
   const showToast = (msg: string) => {
     setToastMessage(msg)
     setTimeout(() => setToastMessage(null), 3500)
+  }
+
+  const handleDeleteConversation = async () => {
+    if (!selectedMail) return
+    const targetOrderId = selectedMail.orderId
+    const targetMailId = selectedMail.id
+
+    // 1. Si está vinculado a una orden, limpiar mensajes para el jugador
+    if (targetOrderId) {
+      try {
+        const orderRef = doc(db, 'cashier_orders', targetOrderId)
+        await updateDoc(orderRef, {
+          supportMessages: [],
+          playerReadAt: Date.now()
+        })
+      } catch {}
+    }
+
+    // 2. Limpiar también del buzón del usuario
+    if (user?.uid) {
+      deleteMail(user.uid, targetMailId).catch(() => {})
+    }
+
+    setMailList((prev) => prev.filter((m) => m.id !== targetMailId && m.orderId !== targetOrderId))
+    setSelectedMail(null)
+    showToast('🗑️ Conversación eliminada con éxito')
   }
 
   // Load real inbox
@@ -573,6 +610,15 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                     {selectedMail.badge}
                   </span>
                 )}
+                {selectedMail.category === 'support' && (
+                  <button
+                    onClick={handleDeleteConversation}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 bg-white/5 hover:bg-rose-500/20 transition-all cursor-pointer"
+                    title="Borrar historial de conversación"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                )}
                 <button
                   onClick={() => setSelectedMail(null)}
                   className="p-1.5 rounded-xl text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 transition-all cursor-pointer"
@@ -605,34 +651,54 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                     )}
                   </div>
 
-                  {/* Unique Deduplicated Replies con Rayitas de Estado */}
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                    {Array.from(new Map((selectedMail.replies || []).map(r => [r.id || `${r.timestamp}_${r.message}`, r])).values()).map((rep) => (
-                      <div
-                        key={rep.id || `${rep.timestamp}_${rep.message}`}
-                        className={cn(
-                          "p-3 rounded-2xl text-xs space-y-1",
-                          rep.senderRole === 'player'
-                            ? "bg-[var(--candy-magenta)]/15 border border-[var(--candy-magenta)]/30 ml-6"
-                            : "bg-cyan-500/15 border border-cyan-500/30 mr-6"
-                        )}
-                      >
-                        <div className="flex justify-between items-center text-[10px] text-muted-foreground">
-                          <strong className={rep.senderRole === 'player' ? 'text-pink-300' : 'text-cyan-300'}>
-                            {rep.sender} {rep.senderRole === 'cashier' ? '(Cajero)' : ''}
-                          </strong>
-                          <div className="flex items-center gap-1 font-mono">
+                  {/* Unique Deduplicated Replies con WhatsApp Checks */}
+                  <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                    {Array.from(new Map((selectedMail.replies || []).map(r => [r.id || `${r.timestamp}_${r.message}`, r])).values()).map((rep) => {
+                      const isMe = rep.senderRole === 'player'
+                      const isReadByCashier = Boolean(
+                        (rep as any).isRead || 
+                        selectedMail.status === 'resolved' || 
+                        ((selectedMail as any).cashierReadAt && (selectedMail as any).cashierReadAt >= rep.timestamp)
+                      )
+
+                      return (
+                        <div
+                          key={rep.id || `${rep.timestamp}_${rep.message}`}
+                          className={cn(
+                            "p-3 rounded-2xl text-xs space-y-1 relative shadow-sm max-w-[85%]",
+                            isMe
+                              ? "bg-[linear-gradient(135deg,rgba(236,72,153,0.35),rgba(236,72,153,0.2))] border border-pink-500/40 ml-auto rounded-tr-none text-white"
+                              : "bg-slate-800/90 border border-white/10 mr-auto rounded-tl-none text-slate-100"
+                          )}
+                        >
+                          {!isMe && (
+                            <div className="text-[10px] font-bold text-cyan-300 mb-0.5">
+                              {rep.sender} (Cajero)
+                            </div>
+                          )}
+
+                          <p className="whitespace-pre-wrap leading-relaxed pb-2.5 pr-2">
+                            {rep.message}
+                          </p>
+
+                          {/* Timestamp & Checks en la esquina inferior derecha */}
+                          <div className={cn(
+                            "flex items-center justify-end gap-1 text-[9px] font-mono select-none mt-1",
+                            isMe ? "text-pink-200/80" : "text-slate-400"
+                          )}>
                             <span>{new Date(rep.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            {rep.senderRole === 'player' ? (
-                              <CheckCheck className="size-3 text-pink-400 inline" />
-                            ) : (
-                              <CheckCheck className="size-3 text-cyan-400 inline" />
+                            {isMe && (
+                              isReadByCashier ? (
+                                <CheckCheck className="size-3 text-cyan-300 inline" />
+                              ) : (
+                                <Check className="size-3 text-pink-200/60 inline" />
+                              )
                             )}
                           </div>
                         </div>
-                        <p className="text-foreground whitespace-pre-wrap">{rep.message}</p>
-                      </div>
-                    ))}
+                      )
+                    })}
+                    <div ref={chatEndRef} />
                   </div>
                 </div>
               )}
