@@ -18,7 +18,8 @@ import {
   ChevronRight,
   Headphones,
   Send,
-  MessageSquare
+  MessageSquare,
+  X
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
@@ -85,7 +86,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                 const userMails = data.inbox.filter((m: any) => !m.id.startsWith('mail_ord_sup_'))
                 return [...supportFromOrders, ...userMails]
               })
-              if (selectedMail) {
+              if (selectedMail && !selectedMail.orderId) {
                 const refreshed = data.inbox.find((m: any) => m.id === selectedMail.id)
                 if (refreshed) setSelectedMail(refreshed)
               }
@@ -117,15 +118,22 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
             if (orderMessages.length > 0) {
               const lastMsg = orderMessages[orderMessages.length - 1]
-              const replies: SupportReply[] = orderMessages.map((m: any) => ({
-                id: m.id || `rep_${m.timestamp || Date.now()}`,
-                sender: m.senderName || (m.senderRole === 'cashier' ? 'Cajero Autorizado' : 'Jugador'),
-                senderRole: (m.senderRole || (m.senderUid === user.uid ? 'player' : 'cashier')) as any,
-                message: m.message,
-                timestamp: m.timestamp || Date.now(),
-                attachmentUrl: m.attachmentUrl
-              }))
+              
+              // Deduplicar replies por id
+              const replyMap = new Map<string, SupportReply>()
+              orderMessages.forEach((m: any) => {
+                const key = m.id || `${m.timestamp}_${m.message}`
+                replyMap.set(key, {
+                  id: key,
+                  sender: m.senderName || (m.senderRole === 'cashier' ? 'Cajero Autorizado' : 'Jugador'),
+                  senderRole: (m.senderRole || (m.senderUid === user.uid ? 'player' : 'cashier')) as any,
+                  message: m.message,
+                  timestamp: m.timestamp || Date.now(),
+                  attachmentUrl: m.attachmentUrl
+                })
+              })
 
+              const replies = Array.from(replyMap.values())
               const isOrderRead = ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : (lastMsg.senderUid === user.uid)
 
               orderSupportMails.push({
@@ -239,18 +247,21 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   }
 
   const handleSendReply = async () => {
-    if (!replyInput.trim() || !selectedMail) return
+    if (!replyInput.trim() || !selectedMail || isSendingReply) return
     setIsSendingReply(true)
     const replyText = replyInput.trim()
     const senderName = user?.displayName || 'Jugador'
     const now = Date.now()
+    const newReplyId = `rep_${now}_${Math.random().toString(36).slice(2, 6)}`
     const newReply: SupportReply = {
-      id: `rep_${now}`,
+      id: newReplyId,
       sender: senderName,
       senderRole: 'player',
       message: replyText,
       timestamp: now
     }
+
+    setReplyInput('')
 
     try {
       // 1. Si está vinculado a una orden P2P, actualizar directamente cashier_orders
@@ -287,15 +298,6 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         'player'
       )
 
-      setSelectedMail(prev => prev ? {
-        ...prev,
-        replies: [...(prev.replies || []), newReply]
-      } : null)
-      setMailList(prev => prev.map(m => m.id === selectedMail.id ? {
-        ...m,
-        replies: [...(m.replies || []), newReply]
-      } : m))
-      setReplyInput('')
       showToast('✉️ ¡Respuesta enviada al cajero con éxito!')
     } catch (e) {
       console.warn('Error sending reply:', e)
@@ -314,7 +316,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     <section className="animate-slide-in mx-auto flex w-full max-w-5xl flex-col gap-5 p-2 sm:p-4">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] animate-in fade-in slide-in-from-top-4 flex items-center justify-center gap-2 rounded-full border border-[var(--candy-magenta)]/40 bg-[oklch(0.1_0.05_250)] px-6 py-3 text-[var(--candy-magenta)] font-display text-sm font-bold shadow-2xl shadow-[var(--candy-magenta)]/20 whitespace-nowrap">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[350] animate-in fade-in slide-in-from-top-4 flex items-center justify-center gap-2 rounded-full border border-[var(--candy-magenta)]/40 bg-[oklch(0.1_0.05_250)] px-6 py-3 text-[var(--candy-magenta)] font-display text-sm font-bold shadow-2xl shadow-[var(--candy-magenta)]/20 whitespace-nowrap">
           <Sparkles className="size-4 animate-spin" />
           <span>{toastMessage}</span>
         </div>
@@ -325,7 +327,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="btn-3d flex size-10 items-center justify-center rounded-xl border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground hover:text-foreground"
+            className="btn-3d flex size-10 items-center justify-center rounded-xl border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground hover:text-foreground cursor-pointer"
             aria-label="Volver al Lobby"
           >
             <ArrowLeft className="size-5" />
@@ -344,7 +346,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         {activeTab === 'rewards' && unreadRewardsCount > 0 && (
           <button
             onClick={handleClaimAll}
-            className="btn-3d flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#10b981,#059669)] px-4 py-2 font-display text-xs font-black text-white shadow-lg hover:scale-105 transition-all"
+            className="btn-3d flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#10b981,#059669)] px-4 py-2 font-display text-xs font-black text-white shadow-lg hover:scale-105 transition-all cursor-pointer"
           >
             <CheckCheck className="size-4" />
             <span>Reclamar Todo ({unreadRewardsCount})</span>
@@ -357,7 +359,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         <button
           onClick={() => setActiveTab('rewards')}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative",
+            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'rewards'
               ? "bg-[linear-gradient(145deg,var(--candy-magenta),oklch(0.6_0.25_350))] text-white shadow-lg shadow-[var(--candy-magenta)]/25"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
@@ -376,7 +378,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         <button
           onClick={() => setActiveTab('system')}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative",
+            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'system'
               ? "bg-[linear-gradient(145deg,var(--candy-magenta),oklch(0.6_0.25_350))] text-white shadow-lg shadow-[var(--candy-magenta)]/25"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
@@ -395,7 +397,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         <button
           onClick={() => setActiveTab('support')}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative",
+            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'support'
               ? "bg-[linear-gradient(145deg,#06b6d4,#0891b2)] text-white shadow-lg shadow-cyan-500/25"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
@@ -507,7 +509,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                       ) : (
                         <button
                           onClick={(e) => handleClaimSingle(mail.id, e)}
-                          className="btn-3d flex items-center gap-1.5 rounded-xl bg-[linear-gradient(145deg,#10b981,#059669)] px-3.5 py-1.5 font-display text-xs font-black text-white shadow-md hover:scale-105 transition-all"
+                          className="btn-3d flex items-center gap-1.5 rounded-xl bg-[linear-gradient(145deg,#10b981,#059669)] px-3.5 py-1.5 font-display text-xs font-black text-white shadow-md hover:scale-105 transition-all cursor-pointer"
                         >
                           <Gift className="size-3.5" />
                           <span>Reclamar</span>
@@ -526,14 +528,16 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {/* MODAL DETALLES DEL MENSAJE */}
+      {/* MODAL DETALLES DEL MENSAJE Y CHAT P2P */}
       {selectedMail && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[4px] animate-in fade-in">
-          <div className="glass max-w-lg w-full rounded-3xl p-6 border border-[var(--candy-magenta)] shadow-2xl flex flex-col gap-4 text-left bg-[oklch(0.14_0.03_285/0.97)] backdrop-blur-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between gap-3 border-b border-border/40 pb-4">
-              <div className="flex items-center gap-3">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-3xl border border-cyan-500/40 bg-[#0c101d] shadow-2xl overflow-hidden animate-in zoom-in-95">
+            
+            {/* Fixed Header */}
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-slate-900/90 shrink-0">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className={cn(
-                  "size-12 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-inner border",
+                  "size-10 rounded-xl flex items-center justify-center shrink-0 border",
                   selectedMail.category === 'rewards'
                     ? "bg-[var(--candy-gold)]/20 border-[var(--candy-gold)]/30 text-[var(--candy-gold)]"
                     : selectedMail.category === 'support'
@@ -541,52 +545,72 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                     : "bg-[var(--candy-cyan)]/20 border-[var(--candy-cyan)]/30 text-[var(--candy-cyan)]"
                 )}>
                   {selectedMail.category === 'rewards' ? (
-                    <Gift className="size-6" />
+                    <Gift className="size-5" />
                   ) : selectedMail.category === 'support' ? (
-                    <Headphones className="size-6" />
+                    <Headphones className="size-5" />
                   ) : (
-                    <Bell className="size-6" />
+                    <Bell className="size-5" />
                   )}
                 </div>
 
-                <div>
-                  <h3 className="font-display text-lg font-black text-white">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-display text-sm sm:text-base font-black text-white truncate">
                     {selectedMail.title}
                   </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="text-[11px] text-muted-foreground truncate">
                     De: <strong className="text-white">{selectedMail.sender}</strong> • {selectedMail.date}
                   </p>
                 </div>
               </div>
 
-              {selectedMail.badge && (
-                <span className="rounded-full bg-[var(--candy-gold)]/20 px-2.5 py-0.5 text-[10px] font-black uppercase text-[var(--candy-gold)] border border-[var(--candy-gold)]/30">
-                  {selectedMail.badge}
-                </span>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {selectedMail.badge && (
+                  <span className="rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase text-cyan-300 border border-cyan-500/30">
+                    {selectedMail.badge}
+                  </span>
+                )}
+                <button
+                  onClick={() => setSelectedMail(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 transition-all cursor-pointer"
+                  aria-label="Cerrar modal"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
             </div>
 
-            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-              {selectedMail.content}
-            </p>
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+              {selectedMail.category !== 'support' && (
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  {selectedMail.content}
+                </p>
+              )}
 
-            {/* Support Message Conversation Thread */}
-            {selectedMail.category === 'support' && (
-              <div className="space-y-3 pt-2 border-t border-white/10">
-                <h4 className="text-xs font-black uppercase text-cyan-300 tracking-wider flex items-center gap-1.5">
-                  <MessageSquare className="size-3.5" /> Hilo de Conversación
-                </h4>
+              {/* Support Message Conversation Thread */}
+              {selectedMail.category === 'support' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase text-cyan-300 tracking-wider flex items-center gap-1.5">
+                      <MessageSquare className="size-3.5" /> Hilo de Conversación
+                    </h4>
+                    {selectedMail.orderId && (
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        #{selectedMail.orderId.slice(0, 10)}
+                      </span>
+                    )}
+                  </div>
 
-                {selectedMail.replies && selectedMail.replies.length > 0 && (
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {selectedMail.replies.map((rep) => (
+                  {/* Unique Deduplicated Replies */}
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {Array.from(new Map((selectedMail.replies || []).map(r => [r.id || `${r.timestamp}_${r.message}`, r])).values()).map((rep) => (
                       <div
-                        key={rep.id}
+                        key={rep.id || `${rep.timestamp}_${rep.message}`}
                         className={cn(
                           "p-3 rounded-2xl text-xs space-y-1",
                           rep.senderRole === 'player'
-                            ? "bg-[var(--candy-magenta)]/15 border border-[var(--candy-magenta)]/30 ml-4"
-                            : "bg-cyan-500/15 border border-cyan-500/30 mr-4"
+                            ? "bg-[var(--candy-magenta)]/15 border border-[var(--candy-magenta)]/30 ml-6"
+                            : "bg-cyan-500/15 border border-cyan-500/30 mr-6"
                         )}
                       >
                         <div className="flex justify-between items-center text-[10px] text-muted-foreground">
@@ -595,59 +619,69 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                           </strong>
                           <span>{new Date(rep.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
-                        <p className="text-foreground">{rep.message}</p>
+                        <p className="text-foreground whitespace-pre-wrap">{rep.message}</p>
                       </div>
                     ))}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Interactive Reply Input */}
-                <div className="flex items-center gap-2 pt-1">
+              {selectedMail.rewardSC && (
+                <div className="rounded-2xl bg-black/40 border border-white/10 p-4 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground font-semibold">Recompensa Adjunta:</span>
+                  <span className="font-display text-base font-black text-[var(--candy-gold)] flex items-center gap-1.5">
+                    +{selectedMail.rewardSC} Sugar Coins <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Sticky Footer */}
+            <div className="p-4 bg-slate-900 border-t border-white/10 space-y-3 shrink-0">
+              {selectedMail.category === 'support' && (
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={replyInput}
                     onChange={(e) => setReplyInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSendReply()
+                      }
+                    }}
                     placeholder="Escribe tu respuesta al cajero..."
-                    className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400"
+                    disabled={isSendingReply}
+                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400 disabled:opacity-50"
                   />
                   <button
                     onClick={handleSendReply}
                     disabled={!replyInput.trim() || isSendingReply}
-                    className="btn-3d px-3.5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                    className="btn-3d px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     <Send className="size-3.5" />
-                    <span>Enviar</span>
+                    <span>{isSendingReply ? 'Enviando...' : 'Enviar'}</span>
                   </button>
                 </div>
-              </div>
-            )}
-
-            {selectedMail.rewardSC && (
-              <div className="rounded-2xl bg-black/40 border border-white/10 p-4 flex items-center justify-between mt-2">
-                <span className="text-xs text-muted-foreground font-semibold">Recompensa Adjunta:</span>
-                <span className="font-display text-base font-black text-[var(--candy-gold)] flex items-center gap-1.5">
-                  +{selectedMail.rewardSC} Sugar Coins <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" />
-                </span>
-              </div>
-            )}
-
-            <div className="flex gap-3 mt-3">
-              <button
-                onClick={() => setSelectedMail(null)}
-                className="flex-1 py-3 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all text-center"
-              >
-                Cerrar
-              </button>
-
-              {selectedMail.rewardSC && !selectedMail.claimed && (
-                <button
-                  onClick={() => handleClaimSingle(selectedMail.id)}
-                  className="btn-3d flex-1 py-3 rounded-xl bg-[linear-gradient(145deg,#10b981,#059669)] font-display text-xs font-black text-white shadow-lg"
-                >
-                  Cobrar Recompensa
-                </button>
               )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSelectedMail(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all text-center cursor-pointer"
+                >
+                  Cerrar
+                </button>
+
+                {selectedMail.rewardSC && !selectedMail.claimed && (
+                  <button
+                    onClick={() => handleClaimSingle(selectedMail.id)}
+                    className="btn-3d flex-1 py-2.5 rounded-xl bg-[linear-gradient(145deg,#10b981,#059669)] font-display text-xs font-black text-white shadow-lg cursor-pointer"
+                  >
+                    Cobrar Recompensa
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -23,9 +23,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const { coins, setCoins } = usePlayer()
   const [transactions, setTransactions] = useState<WalletTransaction[]>([])
-  const [activeOrders, setActiveOrders] = useState<PlayerP2POrder[]>(() => {
-    return getStoredLocalOrders().filter(o => o.status !== 'completed' && o.status !== 'cancelled')
-  })
+  const [activeOrders, setActiveOrders] = useState<PlayerP2POrder[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   const refreshData = () => {

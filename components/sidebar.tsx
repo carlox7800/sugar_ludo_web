@@ -1,5 +1,3 @@
-'use client'
-
 import React, { useState, useEffect } from 'react'
 import {
   Store,
@@ -14,7 +12,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { db } from '@/lib/firebase'
-import { doc, onSnapshot } from 'firebase/firestore'
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'
 import { getUnreadMailCount } from '@/lib/mail-service'
 import { subscribeToFriendRequests, subscribeToIncomingDuelInvites } from '@/lib/friends-service'
 
@@ -23,6 +21,7 @@ type NavItem = {
   screen: string
   icon: LucideIcon
   badge?: string
+  hasGlow?: boolean
 }
 
 const BASE_NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
@@ -43,12 +42,13 @@ interface SidebarProps {
 /* ---------- Desktop: fixed left sidebar ---------- */
 export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
   const { user } = useAuth()
-  const [unreadCount, setUnreadCount] = useState<number>(0)
+  const [unreadInboxCount, setUnreadInboxCount] = useState<number>(0)
+  const [unreadSupportCount, setUnreadSupportCount] = useState<number>(0)
   const [friendsBadgeCount, setFriendsBadgeCount] = useState<number>(0)
 
   useEffect(() => {
     const updateCount = () => {
-      getUnreadMailCount(user?.uid).then(setUnreadCount).catch(() => {})
+      getUnreadMailCount(user?.uid).then(setUnreadInboxCount).catch(() => {})
     }
     updateCount()
 
@@ -61,10 +61,36 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
           if (snap.exists()) {
             const data = snap.data()
             if (Array.isArray(data.inbox)) {
-              const unread = data.inbox.filter((m: any) => !m.isRead).length
-              setUnreadCount(unread)
+              const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && m.rewardSC)).length
+              setUnreadInboxCount(unread)
             }
           }
+        }, () => {})
+      } catch {}
+    }
+
+    // 2. Escuchar mensajes no leídos de cajeros en cashier_orders en tiempo real
+    let unsubOrders: (() => void) | null = null
+    if (user?.uid && !user.uid.startsWith('dev_')) {
+      try {
+        const qOrders = query(
+          collection(db, 'cashier_orders'),
+          where('playerUid', '==', user.uid)
+        )
+        unsubOrders = onSnapshot(qOrders, (snap) => {
+          let supportUnread = 0
+          snap.forEach((d) => {
+            const ord = d.data() as any
+            const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
+            if (msgs.length > 0) {
+              const lastMsg = msgs[msgs.length - 1]
+              const isRead = ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : (lastMsg.senderUid === user.uid)
+              if (!isRead) {
+                supportUnread++
+              }
+            }
+          })
+          setUnreadSupportCount(supportUnread)
         }, () => {})
       } catch {}
     }
@@ -93,6 +119,7 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
 
     return () => {
       if (unsubMail) unsubMail()
+      if (unsubOrders) unsubOrders()
       if (typeof window !== 'undefined') {
         window.removeEventListener('sugar_inbox_updated', updateCount)
       }
@@ -101,14 +128,18 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
     }
   }, [user?.uid])
 
+  const totalUnreadMail = unreadInboxCount + unreadSupportCount
+
   const navItems: NavItem[] = BASE_NAV_ITEMS.map(item => {
     let badge: string | undefined
-    if (item.screen === 'correo' && unreadCount > 0) {
-      badge = unreadCount.toString()
+    let hasGlow = false
+    if (item.screen === 'correo' && totalUnreadMail > 0) {
+      badge = totalUnreadMail.toString()
+      hasGlow = unreadSupportCount > 0
     } else if (item.screen === 'amigos' && friendsBadgeCount > 0) {
       badge = friendsBadgeCount.toString()
     }
-    return { ...item, badge }
+    return { ...item, badge, hasGlow }
   })
 
   return (
@@ -151,7 +182,7 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
       aria-current={isActive ? 'page' : undefined}
       aria-label={item.label}
       className={cn(
-        'group flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left transition-all cursor-pointer select-none',
+        'group relative flex items-center gap-3.5 rounded-2xl px-4 py-3 text-left transition-all cursor-pointer select-none',
         isActive
           ? 'bg-[linear-gradient(120deg,oklch(0.7_0.27_350),oklch(0.62_0.22_300))] text-primary-foreground shadow-[0_8px_20px_oklch(0.7_0.27_350/0.4)] ring-1 ring-white/30'
           : 'text-foreground/80 hover:bg-[oklch(1_0_0/0.06)] hover:text-foreground hover:translate-x-1',
@@ -159,18 +190,26 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
     >
       <span
         className={cn(
-          'flex size-9 items-center justify-center rounded-xl transition-all',
+          'relative flex size-9 items-center justify-center rounded-xl transition-all',
           isActive
             ? 'bg-white/20 text-white'
             : 'bg-[oklch(1_0_0/0.05)] text-muted-foreground group-hover:bg-[oklch(1_0_0/0.1)] group-hover:text-foreground',
         )}
       >
         <Icon className="size-5" strokeWidth={2.4} />
+        {item.hasGlow && (
+          <span className="absolute -top-1 -right-1 size-3 rounded-full bg-cyan-400 animate-ping" />
+        )}
       </span>
       <span className="font-display text-[15px] font-bold">{item.label}</span>
 
       {item.badge && (
-        <span className="ml-auto flex size-6 items-center justify-center rounded-full bg-[var(--candy-orange)] font-display text-xs font-extrabold text-[oklch(0.2_0.05_40)] shadow-[0_0_12px_oklch(0.78_0.18_55/0.9)] animate-pulse">
+        <span className={cn(
+          "ml-auto flex size-6 items-center justify-center rounded-full font-display text-xs font-extrabold shadow-lg animate-pulse",
+          item.hasGlow
+            ? "bg-cyan-400 text-slate-950 shadow-cyan-500/50"
+            : "bg-[var(--candy-orange)] text-[oklch(0.2_0.05_40)] shadow-[0_0_12px_oklch(0.78_0.18_55/0.9)]"
+        )}>
           {item.badge}
         </span>
       )}
@@ -181,12 +220,13 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
 /* ---------- Mobile: fixed bottom navigation bar ---------- */
 export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
   const { user } = useAuth()
-  const [unreadCount, setUnreadCount] = useState<number>(0)
+  const [unreadInboxCount, setUnreadInboxCount] = useState<number>(0)
+  const [unreadSupportCount, setUnreadSupportCount] = useState<number>(0)
   const [friendsBadgeCount, setFriendsBadgeCount] = useState<number>(0)
 
   useEffect(() => {
     const updateCount = () => {
-      getUnreadMailCount(user?.uid).then(setUnreadCount).catch(() => {})
+      getUnreadMailCount(user?.uid).then(setUnreadInboxCount).catch(() => {})
     }
     updateCount()
 
@@ -199,10 +239,36 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
           if (snap.exists()) {
             const data = snap.data()
             if (Array.isArray(data.inbox)) {
-              const unread = data.inbox.filter((m: any) => !m.isRead).length
-              setUnreadCount(unread)
+              const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && m.rewardSC)).length
+              setUnreadInboxCount(unread)
             }
           }
+        }, () => {})
+      } catch {}
+    }
+
+    // 2. Escuchar mensajes no leídos de cajeros en cashier_orders en tiempo real
+    let unsubOrders: (() => void) | null = null
+    if (user?.uid && !user.uid.startsWith('dev_')) {
+      try {
+        const qOrders = query(
+          collection(db, 'cashier_orders'),
+          where('playerUid', '==', user.uid)
+        )
+        unsubOrders = onSnapshot(qOrders, (snap) => {
+          let supportUnread = 0
+          snap.forEach((d) => {
+            const ord = d.data() as any
+            const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
+            if (msgs.length > 0) {
+              const lastMsg = msgs[msgs.length - 1]
+              const isRead = ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : (lastMsg.senderUid === user.uid)
+              if (!isRead) {
+                supportUnread++
+              }
+            }
+          })
+          setUnreadSupportCount(supportUnread)
         }, () => {})
       } catch {}
     }
@@ -230,6 +296,7 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
 
     return () => {
       if (unsubMail) unsubMail()
+      if (unsubOrders) unsubOrders()
       if (typeof window !== 'undefined') {
         window.removeEventListener('sugar_inbox_updated', updateCount)
       }
@@ -238,14 +305,18 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
     }
   }, [user?.uid])
 
+  const totalUnreadMail = unreadInboxCount + unreadSupportCount
+
   const navItems: NavItem[] = BASE_NAV_ITEMS.map(item => {
     let badge: string | undefined
-    if (item.screen === 'correo' && unreadCount > 0) {
-      badge = unreadCount.toString()
+    let hasGlow = false
+    if (item.screen === 'correo' && totalUnreadMail > 0) {
+      badge = totalUnreadMail.toString()
+      hasGlow = unreadSupportCount > 0
     } else if (item.screen === 'amigos' && friendsBadgeCount > 0) {
       badge = friendsBadgeCount.toString()
     }
-    return { ...item, badge }
+    return { ...item, badge, hasGlow }
   })
 
   return (
@@ -269,9 +340,19 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
                 : 'text-muted-foreground active:bg-[oklch(1_0_0/0.06)]',
             )}
           >
-            <Icon className="size-[18px]" strokeWidth={2.4} />
+            <div className="relative">
+              <Icon className="size-[18px]" strokeWidth={2.4} />
+              {item.hasGlow && (
+                <span className="absolute -top-1 -right-1 size-2 rounded-full bg-cyan-400 animate-ping" />
+              )}
+            </div>
             {item.badge && (
-              <span className="absolute right-0.5 top-0 flex size-3.5 items-center justify-center rounded-full bg-[var(--candy-orange)] font-display text-[9px] font-extrabold text-[oklch(0.2_0.05_40)] animate-pulse">
+              <span className={cn(
+                "absolute right-0.5 top-0 flex size-3.5 items-center justify-center rounded-full font-display text-[9px] font-extrabold animate-pulse",
+                item.hasGlow
+                  ? "bg-cyan-400 text-slate-950"
+                  : "bg-[var(--candy-orange)] text-[oklch(0.2_0.05_40)]"
+              )}>
                 {item.badge}
               </span>
             )}

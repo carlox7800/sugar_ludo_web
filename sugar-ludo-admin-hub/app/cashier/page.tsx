@@ -19,7 +19,7 @@ export default function CashierMainDeskPage() {
   const { cashierList, logout, adminUser } = useAdminAuth()
   const [orders, setOrders] = useState<CashierOrder[]>(() => OrdersCache.get() || [])
   const [isLoading, setIsLoading] = useState(() => (OrdersCache.get() && OrdersCache.get()!.length > 0 ? false : true))
-  const [currentStatus, setCurrentStatus] = useState<FilterStatus>('all')
+  const [currentStatus, setCurrentStatus] = useState<FilterStatus>('pending')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'all'>('today')
   const [searchQuery, setSearchQuery] = useState('')

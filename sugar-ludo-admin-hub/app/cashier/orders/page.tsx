@@ -15,7 +15,7 @@ export default function CashierOrdersPage() {
   const { cashierList } = useAdminAuth()
   const [orders, setOrders] = useState<CashierOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [currentStatus, setCurrentStatus] = useState<FilterStatus>('all')
+  const [currentStatus, setCurrentStatus] = useState<FilterStatus>('pending')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [notification, setNotification] = useState<string | null>(null)
