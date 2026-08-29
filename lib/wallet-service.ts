@@ -28,6 +28,7 @@ export interface PlayerP2POrder {
 }
 
 const LOCAL_ORDERS_KEY = 'sugar_cashier_orders'
+const SETTLED_ORDERS_KEY = 'sugar_settled_order_ids'
 
 function saveLocalOrder(order: PlayerP2POrder) {
   if (typeof window === 'undefined') return
@@ -42,18 +43,37 @@ function saveLocalOrder(order: PlayerP2POrder) {
 export function getStoredLocalOrders(): PlayerP2POrder[] {
   if (typeof window === 'undefined') return []
   try {
-    return JSON.parse(localStorage.getItem(LOCAL_ORDERS_KEY) || '[]')
+    const raw = localStorage.getItem(LOCAL_ORDERS_KEY) || '[]'
+    const orders: PlayerP2POrder[] = JSON.parse(raw)
+    const settled: string[] = JSON.parse(localStorage.getItem(SETTLED_ORDERS_KEY) || '[]')
+    return orders.filter(
+      (o) => o && o.status !== 'completed' && o.status !== 'cancelled' && !settled.includes(o.id)
+    )
   } catch {
     return []
   }
 }
 
 export function updateLocalOrderStatus(orderId: string, status: 'completed' | 'cancelled' | 'paid' | 'verified') {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined' || !orderId) return
   try {
-    const existing = getStoredLocalOrders()
-    const updated = existing.map((o) => (o.id === orderId ? { ...o, status } : o))
-    localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(updated))
+    const raw = localStorage.getItem(LOCAL_ORDERS_KEY) || '[]'
+    const existing: PlayerP2POrder[] = JSON.parse(raw)
+    
+    if (status === 'completed' || status === 'cancelled') {
+      // Purge permanently from active cache to prevent any UI flashing on reload
+      const filtered = existing.filter((o) => o.id !== orderId)
+      localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(filtered))
+
+      const settled: string[] = JSON.parse(localStorage.getItem(SETTLED_ORDERS_KEY) || '[]')
+      if (!settled.includes(orderId)) {
+        settled.push(orderId)
+        localStorage.setItem(SETTLED_ORDERS_KEY, JSON.stringify(settled.slice(-100)))
+      }
+    } else {
+      const updated = existing.map((o) => (o.id === orderId ? { ...o, status } : o))
+      localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(updated))
+    }
   } catch {}
 }
 

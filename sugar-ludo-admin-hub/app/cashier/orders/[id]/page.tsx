@@ -77,12 +77,16 @@ export default function OrderDetailPage() {
           if (snap.exists()) {
             const data = { ...snap.data(), id: snap.id } as CashierOrder
             setOrder(data)
+            if (Array.isArray((data as any).supportMessages)) {
+              setMessages((data as any).supportMessages)
+            }
             cashierLogger.firestore(`Evento onSnapshot recibido para orden #${orderId.slice(0, 8)}`, {
               status: data.status,
               type: data.type,
               amount: data.amountFiat,
               currency: data.currency,
-              refNumber: data.receiptReferenceNumber
+              refNumber: data.receiptReferenceNumber,
+              messagesCount: Array.isArray((data as any).supportMessages) ? (data as any).supportMessages.length : 0
             })
             if (data.receiptUrl) setActiveReceiptUrl(data.receiptUrl)
           } else {
@@ -150,6 +154,8 @@ export default function OrderDetailPage() {
   const [isValidating, setIsValidating] = useState(false)
 
   const handleSendMessage = async (text: string, attachmentUrl?: string) => {
+    if (!text.trim() && !attachmentUrl) return
+
     cashierLogger.click(`Enviar Mensaje de Chat`, {
       orderId: order.id,
       playerUid: order.playerUid,
@@ -161,94 +167,59 @@ export default function OrderDetailPage() {
       id: `msg_${Date.now()}`,
       orderId: order.id,
       senderUid: 'csh_carlosandroid_001',
-      senderName: 'carlosandroid',
+      senderName: 'carlosandroid (Cajero)',
       senderRole: 'cashier',
-      message: text,
-      attachmentUrl,
-      attachmentType: attachmentUrl ? 'image' : undefined,
+      message: text.trim(),
       timestamp: Date.now(),
       isRead: false,
+      ...(attachmentUrl ? { attachmentUrl, attachmentType: 'image' as const } : {})
     }
     setMessages((prev) => [...prev, newMsg])
 
-    // 1. Client-Side direct Firestore update for zero latency
+    // 1. Escritura directa a cashier_orders/{order.id}.supportMessages en Firestore (Permisos 100% abiertos)
     try {
-      if (order.playerUid) {
-        cashierLogger.firestore(`Intentando actualizar users/${order.playerUid}.inbox vía Client SDK`)
-        const userDocRef = doc(db, 'users', order.playerUid)
-        const userSnap = await getDoc(userDocRef)
-        if (userSnap.exists()) {
-          const userData = userSnap.data() || {}
-          const inbox = Array.isArray(userData.inbox) ? [...userData.inbox] : []
-          const supportMailId = `mail_sup_${order.id}`
-          const existingMailIndex = inbox.findIndex((m: any) => m.id === supportMailId || m.orderId === order.id)
+      cashierLogger.firestore(`Guardando mensaje en cashier_orders/${order.id}.supportMessages`)
+      const orderDocRef = doc(db, 'cashier_orders', order.id)
+      const orderSnap = await getDoc(orderDocRef)
+      const existingMsgs = (orderSnap.exists() && Array.isArray(orderSnap.data()?.supportMessages))
+        ? orderSnap.data().supportMessages
+        : []
 
-          const replyItem: any = {
-            id: newMsg.id,
-            sender: 'carlosandroid (Cajero)',
-            senderRole: 'cashier',
-            message: text.trim(),
-            timestamp: Date.now()
-          }
-          if (attachmentUrl) {
-            replyItem.attachmentUrl = attachmentUrl
-          }
-
-          if (existingMailIndex !== -1) {
-            const currentMail = inbox[existingMailIndex]
-            const currentReplies = Array.isArray(currentMail.replies) ? currentMail.replies : []
-            inbox[existingMailIndex] = {
-              ...currentMail,
-              content: text.trim(),
-              isRead: false,
-              timestamp: Date.now(),
-              date: 'Hoy',
-              replies: [...currentReplies, replyItem]
-            }
-          } else {
-            const newSupportMail: any = {
-              id: supportMailId,
-              title: `Consulta de Cajero sobre Orden #${order.id.slice(0, 8)}`,
-              sender: 'carlosandroid (Cajero)',
-              date: 'Hoy',
-              category: 'support',
-              isRead: false,
-              content: text.trim(),
-              badge: 'Soporte P2P',
-              orderId: order.id,
-              status: 'pending',
-              timestamp: Date.now(),
-              replies: [replyItem]
-            }
-            if (attachmentUrl) {
-              newSupportMail.attachmentUrl = attachmentUrl
-            }
-            inbox.unshift(newSupportMail)
-          }
-
-          await updateDoc(userDocRef, {
-            inbox: inbox.slice(0, 50)
-          })
-          cashierLogger.firestore(`Escritura exitosa en users/${order.playerUid}.inbox (Client SDK)`)
-        } else {
-          cashierLogger.firestore(`Documento users/${order.playerUid} no encontrado en Firestore`)
-        }
+      const cleanMsg: any = {
+        id: newMsg.id,
+        orderId: order.id,
+        senderUid: 'csh_carlosandroid_001',
+        senderName: 'carlosandroid (Cajero)',
+        senderRole: 'cashier',
+        message: text.trim(),
+        timestamp: Date.now()
       }
-    } catch (clientErr: any) {
-      cashierLogger.error(`Error en escritura Client SDK a users/${order.playerUid}.inbox`, {
-        code: clientErr?.code,
-        message: clientErr?.message
+      if (attachmentUrl) {
+        cleanMsg.attachmentUrl = attachmentUrl
+      }
+
+      await updateDoc(orderDocRef, {
+        supportMessages: [...existingMsgs, cleanMsg],
+        lastMessage: text.trim(),
+        lastMessageTime: Date.now(),
+        hasUnreadCashierMessage: true
+      })
+      cashierLogger.firestore(`Mensaje guardado exitosamente en cashier_orders/${order.id}`)
+    } catch (fsErr: any) {
+      cashierLogger.error(`Error guardando mensaje en cashier_orders/${order.id}`, {
+        code: fsErr?.code,
+        message: fsErr?.message
       })
     }
 
-    // 2. Post to backend API to guarantee backup persistence
+    // 2. Post al backend API para garantizar persistencia y sincronizacion
     try {
       cashierLogger.api(`POST /api/cashier/orders/${order.id}/message`)
       const res = await fetch(`/api/cashier/orders/${order.id}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: text,
+          message: text.trim(),
           senderName: 'carlosandroid (Cajero)',
           senderUid: 'csh_carlosandroid_001',
           senderRole: 'cashier',

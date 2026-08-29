@@ -24,11 +24,12 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
 import { db } from '@/lib/firebase'
-import { doc, onSnapshot } from 'firebase/firestore'
+import { doc, onSnapshot, collection, query, where, getDoc, updateDoc } from 'firebase/firestore'
 import { globalLogger } from '@/lib/logger'
 import confetti from 'canvas-confetti'
 import { 
   MailItem, 
+  SupportReply,
   fetchUserInbox, 
   claimMailReward, 
   claimAllRewards, 
@@ -69,17 +70,21 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     loadInbox()
     if (!user?.uid || user?.uid.startsWith('dev_')) return
 
-    // 1. Escuchar el buzón en tiempo real desde Firestore ($0 Spark Plan)
-    let unsubscribe: (() => void) | null = null
+    // 1. Escuchar el buzón de usuario en tiempo real desde Firestore
+    let unsubUser: (() => void) | null = null
     try {
       const userRef = doc(db, 'users', user.uid)
-      unsubscribe = onSnapshot(
+      unsubUser = onSnapshot(
         userRef,
         (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data()
             if (Array.isArray(data.inbox)) {
-              setMailList(data.inbox)
+              setMailList((prev) => {
+                const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_'))
+                const userMails = data.inbox.filter((m: any) => !m.id.startsWith('mail_ord_sup_'))
+                return [...supportFromOrders, ...userMails]
+              })
               if (selectedMail) {
                 const refreshed = data.inbox.find((m: any) => m.id === selectedMail.id)
                 if (refreshed) setSelectedMail(refreshed)
@@ -93,6 +98,71 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
       )
     } catch {}
 
+    // 2. Escuchar mensajes de soporte P2P desde cashier_orders en tiempo real ($0 Spark Plan)
+    let unsubOrders: (() => void) | null = null
+    try {
+      const qOrders = query(
+        collection(db, 'cashier_orders'),
+        where('playerUid', '==', user.uid)
+      )
+      unsubOrders = onSnapshot(
+        qOrders,
+        (snapshot) => {
+          const orderSupportMails: MailItem[] = []
+
+          snapshot.forEach((docSnap) => {
+            const ord = docSnap.data() as any
+            const orderId = docSnap.id
+            const orderMessages = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
+
+            if (orderMessages.length > 0) {
+              const lastMsg = orderMessages[orderMessages.length - 1]
+              const replies: SupportReply[] = orderMessages.map((m: any) => ({
+                id: m.id || `rep_${m.timestamp || Date.now()}`,
+                sender: m.senderName || (m.senderRole === 'cashier' ? 'Cajero Autorizado' : 'Jugador'),
+                senderRole: (m.senderRole || (m.senderUid === user.uid ? 'player' : 'cashier')) as any,
+                message: m.message,
+                timestamp: m.timestamp || Date.now(),
+                attachmentUrl: m.attachmentUrl
+              }))
+
+              const isOrderRead = ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : (lastMsg.senderUid === user.uid)
+
+              orderSupportMails.push({
+                id: `mail_ord_sup_${orderId}`,
+                title: `Soporte de Orden #${orderId.slice(0, 8)} (${ord.type === 'withdraw' ? 'Retiro' : 'Depósito'})`,
+                sender: lastMsg.senderName || 'Cajero Autorizado',
+                date: 'Hoy',
+                category: 'support',
+                isRead: isOrderRead,
+                content: lastMsg.message,
+                badge: ord.status === 'completed' ? 'Completado' : 'Soporte P2P',
+                orderId: orderId,
+                status: ord.status === 'completed' ? 'resolved' : 'pending',
+                timestamp: lastMsg.timestamp || Date.now(),
+                replies
+              })
+            }
+          })
+
+          setMailList((prev) => {
+            const nonOrderMails = prev.filter(m => !m.id.startsWith('mail_ord_sup_'))
+            return [...orderSupportMails, ...nonOrderMails]
+          })
+
+          if (selectedMail && selectedMail.orderId) {
+            const updatedSelected = orderSupportMails.find(m => m.orderId === selectedMail.orderId)
+            if (updatedSelected) {
+              setSelectedMail(updatedSelected)
+            }
+          }
+        },
+        (err) => {
+          console.debug('[MailScreen] Orders support snapshot notice:', err?.message)
+        }
+      )
+    } catch {}
+
     const handleLocalUpdate = () => {
       loadInbox()
     }
@@ -101,17 +171,27 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
 
     return () => {
-      if (unsubscribe) unsubscribe()
+      if (unsubUser) unsubUser()
+      if (unsubOrders) unsubOrders()
       if (typeof window !== 'undefined') {
         window.removeEventListener('sugar_inbox_updated', handleLocalUpdate)
       }
     }
   }, [user?.uid, selectedMail?.id])
 
-  const handleOpenMail = (mail: MailItem) => {
+  const handleOpenMail = async (mail: MailItem) => {
     markMailAsRead(user?.uid, mail.id)
     setMailList(prev => prev.map(m => m.id === mail.id ? { ...m, isRead: true } : m))
     setSelectedMail(mail)
+
+    if (mail.orderId) {
+      try {
+        const orderRef = doc(db, 'cashier_orders', mail.orderId)
+        await updateDoc(orderRef, {
+          playerReadAt: Date.now()
+        })
+      } catch {}
+    }
   }
 
   const handleClaimSingle = async (mailId: string, e?: React.MouseEvent) => {
@@ -161,34 +241,64 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   const handleSendReply = async () => {
     if (!replyInput.trim() || !selectedMail) return
     setIsSendingReply(true)
+    const replyText = replyInput.trim()
+    const senderName = user?.displayName || 'Jugador'
+    const now = Date.now()
+    const newReply: SupportReply = {
+      id: `rep_${now}`,
+      sender: senderName,
+      senderRole: 'player',
+      message: replyText,
+      timestamp: now
+    }
+
     try {
-      const success = await replySupportMail(
+      // 1. Si está vinculado a una orden P2P, actualizar directamente cashier_orders
+      if (selectedMail.orderId) {
+        const orderRef = doc(db, 'cashier_orders', selectedMail.orderId)
+        const orderSnap = await getDoc(orderRef)
+        if (orderSnap.exists()) {
+          const ordData = orderSnap.data() || {}
+          const currentMsgs = Array.isArray(ordData.supportMessages) ? ordData.supportMessages : []
+          await updateDoc(orderRef, {
+            supportMessages: [...currentMsgs, {
+              id: newReply.id,
+              orderId: selectedMail.orderId,
+              senderUid: user?.uid || 'usr_player',
+              senderName: senderName,
+              senderRole: 'player',
+              message: replyText,
+              timestamp: now
+            }],
+            lastMessage: replyText,
+            lastMessageTime: now,
+            hasUnreadPlayerMessage: true,
+            playerReadAt: now
+          })
+        }
+      }
+
+      // 2. Sincronizar también con inbox de usuario
+      await replySupportMail(
         user?.uid,
         selectedMail.id,
-        replyInput.trim(),
-        user?.displayName || 'Jugador',
+        replyText,
+        senderName,
         'player'
       )
-      if (success) {
-        const newReply = {
-          id: `rep_${Date.now()}`,
-          sender: user?.displayName || 'Jugador',
-          senderRole: 'player' as const,
-          message: replyInput.trim(),
-          timestamp: Date.now()
-        }
-        setSelectedMail(prev => prev ? {
-          ...prev,
-          replies: [...(prev.replies || []), newReply]
-        } : null)
-        setMailList(prev => prev.map(m => m.id === selectedMail.id ? {
-          ...m,
-          replies: [...(m.replies || []), newReply]
-        } : m))
-        setReplyInput('')
-        showToast('✉️ ¡Respuesta enviada al cajero con éxito!')
-      }
-    } catch {
+
+      setSelectedMail(prev => prev ? {
+        ...prev,
+        replies: [...(prev.replies || []), newReply]
+      } : null)
+      setMailList(prev => prev.map(m => m.id === selectedMail.id ? {
+        ...m,
+        replies: [...(m.replies || []), newReply]
+      } : m))
+      setReplyInput('')
+      showToast('✉️ ¡Respuesta enviada al cajero con éxito!')
+    } catch (e) {
+      console.warn('Error sending reply:', e)
       showToast('Error al enviar respuesta')
     } finally {
       setIsSendingReply(false)
