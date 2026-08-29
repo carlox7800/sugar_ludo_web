@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { OrderChatMessage } from '../../types/cashier'
-import { Shield, CreditCard, User, Image as ImageIcon, Eye } from 'lucide-react'
+import { Shield, CreditCard, User, Image as ImageIcon, Eye, Check, CheckCheck } from 'lucide-react'
 import { clsx } from 'clsx'
 
 interface OrderChatMessageItemProps {
@@ -68,7 +68,12 @@ export function OrderChatMessageItem({ message, isCurrentUser, onViewImage }: Or
               Moderador
             </span>
           )}
-          <span className="text-[10px] text-slate-500 font-mono">{formattedTime}</span>
+          <div className="flex items-center gap-1 text-[10px] text-slate-500 font-mono">
+            <span>{formattedTime}</span>
+            {isCurrentUser && (
+              <CheckCheck className="size-3 text-cyan-300 inline" />
+            )}
+          </div>
         </div>
 
         <div

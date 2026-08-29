@@ -45,11 +45,14 @@ export function OrderChatPanel({
     e.preventDefault()
     if ((!inputText.trim() && !attachedUrl) || isSending) return
 
+    const textToSend = inputText.trim()
+    const urlToSend = attachedUrl || undefined
+    setInputText('')
+    setAttachedUrl(null)
+
     try {
       setIsSending(true)
-      await onSendMessage(inputText.trim(), attachedUrl || undefined)
-      setInputText('')
-      setAttachedUrl(null)
+      await onSendMessage(textToSend, urlToSend)
     } finally {
       setIsSending(false)
     }

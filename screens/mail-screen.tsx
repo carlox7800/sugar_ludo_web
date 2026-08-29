@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { 
   ArrowLeft, 
   Mail, 
@@ -8,6 +9,7 @@ import {
   Gift, 
   Bell, 
   Sparkles, 
+  Check,
   CheckCircle2, 
   Clock, 
   Trash2, 
@@ -49,6 +51,11 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   const [isLoading, setIsLoading] = useState(true)
   const [replyInput, setReplyInput] = useState('')
   const [isSendingReply, setIsSendingReply] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -297,11 +304,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         senderName,
         'player'
       )
-
-      showToast('✉️ ¡Respuesta enviada al cajero con éxito!')
     } catch (e) {
       console.warn('Error sending reply:', e)
-      showToast('Error al enviar respuesta')
     } finally {
       setIsSendingReply(false)
     }
@@ -314,7 +318,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <section className="animate-slide-in mx-auto flex w-full max-w-5xl flex-col gap-5 p-2 sm:p-4">
-      {/* Toast Notification */}
+      {/* Toast Notification (solo para recompensas) */}
       {toastMessage && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[350] animate-in fade-in slide-in-from-top-4 flex items-center justify-center gap-2 rounded-full border border-[var(--candy-magenta)]/40 bg-[oklch(0.1_0.05_250)] px-6 py-3 text-[var(--candy-magenta)] font-display text-sm font-bold shadow-2xl shadow-[var(--candy-magenta)]/20 whitespace-nowrap">
           <Sparkles className="size-4 animate-spin" />
@@ -528,9 +532,9 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {/* MODAL DETALLES DEL MENSAJE Y CHAT P2P */}
-      {selectedMail && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-in fade-in">
+      {/* MODAL DETALLES DEL MENSAJE Y CHAT P2P (Renderizado via Portal para centrado absoluto) */}
+      {selectedMail && isMounted && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md animate-in fade-in">
           <div className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-3xl border border-cyan-500/40 bg-[#0c101d] shadow-2xl overflow-hidden animate-in zoom-in-95">
             
             {/* Fixed Header */}
@@ -601,7 +605,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                     )}
                   </div>
 
-                  {/* Unique Deduplicated Replies */}
+                  {/* Unique Deduplicated Replies con Rayitas de Estado */}
                   <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {Array.from(new Map((selectedMail.replies || []).map(r => [r.id || `${r.timestamp}_${r.message}`, r])).values()).map((rep) => (
                       <div
@@ -617,7 +621,14 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                           <strong className={rep.senderRole === 'player' ? 'text-pink-300' : 'text-cyan-300'}>
                             {rep.sender} {rep.senderRole === 'cashier' ? '(Cajero)' : ''}
                           </strong>
-                          <span>{new Date(rep.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <div className="flex items-center gap-1 font-mono">
+                            <span>{new Date(rep.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {rep.senderRole === 'player' ? (
+                              <CheckCheck className="size-3 text-pink-400 inline" />
+                            ) : (
+                              <CheckCheck className="size-3 text-cyan-400 inline" />
+                            )}
+                          </div>
                         </div>
                         <p className="text-foreground whitespace-pre-wrap">{rep.message}</p>
                       </div>
@@ -660,7 +671,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                     className="btn-3d px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0 cursor-pointer"
                   >
                     <Send className="size-3.5" />
-                    <span>{isSendingReply ? 'Enviando...' : 'Enviar'}</span>
+                    <span>{isSendingReply ? '...' : 'Enviar'}</span>
                   </button>
                 </div>
               )}
@@ -684,7 +695,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </section>
   )
