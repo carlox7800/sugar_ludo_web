@@ -11,7 +11,8 @@ export type LogLevel =
   | 'UI-NAV'
   | 'SOCIAL-SSE'
   | 'AUTH'
-  | 'ECONOMY';
+  | 'ECONOMY'
+  | 'WALLET';
 
 export interface LogEntry {
   timestamp: string;
@@ -147,6 +148,10 @@ class Logger {
 
   public economy(message: string, details?: any) {
     this.log('ECONOMY', message, details);
+  }
+
+  public wallet(message: string, details?: any) {
+    this.log('WALLET', message, details);
   }
 
   public error(message: string, details?: any) {

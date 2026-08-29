@@ -16,5 +16,8 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)
 const auth = getAuth(app)
 const db = initializeFirestore(app, { experimentalForceLongPolling: true })
 const googleProvider = new GoogleAuthProvider()
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+})
 
 export { app, auth, db, googleProvider }

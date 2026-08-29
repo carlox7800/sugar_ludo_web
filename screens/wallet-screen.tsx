@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
 import { db } from '@/lib/firebase'
 import { doc, onSnapshot, collection, query, where, getDoc, updateDoc } from 'firebase/firestore'
+import { globalLogger } from '@/lib/logger'
 import {
   fetchWalletTransactions,
   createDepositOrder,
@@ -193,6 +194,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
     }
 
     setIsSubmitting(true)
+    globalLogger.wallet(`Iniciando solicitud de depósito: ${amount} USDT / +${amount * 100} SC`, { txId: txId.trim() })
     try {
       const res = await createDepositOrder({
         playerUid: user.uid,
@@ -203,12 +205,16 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
       })
 
       if (res.success) {
+        globalLogger.wallet(`Depósito registrado con éxito: #${res.orderId}`, res)
         setDepositAmount('')
         setTxId('')
         showNotification(`Solicitud #${res.orderId.slice(0, 10)} enviada al cajero. Se acreditará al validar.`, 'success')
         refreshData()
+      } else {
+        globalLogger.error(`Error en respuesta al registrar depósito:`, res)
       }
-    } catch {
+    } catch (err: any) {
+      globalLogger.error(`Excepción al registrar depósito:`, { message: err?.message })
       showNotification('Error al registrar la solicitud de depósito', 'error')
     } finally {
       setIsSubmitting(false)
@@ -237,6 +243,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
     }
 
     setIsSubmitting(true)
+    globalLogger.wallet(`Iniciando solicitud de retiro: ${amount} USDT / -${coinsToDeduct} SC`, { address: withdrawAddress.trim() })
     try {
       const res = await createWithdrawOrder({
         playerUid: user.uid,
@@ -248,12 +255,16 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
       })
 
       if (res.success) {
+        globalLogger.wallet(`Retiro registrado con éxito: #${res.orderId}`, res)
         setWithdrawAmount('')
         setWithdrawAddress('')
-        showNotification(`Solicitud de retiro enviada (-${coinsToDeduct} SC en Escrow).`, 'success')
+        showNotification(`Solicitud de retiro enviada (-${coinsToDeduct} SC retenidos en espera de validación).`, 'success')
         refreshData()
+      } else {
+        globalLogger.error(`Error en respuesta al registrar retiro:`, res)
       }
-    } catch {
+    } catch (err: any) {
+      globalLogger.error(`Excepción al procesar retiro:`, { message: err?.message })
       showNotification('Error al procesar la solicitud de retiro', 'error')
     } finally {
       setIsSubmitting(false)
@@ -262,13 +273,16 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
   const handleCancelOrder = async (orderId: string) => {
     if (!user?.uid) return
+    globalLogger.wallet(`Cancelando solicitud de orden: #${orderId}`)
     try {
       const res = await cancelPlayerOrder(user.uid, orderId)
       if (res.success) {
+        globalLogger.wallet(`Orden cancelada con éxito: #${orderId}`)
         showNotification('Solicitud cancelada con éxito', 'info')
         refreshData()
       }
-    } catch {
+    } catch (err: any) {
+      globalLogger.error(`Excepción al cancelar orden: #${orderId}`, { message: err?.message })
       showNotification('Error al cancelar la solicitud', 'error')
     }
   }

@@ -330,3 +330,76 @@ export async function resolveDisputeCaseAtomics(params: {
     }
   })
 }
+
+/**
+ * 4. COMPLETAR LIQUIDACIÓN DE RETIRO (Cajero envía fondos fiat/USDT y liquida la orden)
+ */
+export async function completeWithdrawalOrder(params: {
+  orderId: string
+  cashierUid: string
+  payoutTxId: string
+  actorUid: string
+  actorRole: 'admin' | 'cashier'
+}): Promise<{ success: boolean; message: string }> {
+  const { orderId, cashierUid, payoutTxId, actorUid, actorRole } = params
+  const now = Date.now()
+
+  return await (adminDb as any).runTransaction(async (transaction: any) => {
+    const orderRef = adminDb.collection('cashier_orders').doc(orderId)
+    const orderSnap = await transaction.get(orderRef)
+
+    if (!orderSnap.exists) {
+      throw new Error(`La orden #${orderId} no existe.`)
+    }
+
+    const order = orderSnap.data() as CashierOrder
+    if (order.status === 'completed') {
+      return { success: true, message: 'La orden ya se encuentra completada.' }
+    }
+
+    const amountCoins = Number(order.amountSugarCoins || 0)
+    const commissionCoins = Number(order.cashierCommissionCoins || Math.round(amountCoins * 0.03))
+
+    // 1. Actualizar orden a completed
+    transaction.update(orderRef, {
+      status: 'completed',
+      receiptReferenceNumber: payoutTxId,
+      completedAt: now,
+      isEscrowLocked: false,
+      settledByCashierUid: cashierUid
+    })
+
+    // 2. Acreditar comisión y liberar saldo al cajero
+    const cashierRef = adminDb.collection('cashier_profiles').doc(cashierUid)
+    const cashierSnap = await transaction.get(cashierRef)
+    if (cashierSnap.exists) {
+      transaction.update(cashierRef, {
+        totalOrdersCompleted: admin.firestore.FieldValue.increment(1),
+        totalCommissionsEarnedCoins: admin.firestore.FieldValue.increment(commissionCoins),
+        lastActiveAt: now
+      })
+    }
+
+    // 3. Registrar auditoría
+    const auditRef = adminDb.collection('audit_logs').doc()
+    const auditLog: AuditLog = {
+      id: auditRef.id,
+      action: 'WITHDRAW_COMPLETED',
+      actorUid,
+      actorRole,
+      targetUid: order.playerUid,
+      targetOrderId: orderId,
+      amountCoins,
+      amountFiat: order.amountFiat,
+      currency: order.currency,
+      notes: `Liquidación de retiro completada con TxID/Ref: ${payoutTxId}`,
+      timestamp: now
+    }
+    transaction.set(auditRef, auditLog)
+
+    return {
+      success: true,
+      message: `Retiro #${orderId.slice(0, 8)} liquidado con éxito.`
+    }
+  })
+}

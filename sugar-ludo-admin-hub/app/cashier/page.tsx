@@ -7,6 +7,7 @@ import { OrderFilterTabs, FilterStatus } from '../../components/orders/OrderFilt
 import { OrderCard } from '../../components/orders/OrderCard'
 import { ReceiptImageViewer } from '../../components/receipts/ReceiptImageViewer'
 import { CashierAdminChatModal } from '../../components/cashier/CashierAdminChatModal'
+import { CashierLogPanel } from '../../components/cashier/CashierLogPanel'
 import { useAdminAuth } from '../../lib/admin-auth-context'
 import { db } from '../../lib/firebase'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
@@ -380,6 +381,9 @@ export default function CashierMainDeskPage() {
         onClose={() => setIsAdminChatOpen(false)}
         cashierName={currentCashier.name}
       />
+
+      {/* Floating Diagnostic Log Console */}
+      <CashierLogPanel />
     </div>
   )
 }

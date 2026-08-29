@@ -23,6 +23,9 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
+import { db } from '@/lib/firebase'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { globalLogger } from '@/lib/logger'
 import confetti from 'canvas-confetti'
 import { 
   MailItem, 

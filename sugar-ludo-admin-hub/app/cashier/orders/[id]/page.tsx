@@ -7,6 +7,7 @@ import { CashierOrder, OrderChatMessage } from '../../../../types/cashier'
 import { ReceiptImageViewer } from '../../../../components/receipts/ReceiptImageViewer'
 import { OrderChatPanel } from '../../../../components/chat/OrderChatPanel'
 import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/WithdrawalAuditInspectorCard'
+import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
 import { db } from '../../../../lib/firebase'
 import { doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore'
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check, Copy, RefreshCw } from 'lucide-react'
@@ -135,7 +136,65 @@ export default function OrderDetailPage() {
     }
     setMessages((prev) => [...prev, newMsg])
 
-    // Post to backend API to persist in Firestore subcollection and inject into Player's Support Inbox
+    // 1. Client-Side direct Firestore update for zero latency
+    try {
+      if (order.playerUid) {
+        const userDocRef = doc(db, 'users', order.playerUid)
+        const userSnap = await getDoc(userDocRef)
+        if (userSnap.exists()) {
+          const userData = userSnap.data() || {}
+          const inbox = Array.isArray(userData.inbox) ? [...userData.inbox] : []
+          const supportMailId = `mail_sup_${order.id}`
+          const existingMailIndex = inbox.findIndex((m: any) => m.id === supportMailId || m.orderId === order.id)
+
+          const replyItem = {
+            id: newMsg.id,
+            sender: 'carlosandroid (Cajero)',
+            senderRole: 'cashier',
+            message: text.trim(),
+            timestamp: Date.now(),
+            attachmentUrl
+          }
+
+          if (existingMailIndex !== -1) {
+            const currentMail = inbox[existingMailIndex]
+            const currentReplies = Array.isArray(currentMail.replies) ? currentMail.replies : []
+            inbox[existingMailIndex] = {
+              ...currentMail,
+              content: text.trim(),
+              isRead: false,
+              timestamp: Date.now(),
+              date: 'Hoy',
+              replies: [...currentReplies, replyItem]
+            }
+          } else {
+            const newSupportMail = {
+              id: supportMailId,
+              title: `Consulta de Cajero sobre Orden #${order.id.slice(0, 8)}`,
+              sender: 'carlosandroid (Cajero)',
+              date: 'Hoy',
+              category: 'support',
+              isRead: false,
+              content: text.trim(),
+              badge: 'Soporte P2P',
+              orderId: order.id,
+              status: 'pending',
+              timestamp: Date.now(),
+              replies: [replyItem]
+            }
+            inbox.unshift(newSupportMail)
+          }
+
+          await updateDoc(userDocRef, {
+            inbox: inbox.slice(0, 50)
+          }).catch(() => {})
+        }
+      }
+    } catch (clientErr) {
+      console.warn('[OrderDetail] Client-side Firestore message sync notice:', clientErr)
+    }
+
+    // 2. Post to backend API to guarantee backup persistence
     try {
       await fetch(`/api/cashier/orders/${order.id}/message`, {
         method: 'POST',
@@ -213,38 +272,56 @@ export default function OrderDetailPage() {
     setTimeout(() => setNotification(null), 4000)
   }
 
+  const [isValidatingPayout, setIsValidatingPayout] = useState(false)
+
   const handleConfirmPayout = async () => {
     if (!payoutTxId.trim()) return
+    setIsValidatingPayout(true)
+
+    // 1. LocalStorage & OrdersCache instant optimistic update
+    const updatedOrder = {
+      ...order,
+      status: 'completed' as const,
+      completedAt: Date.now(),
+      receiptReferenceNumber: payoutTxId.trim()
+    }
+    OrdersCache.updateOrder(updatedOrder)
+    if (typeof window !== 'undefined') {
+      const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+      const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
+      localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
+    }
 
     try {
-      // 1. Direct Firestore update
+      // 2. Direct Firestore update (Client side)
       const orderDocRef = doc(db, 'cashier_orders', order.id)
       await updateDoc(orderDocRef, {
         status: 'completed',
         completedAt: Date.now(),
-        receiptReferenceNumber: payoutTxId
-      })
+        receiptReferenceNumber: payoutTxId.trim()
+      }).catch(() => {})
 
-      // 2. LocalStorage & OrdersCache update
-      const updatedOrder = {
-        ...order,
-        status: 'completed' as const,
-        completedAt: Date.now(),
-        receiptReferenceNumber: payoutTxId
-      }
-      OrdersCache.updateOrder(updatedOrder)
-      if (typeof window !== 'undefined') {
-        const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
-        const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
-        localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
-      }
+      // 3. Backend Atomic Action (Server side - guaranteed persistence in Firestore)
+      await fetch(`/api/cashier/orders/${order.id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'complete_withdrawal',
+          cashierUid: 'csh_carlosandroid_001',
+          actorUid: 'csh_carlosandroid_001',
+          actorRole: 'cashier',
+          payoutTxId: payoutTxId.trim()
+        })
+      })
     } catch (e) {
       console.warn('[OrderDetail] Payout update notice:', e)
+    } finally {
+      setIsValidatingPayout(false)
     }
 
-    setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: payoutTxId } : null))
+    setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: payoutTxId.trim() } : null))
     setIsPayoutModalOpen(false)
-    setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${payoutTxId}!`)
+    setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${payoutTxId.trim()}!`)
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -601,16 +678,24 @@ export default function OrderDetailPage() {
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setIsPayoutModalOpen(false)}
-                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer"
+                disabled={isValidatingPayout}
+                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleConfirmPayout}
-                disabled={!payoutTxId.trim()}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(236,72,153,0.3)] disabled:opacity-50 cursor-pointer"
+                disabled={!payoutTxId.trim() || isValidatingPayout}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(236,72,153,0.3)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
               >
-                Confirmar Pago
+                {isValidatingPayout ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin" />
+                    <span>Procesando liquidación...</span>
+                  </>
+                ) : (
+                  <span>Confirmar Pago</span>
+                )}
               </button>
             </div>
           </div>
@@ -626,6 +711,9 @@ export default function OrderDetailPage() {
         bankName={order.paymentMethod}
         amount={`${order.amountFiat.toLocaleString()} ${order.currency}`}
       />
+
+      {/* Floating Diagnostic Log Console */}
+      <CashierLogPanel />
     </div>
   )
 }
