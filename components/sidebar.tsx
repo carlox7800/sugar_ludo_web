@@ -61,7 +61,7 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
           if (snap.exists()) {
             const data = snap.data()
             if (Array.isArray(data.inbox)) {
-              const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && m.rewardSC)).length
+              const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
               setUnreadInboxCount(unread)
             }
           }
@@ -84,7 +84,15 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
             const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
             if (msgs.length > 0) {
               const lastMsg = msgs[msgs.length - 1]
-              const isRead = ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : (lastMsg.senderUid === user.uid)
+              if (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') {
+                return
+              }
+              if (ord.hasUnreadCashierMessage === false) {
+                return
+              }
+              const playerReadAt = Number(ord.playerReadAt || 0)
+              const msgTimestamp = Number(lastMsg.timestamp || 0)
+              const isRead = playerReadAt >= msgTimestamp
               if (!isRead) {
                 supportUnread++
               }
@@ -239,7 +247,7 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
           if (snap.exists()) {
             const data = snap.data()
             if (Array.isArray(data.inbox)) {
-              const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && m.rewardSC)).length
+              const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
               setUnreadInboxCount(unread)
             }
           }
@@ -262,7 +270,15 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
             const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
             if (msgs.length > 0) {
               const lastMsg = msgs[msgs.length - 1]
-              const isRead = ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : (lastMsg.senderUid === user.uid)
+              if (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') {
+                return
+              }
+              if (ord.hasUnreadCashierMessage === false) {
+                return
+              }
+              const playerReadAt = Number(ord.playerReadAt || 0)
+              const msgTimestamp = Number(lastMsg.timestamp || 0)
+              const isRead = playerReadAt >= msgTimestamp
               if (!isRead) {
                 supportUnread++
               }

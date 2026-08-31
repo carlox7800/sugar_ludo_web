@@ -225,17 +225,35 @@ export async function claimAllRewards(
 
 export async function markMailAsRead(userId: string | undefined, mailId: string): Promise<void> {
   const inbox = await fetchUserInbox(userId)
-  const target = inbox.find(m => m.id === mailId)
-  if (target && !target.isRead) {
-    target.isRead = true
+  const cleanId = mailId.replace(/^mail_ord_sup_/, '').replace(/^mail_sup_/, '')
+  let updatedAny = false
+
+  inbox.forEach(m => {
+    const mCleanId = m.id.replace(/^mail_ord_sup_/, '').replace(/^mail_sup_/, '')
+    if (m.id === mailId || mCleanId === cleanId || (m.orderId && (m.orderId === mailId || m.orderId === cleanId))) {
+      if (!m.isRead) {
+        m.isRead = true
+        updatedAny = true
+      }
+    }
+  })
+
+  if (updatedAny) {
     if (userId && !userId.startsWith('dev_')) {
       try {
         const userRef = doc(db, 'users', userId)
         await updateDoc(userRef, { inbox })
-      } catch {}
+      } catch (err) {
+        console.warn('[MailService] Error actualizando inbox en Firestore:', err)
+      }
     }
     if (typeof window !== 'undefined') {
       localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
+  } else {
+    // Si era un mensaje cargado de cashier_orders, notificar de todos modos para sincronizar
+    if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
     }
   }

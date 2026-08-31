@@ -26,6 +26,8 @@ export interface PlayerP2POrder {
   paymentMethod: string
   receiptReferenceNumber?: string
   createdAt: number
+  isVip?: boolean
+  isVipWithdraw?: boolean
 }
 
 const LOCAL_ORDERS_KEY = 'sugar_cashier_orders'
@@ -275,9 +277,11 @@ export async function createWithdrawOrder(params: {
     amountFiat,
     currency,
     amountSugarCoins,
-    paymentMethod: 'usdt_trc20',
+    paymentMethod: isVip ? 'usdt_trc20_vip' : 'usdt_trc20',
     receiptReferenceNumber: paymentAddress,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    isVip: Boolean(isVip),
+    isVipWithdraw: Boolean(isVip)
   }
 
   // 1. Guardar en localStorage y emitir por canales locales/SSE/HTTP a cajeros
@@ -313,7 +317,7 @@ export async function createWithdrawOrder(params: {
     await recordWalletTransaction(playerUid, {
       type: 'withdraw',
       amount: -amountSugarCoins,
-      description: 'Solicitud de Retiro (Pendiente)'
+      description: isVip ? 'Solicitud de Retiro VIP (Pendiente)' : 'Solicitud de Retiro (Pendiente)'
     })
   } catch (histErr) {
     console.warn('[WalletService] Error debitando monedas:', histErr)
@@ -339,7 +343,9 @@ export async function createWithdrawOrder(params: {
           amountSugarCoins: { integerValue: String(orderData.amountSugarCoins) },
           paymentMethod: { stringValue: orderData.paymentMethod },
           receiptReferenceNumber: { stringValue: orderData.receiptReferenceNumber || '' },
-          createdAt: { integerValue: String(orderData.createdAt) }
+          createdAt: { integerValue: String(orderData.createdAt) },
+          isVip: { booleanValue: Boolean(isVip) },
+          isVipWithdraw: { booleanValue: Boolean(isVip) }
         }
       })
     }).catch(() => {})

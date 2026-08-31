@@ -189,7 +189,7 @@ export default function OrderDetailPage() {
   const cashierFloatUSDT = Number((cashierTarget as any).floatBalanceUSDT ?? (cashierFloatCoins / 100))
 
   const totalFiatRequestedUSD = Number(order.amountFiat || (Number(order.amountSugarCoins || 0) / 100))
-  const isVipOrder = Boolean((order as any).isVip || (order as any).isVipWithdraw || order.paymentMethod === 'usdt_bep20')
+  const isVipOrder = Boolean((order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
   const withdrawalFeePercent = isVipOrder ? 0.10 : 0.05
   const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
   const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
@@ -388,7 +388,7 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
     setPayoutTxId(finalPayoutRef)
 
     const totalFiatRequestedUSD = Number(order.amountFiat || (order.amountSugarCoins / 100))
-    const isVip = order.paymentMethod === 'usdt_bep20' || (order as any).isVip
+    const isVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
     const feePercent = isVip ? 0.10 : 0.05
     const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * feePercent).toFixed(2))
     const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
@@ -524,13 +524,16 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       }).catch(() => {})
 
       // 4. Inyección automática del comprobante de liquidación al chat de soporte
-      const payoutNoticeText = `💸 ¡RETIRO LIQUIDADO Y TRANSFERIDO!
+      const payoutNoticeText = `💸 ¡${isVip ? 'RETIRO VIP' : 'RETIRO'} LIQUIDADO Y TRANSFERIDO!
 
 Hola ${order.playerName}, hemos enviado tus fondos a tu cuenta de destino:
 ━━━━━━━━━━━━━━━━━━━━
-💵 Monto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency} (Neto tras comisión de ${Math.round(feePercent * 100)}%)
+💵 Monto Solicitado: $${totalFiatRequestedUSD.toFixed(2)} ${order.currency}
+⚡ Modalidad: Retiro ${isVip ? 'VIP (Prioridad Máxima - Comisión 10%)' : 'Estándar (Comisión 5%)'}
+🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(feePercent * 100)}%)
+💰 Monto Neto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency}
 🪙 Sugar Coins Liquidados: -${order.amountSugarCoins} SC
-🏦 Destino: ${order.paymentMethod.toUpperCase()} (${order.receiptReferenceNumber || 'Dirección registrada'})
+🏦 Destino: ${order.paymentMethod.toUpperCase()} (${(order as any).paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
 🔗 Hash / TxID Oficial: ${finalPayoutRef}
 👨‍💼 Cajero Responsable: ${currentCashierSession.name}
 ━━━━━━━━━━━━━━━━━━━━
@@ -718,7 +721,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 playerName={order.playerName}
                 amountSugarCoins={order.amountSugarCoins}
                 amountFiatUSDT={order.amountFiat}
-                feePercent={10.0}
+                feePercent={isVipOrder ? 10.0 : 5.0}
               />
             )}
 
@@ -908,7 +911,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
 
             <div className="space-y-3 text-xs">
               {(() => {
-                const isModalVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || order.paymentMethod === 'usdt_bep20')
+                const isModalVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
                 const modalFeePercent = isModalVip ? 0.10 : 0.05
                 const modalRequestedFiat = Number(order.amountFiat || (order.amountSugarCoins / 100))
                 const modalFeeFiat = parseFloat((modalRequestedFiat * modalFeePercent).toFixed(2))

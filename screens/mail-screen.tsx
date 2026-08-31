@@ -221,7 +221,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               })
 
               const replies = Array.from(replyMap.values())
-              const isOrderRead = ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : (lastMsg.senderUid === user.uid)
+              const isOrderRead = (ord.hasUnreadCashierMessage === false) || (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') || (ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : false)
 
               orderSupportMails.push({
                 id: mailKey,
@@ -297,16 +297,28 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
   const handleOpenMail = async (mail: MailItem) => {
     markMailAsRead(user?.uid, mail.id)
-    setMailList(prev => prev.map(m => m.id === mail.id ? { ...m, isRead: true } : m))
+    if (mail.orderId) {
+      markMailAsRead(user?.uid, `mail_sup_${mail.orderId}`)
+      markMailAsRead(user?.uid, `mail_ord_sup_${mail.orderId}`)
+      markMailAsRead(user?.uid, mail.orderId)
+    }
+    setMailList(prev => prev.map(m => (m.id === mail.id || (mail.orderId && m.orderId === mail.orderId)) ? { ...m, isRead: true } : m))
     setSelectedMail(mail)
 
     if (mail.orderId) {
       try {
         const orderRef = doc(db, 'cashier_orders', mail.orderId)
         await updateDoc(orderRef, {
-          playerReadAt: Date.now()
+          playerReadAt: Date.now(),
+          hasUnreadCashierMessage: false
         })
-      } catch {}
+      } catch (err) {
+        console.warn('[MailScreen] Error updating playerReadAt:', err)
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
     }
   }
 

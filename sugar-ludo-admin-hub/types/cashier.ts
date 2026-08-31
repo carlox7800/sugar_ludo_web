@@ -22,6 +22,7 @@ export type PaymentMethodType =
   | 'bancolombia'     // Colombia
   | 'mercadopago'     // Argentina / México
   | 'usdt_trc20'      // Cripto USDT (TRON)
+  | 'usdt_trc20_vip'  // Cripto USDT VIP (TRON)
   | 'usdt_bep20'      // Cripto USDT (BSC)
   | 'binance_pay'     // Binance Pay ID
   | 'zelle'           // USD Zelle
@@ -62,6 +63,10 @@ export interface CashierOrder {
   exchangeRate: number      // Tasa de cambio aplicada al momento de crear la orden
   amountSugarCoins: number  // Monto equivalente en Sugar Coins (SC)
   cashierCommissionCoins: number // Comisión en SC ganada por el cajero
+  isVip?: boolean
+  isVipWithdraw?: boolean
+  netPayoutUSD?: number
+  withdrawalFeeUSD?: number
 
   // Método de Pago y Cuentas
   paymentMethod: PaymentMethodType

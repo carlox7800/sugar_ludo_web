@@ -375,10 +375,12 @@ export async function completeWithdrawalOrder(params: {
 
     const totalFiatRequestedUSD = Number(order.amountFiat || (amountCoins / 100))
     // Descuento del fee de retiro de la plataforma (5% estándar o 10% vip)
-    const withdrawalFeePercent = order.paymentMethod === 'usdt_bep20' ? 0.05 : 0.05
-    const withdrawalFeeUSD = totalFiatRequestedUSD * withdrawalFeePercent
-    const netPayoutUSD = Math.max(0, totalFiatRequestedUSD - withdrawalFeeUSD)
+    const isVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || order.paymentMethod === 'usdt_bep20' || order.paymentMethod === 'usdt_trc20_vip')
+    const withdrawalFeePercent = isVip ? 0.10 : 0.05
+    const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
+    const netPayoutUSD = parseFloat(Math.max(0, totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
     const netPayoutCoins = Math.round(netPayoutUSD * 100)
+    const feeCoins = Math.round(withdrawalFeeUSD * 100)
 
     // 1. Actualizar orden a completed
     transaction.update(orderRef, {
