@@ -522,20 +522,25 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                   {/* Input de Monto a Retirar */}
                   <div className="flex flex-col gap-2 mt-1">
                     <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
-                      Monto a Retirar en Dólares (USDT)
+                      MONTO A RETIRAR EN USDT
                     </label>
                     <div className="relative">
                       <input 
                         type="number"
                         required
+                        disabled={!user?.walletAddress}
                         min="5"
                         step="1"
                         value={withdrawAmount}
                         onChange={(e) => setWithdrawAmount(e.target.value)}
-                        placeholder="Ej: 50, 100, 200..." 
-                        className="w-full rounded-xl border border-border bg-[oklch(1_0_0/0.05)] px-4 py-3.5 text-base font-mono font-black text-foreground outline-none transition-colors focus:border-[var(--candy-magenta)] focus:bg-[oklch(1_0_0/0.1)]"
+                        placeholder={user?.walletAddress ? "Ej: 50, 100, 200..." : "Bloqueado (configura tu billetera primero)"} 
+                        className={`w-full rounded-xl border px-4 py-3.5 text-base font-mono font-black outline-none transition-colors ${
+                          !user?.walletAddress 
+                            ? 'bg-slate-900/50 border-white/5 text-slate-500 opacity-50 cursor-not-allowed'
+                            : 'border-border bg-[oklch(1_0_0/0.05)] text-foreground focus:border-[var(--candy-magenta)] focus:bg-[oklch(1_0_0/0.1)]'
+                        }`}
                       />
-                      {withdrawAmount && (
+                      {withdrawAmount && user?.walletAddress && (
                         <span className="absolute right-4 top-3.5 text-xs font-bold text-muted-foreground font-mono">
                           = {Number(withdrawAmount) * 100} SC
                         </span>
@@ -545,7 +550,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                 </div>
 
                 {/* VIP Toggle (Settings Modal style) */}
-                <div className="flex items-center justify-between rounded-2xl border border-border bg-[oklch(1_0_0/0.03)] p-4">
+                <div className={`flex items-center justify-between rounded-2xl border border-border bg-[oklch(1_0_0/0.03)] p-4 transition-opacity ${!user?.walletAddress ? 'opacity-50' : ''}`}>
                   <div className="flex flex-col">
                     <span className="font-display text-sm font-bold text-foreground">Retiro VIP (Prioridad Máxima)</span>
                     <span className={`text-xs font-semibold ${isVipWithdraw ? 'text-[var(--candy-magenta)]' : 'text-muted-foreground'}`}>
@@ -554,8 +559,9 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                   </div>
                   <button
                     type="button"
+                    disabled={!user?.walletAddress}
                     onClick={() => setIsVipWithdraw(!isVipWithdraw)}
-                    className={`relative h-7 w-12 rounded-full transition-colors cursor-pointer ${isVipWithdraw ? 'bg-[var(--candy-magenta)]' : 'bg-muted'}`}
+                    className={`relative h-7 w-12 rounded-full transition-colors ${!user?.walletAddress ? 'cursor-not-allowed bg-muted' : isVipWithdraw ? 'bg-[var(--candy-magenta)] cursor-pointer' : 'bg-muted cursor-pointer'}`}
                   >
                     <div className={`absolute top-1 size-5 rounded-full bg-white transition-transform ${isVipWithdraw ? 'left-6' : 'left-1'}`} />
                   </button>
@@ -564,13 +570,13 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                 <button
                   type="submit"
                   disabled={isSubmitting || !user?.walletAddress}
-                  className="btn-3d w-full rounded-xl bg-[var(--candy-magenta)] py-4 font-display text-base font-extrabold text-primary-foreground shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)] disabled:opacity-50 cursor-pointer"
+                  className={`btn-3d w-full rounded-xl py-4 font-display text-base font-extrabold transition-all ${
+                    !user?.walletAddress
+                      ? 'bg-slate-800/80 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed shadow-none'
+                      : 'bg-[var(--candy-magenta)] text-primary-foreground shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)] cursor-pointer'
+                  }`}
                 >
-                  {isSubmitting
-                    ? 'PROCESANDO...'
-                    : !user?.walletAddress
-                    ? 'CONFIGURA TU BILLETERA EN EL PERFIL'
-                    : 'Confirmar Retiro'}
+                  {isSubmitting ? 'PROCESANDO...' : 'Realizar Retiro'}
                 </button>
               </form>
             )}

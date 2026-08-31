@@ -50,6 +50,12 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     }
   }, [isOpen, onClose])
 
+  useEffect(() => {
+    if (user?.walletAddress) {
+      setWalletInput(user.walletAddress)
+    }
+  }, [isOpen, user?.walletAddress])
+
   if (!isOpen || !user) return null
 
   const getActiveAvatar = () => {
@@ -67,12 +73,6 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     ? Math.ceil((NINETY_DAYS_MS - (Date.now() - user.nicknameUpdatedAt)) / (24 * 60 * 60 * 1000))
     : 0
 
-  useEffect(() => {
-    if (user?.walletAddress) {
-      setWalletInput(user.walletAddress)
-    }
-  }, [user?.walletAddress])
-
   const handleSaveWallet = async () => {
     const clean = walletInput.trim()
     if (!clean) {
@@ -85,10 +85,20 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
       setTimeout(() => setWalletToast(null), 3000)
       return
     }
-    await setWalletAddress(clean)
-    setIsEditingWallet(false)
-    setWalletToast('✅ ¡Billetera guardada para tus retiros!')
-    setTimeout(() => setWalletToast(null), 3500)
+    try {
+      if (setWalletAddress) {
+        await setWalletAddress(clean)
+      } else if (typeof window !== 'undefined') {
+        localStorage.setItem('sugar_user_wallet_address', clean)
+      }
+      setIsEditingWallet(false)
+      setWalletToast('✅ ¡Billetera guardada para tus retiros!')
+      setTimeout(() => setWalletToast(null), 3500)
+    } catch (err) {
+      console.warn('Error guardando billetera:', err)
+      setWalletToast('⚠️ Error al guardar. Intente nuevamente.')
+      setTimeout(() => setWalletToast(null), 3000)
+    }
   }
 
   const handleSaveNick = () => {
