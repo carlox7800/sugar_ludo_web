@@ -37,103 +37,98 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
   return (
     <div
       className={clsx(
-        'group p-5 rounded-3xl transition-all duration-200 space-y-4 hover:shadow-xl',
+        'group p-4 rounded-2xl transition-all duration-200 space-y-3 hover:shadow-xl border',
         isPending
-          ? 'bg-amber-950/25 border-2 border-amber-500/70 shadow-[0_0_25px_rgba(245,158,11,0.18)] ring-1 ring-amber-400/40 hover:border-amber-400'
-          : 'bg-slate-900/60 border border-white/10 hover:border-white/20'
+          ? 'bg-amber-950/20 border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.12)] hover:border-amber-400'
+          : isPaid
+          ? 'bg-cyan-950/20 border-cyan-500/40 shadow-[0_0_20px_rgba(6,182,212,0.12)] hover:border-cyan-400'
+          : 'bg-slate-900/60 border-white/10 hover:border-white/20'
       )}
     >
       {/* Top Meta Line */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div
             className={clsx(
-              'p-2.5 rounded-2xl border shrink-0',
+              'p-2 rounded-xl border shrink-0',
               isDeposit
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-pink-500/10 text-pink-400 border-pink-500/30'
             )}
           >
-            {isDeposit ? <ArrowDownLeft className="size-5" /> : <ArrowUpRight className="size-5" />}
+            {isDeposit ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-mono font-bold text-white text-xs">#{order.id.slice(0, 8)}</span>
-              <span
-                className={clsx(
-                  'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border',
-                  isCompleted
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : isDisputed
-                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                    : isPaid
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
-                    : isPending
-                    ? 'bg-amber-500/30 text-amber-300 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse font-extrabold'
-                    : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                )}
-              >
-                {order.status === 'paid' ? 'Comprobante Subido' : order.status}
-              </span>
+              <span className="text-[10px] text-slate-500 uppercase font-bold">• {isDeposit ? 'Depósito' : 'Retiro'}</span>
             </div>
-            <span className="text-[11px] text-slate-400 font-medium">
-              {isDeposit ? 'Depósito de Fondos' : 'Solicitud de Retiro'}
-            </span>
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
+              <span className="font-bold text-white truncate">{order.playerName}</span>
+              {displayPlayerId && (
+                <span className="font-mono text-[10px] text-cyan-300 font-bold bg-cyan-500/10 border border-cyan-500/25 px-1 rounded">
+                  {displayPlayerId}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Expiration Timer Indicator */}
-        <div className="flex items-center gap-1 text-[11px] font-mono text-slate-400 bg-slate-950/60 px-2.5 py-1 rounded-xl border border-white/5">
-          <Clock className="size-3.5 text-cyan-400" />
-          <span>30m ventana</span>
-        </div>
+        {/* Status Badge */}
+        <span
+          className={clsx(
+            'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0',
+            isCompleted
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+              : isDisputed
+              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+              : isPaid
+              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 animate-pulse font-extrabold'
+              : isPending
+              ? 'bg-amber-500/25 text-amber-300 border-amber-500/60 animate-pulse font-extrabold'
+              : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+          )}
+        >
+          {order.status === 'paid' ? 'Comprobante' : order.status}
+        </span>
       </div>
 
-      {/* Financial Core Info */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3.5 bg-slate-950/60 rounded-2xl border border-white/5 text-xs">
+      {/* Financial Numbers Bar (Slim 1-line strip) */}
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-950/60 rounded-xl border border-white/5 text-xs">
         <div>
-          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Monto Dinero Real</span>
+          <span className="text-[10px] text-slate-400 block uppercase">Monto</span>
           <span className="text-sm font-black text-white font-mono">
             {order.amountFiat.toLocaleString()} {order.currency}
           </span>
         </div>
-
-        <div>
-          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Crédito Sugar Coins</span>
-          <span className="text-sm font-black text-cyan-300 font-mono">
-            +{order.amountSugarCoins.toLocaleString()} SC
+        <div className="text-right">
+          <span className="text-[10px] text-slate-400 block uppercase">Equivalente</span>
+          <span className="text-xs font-black text-cyan-300 font-mono">
+            {isDeposit ? '+' : '-'}{order.amountSugarCoins.toLocaleString()} SC
           </span>
         </div>
-
-        <div className="col-span-2 sm:col-span-1">
-          <span className="text-[10px] text-slate-400 uppercase font-semibold block">Comisión Cajero</span>
-          <span className="text-sm font-black text-emerald-400 font-mono">
+        <div className="text-right pl-2 border-l border-white/5">
+          <span className="text-[10px] text-slate-400 block uppercase">Comisión</span>
+          <span className="text-xs font-black text-emerald-400 font-mono">
             +{order.cashierCommissionCoins} SC
           </span>
         </div>
       </div>
 
-      {/* User & Payment Detail */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-        <div className="flex items-center flex-wrap gap-1.5">
-          <span>Jugador: <strong className="text-white">{order.playerName}</strong></span>
-          {displayPlayerId && (
-            <span className="font-mono text-[11px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 rounded-md">
-              ID: {displayPlayerId}
-            </span>
-          )}
-          <span className="text-slate-600 mx-1">&bull;</span>
-          <span>Método: <strong className="text-cyan-300">{methodLabelMap[order.paymentMethod] || order.paymentMethod}</strong></span>
-        </div>
+      {/* Method & Ref */}
+      <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5">
+        <span className="truncate">
+          Método: <strong className="text-cyan-300">{methodLabelMap[order.paymentMethod] || order.paymentMethod}</strong>
+        </span>
         {order.receiptReferenceNumber && (
-          <div className="font-mono text-[11px] text-slate-400 bg-white/5 px-2 py-0.5 rounded-md">
-            Ref: <span className="text-white font-bold">{order.receiptReferenceNumber}</span>
-          </div>
+          <span className="font-mono text-slate-300 truncate max-w-[120px] bg-white/5 px-1.5 py-0.5 rounded">
+            Ref: {order.receiptReferenceNumber}
+          </span>
         )}
       </div>
 
       {/* Action Buttons Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
         <Link
           href={`/cashier/orders/${order.id}`}
           onClick={() => {
@@ -144,23 +139,23 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
               player: order.playerName
             })
           }}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-bold transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-bold transition-colors"
         >
           <MessageSquare className="size-3.5 text-cyan-400" />
-          <span>Gestionar / Chat</span>
+          <span>Chat / Gestión</span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {order.receiptUrl && onViewReceipt && (
             <button
               onClick={() => {
                 cashierLogger.click(`Ver Comprobante de orden #${order.id.slice(0, 8)}`)
                 onViewReceipt(order)
               }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-colors cursor-pointer"
+              className="p-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-colors cursor-pointer"
+              title="Ver Comprobante"
             >
               <Eye className="size-3.5" />
-              <span>Ver Comprobante</span>
             </button>
           )}
 
@@ -170,9 +165,9 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
                 cashierLogger.click(`Liberar Saldo directo para orden #${order.id.slice(0, 8)}`)
                 onApproveOrder(order.id)
               }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 text-xs font-black shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 text-xs font-black shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all cursor-pointer"
             >
-              <ShieldCheck className="size-4" />
+              <ShieldCheck className="size-3.5" />
               <span>Liberar Saldo</span>
             </button>
           )}

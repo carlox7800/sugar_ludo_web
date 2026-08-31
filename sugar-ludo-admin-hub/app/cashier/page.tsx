@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { CashierOrder, OrderType } from '../../types/cashier'
 import { OrderFilterTabs, FilterStatus } from '../../components/orders/OrderFilterTabs'
 import { OrderCard } from '../../components/orders/OrderCard'
+import { OrderRow } from '../../components/orders/OrderRow'
 import { ReceiptImageViewer } from '../../components/receipts/ReceiptImageViewer'
 import { CashierAdminChatModal } from '../../components/cashier/CashierAdminChatModal'
 import { CashierLogPanel } from '../../components/cashier/CashierLogPanel'
@@ -13,7 +14,7 @@ import { useAdminAuth } from '../../lib/admin-auth-context'
 import { db } from '../../lib/firebase'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { OrdersCache } from '../../lib/orders-cache'
-import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins, Calendar } from 'lucide-react'
+import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins, Calendar, LayoutList, LayoutGrid } from 'lucide-react'
 
 export default function CashierMainDeskPage() {
   const { cashierList, logout, adminUser } = useAdminAuth()
@@ -27,6 +28,26 @@ export default function CashierMainDeskPage() {
   const [isAdminChatOpen, setIsAdminChatOpen] = useState(false)
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<CashierOrder | null>(null)
   const [activeCashierSession, setActiveCashierSession] = useState<{ uid: string; name: string; floatBalanceCoins: number } | null>(null)
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+    try {
+      const saved = localStorage.getItem('sugar_cashier_view_mode')
+      if (saved === 'grid' || saved === 'list') {
+        setViewMode(saved)
+      }
+    } catch {}
+  }, [])
+
+  const handleToggleViewMode = (mode: 'list' | 'grid') => {
+    setViewMode(mode)
+    try {
+      localStorage.setItem('sugar_cashier_view_mode', mode)
+    } catch {}
+    cashierLogger.click(`Cambio de modo de vista: ${mode}`)
+  }
 
   // Filter Logic
   const filteredOrders = orders.filter((o) => {
@@ -402,16 +423,48 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
           </div>
         </div>
 
-        {/* Filter Tabs */}
-        <OrderFilterTabs
-          currentStatus={currentStatus}
-          onSelectStatus={setCurrentStatus}
-          currentType={currentType}
-          onSelectType={setCurrentType}
-          counts={counts}
-        />
+        {/* Filter Tabs & View Switcher Bar */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          <div className="flex-1">
+            <OrderFilterTabs
+              currentStatus={currentStatus}
+              onSelectStatus={setCurrentStatus}
+              currentType={currentType}
+              onSelectType={setCurrentType}
+              counts={counts}
+            />
+          </div>
 
-        {/* Orders Grid */}
+          {/* View Mode Toggle: Lista Compacta vs Cuadrícula Slim */}
+          <div className="flex items-center gap-1 p-1 bg-slate-900/80 rounded-2xl border border-white/10 shrink-0 self-end md:self-center">
+            <button
+              onClick={() => handleToggleViewMode('list')}
+              title="Vista Lista Compacta (Alta densidad)"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                (!isMounted || viewMode === 'list')
+                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <LayoutList className="size-3.5" />
+              <span className="hidden sm:inline">Lista</span>
+            </button>
+            <button
+              onClick={() => handleToggleViewMode('grid')}
+              title="Vista Cuadrícula Slim"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                (isMounted && viewMode === 'grid')
+                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <LayoutGrid className="size-3.5" />
+              <span className="hidden sm:inline">Tarjetas</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Orders List / Grid */}
         {filteredOrders.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-16 text-center rounded-3xl bg-slate-900/40 border border-white/5 space-y-2">
             <Clock className="size-10 text-slate-600 mb-1" />
@@ -420,10 +473,21 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
               Las nuevas solicitudes de depósito o retiro de los jugadores aparecerán automáticamente aquí.
             </p>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        ) : isMounted && viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
             {filteredOrders.map((order) => (
               <OrderCard
+                key={order.id}
+                order={order}
+                onViewReceipt={(ord) => setSelectedReceiptOrder(ord)}
+                onApproveOrder={handleApprove}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {filteredOrders.map((order) => (
+              <OrderRow
                 key={order.id}
                 order={order}
                 onViewReceipt={(ord) => setSelectedReceiptOrder(ord)}
