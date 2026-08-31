@@ -295,6 +295,20 @@ export default function OrderDetailPage() {
       } else {
         cashierLogger.error(`Error en acción backend approve_deposit (HTTP ${res.status})`, { actionData })
       }
+
+      // 4. Inyección automática del comprobante formal institucional al chat de soporte
+      const depositNoticeText = `✅ ¡DEPÓSITO VALIDADO CON ÉXITO!
+
+Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están acreditados en tu cuenta:
+━━━━━━━━━━━━━━━━━━━━
+💰 Monto Pagado: ${order.amountFiat} ${order.currency}
+🪙 Crédito Acreditado: +${order.amountSugarCoins} Sugar Coins (SC)
+🔖 Referencia / Hash: ${finalRef}
+👨‍💼 Atendido por: carlosandroid (Cajero)
+━━━━━━━━━━━━━━━━━━━━
+¡Gracias por jugar en Sugar Ludo! Ya puedes disfrutar de tus partidas y salas de juego.`
+
+      await handleSendMessage(depositNoticeText)
     } catch (e: any) {
       cashierLogger.error(`Error durante la validación del depósito #${order.id.slice(0, 8)}`, {
         code: e?.code,
@@ -369,6 +383,22 @@ export default function OrderDetailPage() {
       } else {
         cashierLogger.error(`Error en acción backend complete_withdrawal (HTTP ${res.status})`, { resData })
       }
+
+      // 4. Inyección automática del comprobante de liquidación al chat de soporte
+      const netFiat = (order.amountFiat * 0.9).toFixed(2)
+      const payoutNoticeText = `💸 ¡RETIRO LIQUIDADO Y TRANSFERIDO!
+
+Hola ${order.playerName}, hemos enviado tus fondos a tu cuenta de destino:
+━━━━━━━━━━━━━━━━━━━━
+💵 Monto Transferido: ${netFiat} ${order.currency} (después de comisión)
+🪙 Sugar Coins Liquidados: -${order.amountSugarCoins} SC
+🏦 Destino: ${order.paymentMethod.toUpperCase()} (${order.receiptReferenceNumber || 'Dirección registrada'})
+🔗 Hash / TxID Oficial: ${finalPayoutRef}
+👨‍💼 Cajero Responsable: carlosandroid (Cajero)
+━━━━━━━━━━━━━━━━━━━━
+Conserva este mensaje como comprobante formal de la transacción.`
+
+      await handleSendMessage(payoutNoticeText)
     } catch (e: any) {
       cashierLogger.error(`Error durante la liquidación de retiro #${order.id.slice(0, 8)}`, {
         code: e?.code,
@@ -734,31 +764,19 @@ export default function OrderDetailPage() {
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-slate-300 font-bold block text-[10px] uppercase">
-                    Número de Referencia Bancaria / TxID Cripto *
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const autoRef = `TX-PAYOUT-${Date.now().toString(36).toUpperCase()}`
-                      setPayoutTxId(autoRef)
-                      cashierLogger.click(`Generar Referencia Automática de Retiro`, { autoRef })
-                    }}
-                    className="text-[10px] text-pink-400 hover:text-pink-300 font-bold underline cursor-pointer"
-                  >
-                    ⚡ Generar Automático
-                  </button>
-                </div>
+                <label className="text-slate-300 font-bold block text-[10px] uppercase">
+                  Número de Referencia Bancaria / TxID Cripto (Obligatorio) *
+                </label>
                 <input
                   type="text"
+                  required
                   value={payoutTxId}
                   onChange={(e) => setPayoutTxId(e.target.value)}
-                  placeholder="Ej. 0x8f9c... o REF-9928172"
+                  placeholder="Ej. 0x8f9c2a... o REF-9928172"
                   className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-pink-400"
                 />
                 <p className="text-[10px] text-slate-400">
-                  Ingresa el código tras transferir los fondos o usa <strong>⚡ Generar Automático</strong>.
+                  Ingresa el Hash de la transacción o número de comprobante emitido tras realizar la transferencia.
                 </p>
               </div>
             </div>
@@ -776,12 +794,13 @@ export default function OrderDetailPage() {
               </button>
               <button
                 onClick={() => {
+                  if (!payoutTxId.trim()) return
                   cashierLogger.click(`Clic en botón Confirmar Pago Retiro`, {
-                    payoutTxId: payoutTxId.trim() || 'auto-generada'
+                    payoutTxId: payoutTxId.trim()
                   })
                   handleConfirmPayout()
                 }}
-                disabled={isValidatingPayout}
+                disabled={!payoutTxId.trim() || isValidatingPayout}
                 className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(236,72,153,0.3)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
               >
                 {isValidatingPayout ? (
@@ -790,7 +809,7 @@ export default function OrderDetailPage() {
                     <span>Procesando liquidación...</span>
                   </>
                 ) : (
-                  <span>Confirmar Pago</span>
+                  <span>Confirmar Pago y Notificar</span>
                 )}
               </button>
             </div>

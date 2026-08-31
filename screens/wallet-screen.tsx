@@ -8,6 +8,7 @@ import { db } from '@/lib/firebase'
 import { doc, onSnapshot, collection, query, where, getDoc, updateDoc } from 'firebase/firestore'
 import { globalLogger } from '@/lib/logger'
 import { getSugarId } from '@/lib/friends-service'
+import { copyToClipboardSilently } from '@/lib/utils'
 import {
   fetchWalletTransactions,
   createDepositOrder,
@@ -168,9 +169,10 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
   const usdtEquivalent = (coins / 100).toFixed(2)
 
   const handleCopyAddress = () => {
-    navigator.clipboard.writeText('TQa5...MockAddress123...XYZ')
-    setIsCopied(true)
-    setTimeout(() => setIsCopied(false), 2000)
+    copyToClipboardSilently('TQa5...MockAddress123...XYZ').then(() => {
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+    })
   }
 
   const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -314,11 +316,10 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
           <button
             onClick={() => {
               const myId = getSugarId(user?.uid)
-              if (typeof navigator !== 'undefined') {
-                navigator.clipboard.writeText(myId)
+              copyToClipboardSilently(myId).then(() => {
                 setCopiedPlayerId(true)
                 setTimeout(() => setCopiedPlayerId(false), 2000)
-              }
+              })
             }}
             title="Copiar mi ID único para cajeros y soporte"
             className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-[oklch(1_0_0/0.05)] hover:bg-[oklch(1_0_0/0.1)] border border-border text-xs font-mono transition-all cursor-pointer shadow-sm group"

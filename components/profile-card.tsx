@@ -5,6 +5,7 @@ import { Crown, Sparkles, Zap, Copy, Check } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { PRESET_AVATARS } from './avatar-selector-modal'
 import { getSugarId } from '@/lib/friends-service'
+import { copyToClipboardSilently } from '@/lib/utils'
 
 export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
   const { user } = useAuth()
@@ -21,11 +22,10 @@ export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
 
   const handleCopyId = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (typeof navigator !== 'undefined') {
-      navigator.clipboard.writeText(playerId)
+    copyToClipboardSilently(playerId).then(() => {
       setCopiedId(true)
       setTimeout(() => setCopiedId(false), 2000)
-    }
+    })
   }
 
   return (

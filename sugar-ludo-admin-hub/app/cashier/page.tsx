@@ -198,7 +198,9 @@ export default function CashierMainDeskPage() {
   }, [])
 
   const handleApprove = async (orderId: string) => {
-    cashierLogger.action(`Aprobando depósito rápido desde la bandeja`, { orderId })
+    const targetOrder = orders.find((o) => o.id === orderId)
+    const finalRef = targetOrder?.receiptReferenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
+
     try {
       const res = await fetch(`/api/cashier/orders/${orderId}/action`, {
         method: 'POST',
@@ -207,7 +209,8 @@ export default function CashierMainDeskPage() {
           action: 'approve_deposit',
           cashierUid: currentCashier.uid,
           actorUid: currentCashier.uid,
-          actorRole: 'cashier'
+          actorRole: 'cashier',
+          referenceNumber: finalRef
         })
       })
       const actionRes = await res.json()
@@ -216,13 +219,39 @@ export default function CashierMainDeskPage() {
       } else {
         cashierLogger.error(`Error en respuesta de approve_deposit rápido`, { actionRes })
       }
+
+      // Enviar constancia institucional al chat de soporte de la orden
+      if (targetOrder) {
+        const depositNoticeText = `✅ ¡DEPÓSITO VALIDADO CON ÉXITO!
+
+Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya están acreditados en tu cuenta:
+━━━━━━━━━━━━━━━━━━━━
+💰 Monto Pagado: ${targetOrder.amountFiat} ${targetOrder.currency}
+🪙 Crédito Acreditado: +${targetOrder.amountSugarCoins} Sugar Coins (SC)
+🔖 Referencia / Hash: ${finalRef}
+👨‍💼 Atendido por: ${currentCashier.name}
+━━━━━━━━━━━━━━━━━━━━
+¡Gracias por jugar en Sugar Ludo! Ya puedes disfrutar de tus partidas y salas de juego.`
+
+        fetch(`/api/cashier/orders/${orderId}/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: depositNoticeText,
+            senderName: currentCashier.name,
+            senderUid: currentCashier.uid,
+            senderRole: 'cashier',
+            playerUid: targetOrder.playerUid
+          })
+        }).catch(() => {})
+      }
     } catch (e: any) {
       cashierLogger.error(`Excepción al ejecutar approve_deposit rápido`, { message: e?.message })
     }
 
     const updated = orders.map((o) =>
       o.id === orderId
-        ? { ...o, status: 'completed' as const, completedAt: Date.now() }
+        ? { ...o, status: 'completed' as const, completedAt: Date.now(), receiptReferenceNumber: finalRef }
         : o
     )
     setOrders(updated)
