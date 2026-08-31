@@ -1,24 +1,23 @@
-﻿rules_version = '2';
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
     // 1. PERFIL DE USUARIOS Y CLASIFICACIÓN GLOBAL (LEADERBOARD)
     match /users/{userId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read, write: if true;
       
       match /inbox/{mailId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if true;
       }
       
       match /match_history/{matchId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if true;
       }
     }
     
     // 2. SISTEMA DE AMISTADES DEDICADO
     match /friendships/{friendshipId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
     
     // 3. SOLICITUDES DE AMISTAD EN TIEMPO REAL
@@ -33,11 +32,11 @@ service cloud.firestore {
     
     // 5. BILLETERAS Y TRANSACCIONES
     match /wallets/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if true;
     }
     
     match /transactions/{txId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
 
     // 6. SISTEMA DE CAJEROS P2P, CHAT Y AUDITORÍA

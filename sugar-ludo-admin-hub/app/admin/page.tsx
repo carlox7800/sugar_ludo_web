@@ -231,15 +231,49 @@ export default function AdminDashboardPage() {
         }, { merge: true })
 
         try {
+          const dateFormatted = new Date().toLocaleDateString('es-ES', { 
+            day: '2-digit', 
+            month: 'short', 
+            year: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })
           const usersSnap = await getDocs(query(collection(db, 'users'), limit(150)))
           if (!usersSnap.empty) {
             const batch = writeBatch(db)
             usersSnap.forEach((uDoc) => {
-              batch.update(uDoc.ref, { coins: 0, lastResetAt: now })
+              const uData = uDoc.data() || {}
+              const previousCoins = Number(uData.coins || 0)
+              const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+              
+              if (previousCoins > 0) {
+                const resetTxEntry = {
+                  id: `tx_reset_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                  type: 'withdraw',
+                  amount: -previousCoins,
+                  description: 'Reseteo contable de saldos por Auditoría',
+                  timestamp: now,
+                  dateStr: dateFormatted
+                }
+                const updatedHistory = [resetTxEntry, ...existingHistory].slice(0, 50)
+                batch.update(uDoc.ref, {
+                  coins: 0,
+                  walletHistory: updatedHistory,
+                  lastResetAt: now
+                })
+              } else {
+                batch.update(uDoc.ref, {
+                  coins: 0,
+                  lastResetAt: now
+                })
+              }
             })
             await batch.commit()
+            console.log(`[AdminReset] Reseteo de jugadores completado para ${usersSnap.size} usuarios.`)
           }
-        } catch {}
+        } catch (uErr) {
+          console.error('[AdminReset] Error actualizando usuarios en players_only:', uErr)
+        }
 
       } else if (scope === 'cashiers_only') {
         const resetAccounts = cashierList.map((c) => ({
@@ -367,15 +401,49 @@ export default function AdminDashboardPage() {
         } catch {}
 
         try {
+          const dateFormatted = new Date().toLocaleDateString('es-ES', { 
+            day: '2-digit', 
+            month: 'short', 
+            year: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })
           const usersSnap = await getDocs(query(collection(db, 'users'), limit(150)))
           if (!usersSnap.empty) {
             const batch = writeBatch(db)
             usersSnap.forEach((uDoc) => {
-              batch.update(uDoc.ref, { coins: 0, lastResetAt: now })
+              const uData = uDoc.data() || {}
+              const previousCoins = Number(uData.coins || 0)
+              const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+              
+              if (previousCoins > 0) {
+                const resetTxEntry = {
+                  id: `tx_reset_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                  type: 'withdraw',
+                  amount: -previousCoins,
+                  description: 'Reseteo contable de saldos por Auditoría',
+                  timestamp: now,
+                  dateStr: dateFormatted
+                }
+                const updatedHistory = [resetTxEntry, ...existingHistory].slice(0, 50)
+                batch.update(uDoc.ref, {
+                  coins: 0,
+                  walletHistory: updatedHistory,
+                  lastResetAt: now
+                })
+              } else {
+                batch.update(uDoc.ref, {
+                  coins: 0,
+                  lastResetAt: now
+                })
+              }
             })
             await batch.commit()
+            console.log(`[AdminReset] Total Hard Reset completado para ${usersSnap.size} usuarios.`)
           }
-        } catch {}
+        } catch (uErr) {
+          console.error('[AdminReset] Error actualizando usuarios en total_hard_reset:', uErr)
+        }
 
         if (purgeOrdersHistory) {
           try {

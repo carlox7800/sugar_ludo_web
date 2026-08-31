@@ -35,7 +35,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data()
-            if (typeof data.coins === 'number') setCoinsState(data.coins)
+            if (typeof data.coins === 'number') {
+              setCoinsState(data.coins)
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('sugar_player_coins', data.coins.toString())
+              }
+            }
             if (typeof data.diamonds === 'number') setGemsState(data.diamonds)
             if (typeof data.level === 'number') setLevel(data.level)
             if (typeof data.xp === 'number') setXp(data.xp)
@@ -45,7 +50,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
           console.warn('Firestore player snapshot error (handled):', error.message)
         }
       )
-      return () => unsubscribe()
+
+      // Escuchar evento instantáneo de reseteo económico vía BroadcastChannel
+      let channel: BroadcastChannel | null = null
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          channel = new BroadcastChannel('sugar_ludo_social_channel')
+          channel.onmessage = (event) => {
+            if (event.data?.type === 'economic_reset_executed') {
+              if (event.data.scope === 'total_hard_reset' || event.data.scope === 'players_only') {
+                setCoinsState(0)
+                localStorage.setItem('sugar_player_coins', '0')
+              }
+            }
+          }
+        }
+      } catch {}
+
+      return () => {
+        unsubscribe()
+        if (channel) channel.close()
+      }
     } else {
       // Dev mode or unauthenticated fallback
       const savedCoins = localStorage.getItem('sugar_player_coins')
