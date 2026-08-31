@@ -39,7 +39,7 @@ export function CashierLogPanel() {
     })
     cashierLogger.action('Verificación de Integridad de Logs', {
       sistema: 'Sugar Ludo Admin Hub',
-      version: '8.6.7'
+      version: '8.6.8'
     })
   }
 
@@ -104,8 +104,9 @@ export function CashierLogPanel() {
               <div className="flex items-center gap-2.5">
                 <Terminal className="size-4 text-cyan-400" />
                 <div>
-                  <h3 className="font-bold text-white tracking-wide text-xs">
-                    CONSOLA DE DIAGNÓSTICO EN VIVO (ADMIN & CAJERO)
+                  <h3 className="font-bold text-white tracking-wide text-xs flex items-center gap-2">
+                    <span>CONSOLA DE DIAGNÓSTICO EN VIVO (ADMIN & CAJERO)</span>
+                    <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">v8.6.8</span>
                   </h3>
                   <p className="text-[10px] text-slate-400">
                     Captura en tiempo real de clics, peticiones API, Firestore y errores
