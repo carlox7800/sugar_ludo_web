@@ -1,15 +1,68 @@
 ﻿rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Reglas universales y abiertas para Sugar Ludo (Web, APK y Admin Hub)
-    // Garantiza sincronización en tiempo real multiplataforma y costo $0 Spark
-
+    
+    // 1. PERFIL DE USUARIOS Y CLASIFICACIÓN GLOBAL (LEADERBOARD)
     match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+      
+      match /inbox/{mailId} {
+        allow read, write: if request.auth != null;
+      }
+      
+      match /match_history/{matchId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // 2. SISTEMA DE AMISTADES DEDICADO
+    match /friendships/{friendshipId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // 3. SOLICITUDES DE AMISTAD EN TIEMPO REAL
+    match /friend_requests/{requestId} {
+      allow read, write: if true;
+    }
+    
+    // 4. RETOS A DUELOS 1 VS 1 EN TIEMPO REAL
+    match /duel_challenges/{challengeId} {
+      allow read, write: if true;
+    }
+    
+    // 5. BILLETERAS Y TRANSACCIONES
+    match /wallets/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /transactions/{txId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 6. SISTEMA DE CAJEROS P2P, CHAT Y AUDITORÍA
+    match /cashier_orders/{orderId} {
+      allow read, write: if true;
+      
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+    
+    match /cashier_profiles/{cashierId} {
+      allow read, write: if true;
+    }
+    
+    match /daily_stats/{dateStr} {
+      allow read, write: if true;
+    }
+    
+    match /audit_logs/{logId} {
       allow read, write: if true;
     }
 
-    match /cashier_orders/{orderId} {
+    // 7. ECOSISTEMA CONTABLE, TESORERÍA INSTITUCIONAL Y CONFIGURACIÓN CENTRALIZADA
+    match /system_treasury/{treasuryId} {
       allow read, write: if true;
     }
 
@@ -17,32 +70,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    match /system_treasury/{treasuryId} {
-      allow read, write: if true;
-    }
-
-    match /cashier_profiles/{cashierId} {
-      allow read, write: if true;
-    }
-
     match /cashier_shifts_ledger/{ledgerId} {
       allow read, write: if true;
     }
 
-    match /audit_logs/{auditId} {
-      allow read, write: if true;
-    }
-
-    match /daily_stats/{statId} {
-      allow read, write: if true;
-    }
-
     match /dispute_cases/{disputeId} {
-      allow read, write: if true;
-    }
-
-    // Regla global
-    match /{document=**} {
       allow read, write: if true;
     }
   }
