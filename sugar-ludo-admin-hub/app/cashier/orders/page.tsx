@@ -8,6 +8,7 @@ import { OrderFilterTabs, FilterStatus } from '../../../components/orders/OrderF
 import { OrderCard } from '../../../components/orders/OrderCard'
 import { OrderRow } from '../../../components/orders/OrderRow'
 import { ReceiptImageViewer } from '../../../components/receipts/ReceiptImageViewer'
+import { CashierFloatHistoryModal } from '../../../components/cashier/CashierFloatHistoryModal'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
 import { db } from '../../../lib/firebase'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
@@ -23,6 +24,7 @@ export default function CashierOrdersPage() {
   const [notification, setNotification] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [isMounted, setIsMounted] = useState(false)
+  const [isFloatHistoryOpen, setIsFloatHistoryOpen] = useState(false)
 
   const [activeCashierSession, setActiveCashierSession] = useState<CashierManagementProfile | null>(null)
 
@@ -266,9 +268,13 @@ export default function CashierOrdersPage() {
           </div>
         </div>
 
-        {/* Float Balance Pill (USDT Principal + SC Secundario) */}
-        <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-cyan-500/15 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
-          <Wallet className="size-4 text-emerald-400 animate-pulse" />
+        {/* Float Balance Pill (USDT Principal + SC Secundario - Clic para ver historial) */}
+        <button
+          onClick={() => setIsFloatHistoryOpen(true)}
+          className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-cyan-500/15 border border-emerald-500/40 hover:border-emerald-400/80 shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:scale-[1.02] transition-all cursor-pointer text-left"
+          title="Ver Historial de Movimientos de Caja y Arqueo"
+        >
+          <Wallet className="size-4 text-emerald-400 animate-pulse shrink-0" />
           <div className="text-right">
             <span className="text-[10px] uppercase font-bold text-emerald-300 block leading-none">Saldo Flotante</span>
             <div className="flex items-baseline gap-1.5 justify-end">
@@ -280,7 +286,7 @@ export default function CashierOrdersPage() {
               </span>
             </div>
           </div>
-        </div>
+        </button>
       </header>
 
       {/* Notification Toast */}
@@ -402,6 +408,14 @@ export default function CashierOrdersPage() {
           amount={`${selectedReceiptOrder.amountFiat.toLocaleString()} ${selectedReceiptOrder.currency}`}
         />
       )}
+
+      {/* Cashier Float Movements & Shift Ledger History Modal */}
+      <CashierFloatHistoryModal
+        isOpen={isFloatHistoryOpen}
+        onClose={() => setIsFloatHistoryOpen(false)}
+        cashier={currentCashier as any}
+        orders={orders}
+      />
     </div>
   )
 }

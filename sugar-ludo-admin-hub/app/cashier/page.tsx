@@ -8,6 +8,7 @@ import { OrderCard } from '../../components/orders/OrderCard'
 import { OrderRow } from '../../components/orders/OrderRow'
 import { ReceiptImageViewer } from '../../components/receipts/ReceiptImageViewer'
 import { CashierAdminChatModal } from '../../components/cashier/CashierAdminChatModal'
+import { CashierFloatHistoryModal } from '../../components/cashier/CashierFloatHistoryModal'
 import { CashierLogPanel } from '../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../lib/cashier-logger'
 import { useAdminAuth } from '../../lib/admin-auth-context'
@@ -26,6 +27,7 @@ export default function CashierMainDeskPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [notification, setNotification] = useState<string | null>(null)
   const [isAdminChatOpen, setIsAdminChatOpen] = useState(false)
+  const [isFloatHistoryOpen, setIsFloatHistoryOpen] = useState(false)
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<CashierOrder | null>(null)
   const [activeCashierSession, setActiveCashierSession] = useState<{ uid: string; name: string; floatBalanceCoins: number } | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
@@ -345,9 +347,13 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
             <span className="hidden sm:inline">Chat con Administrador</span>
           </button>
 
-          {/* Assigned Cashier Float Balance Badge (USDT Principal + SC Secundario) */}
-          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-cyan-500/15 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
-            <Wallet className="size-4 text-emerald-400 animate-pulse" />
+          {/* Assigned Cashier Float Balance Badge (USDT Principal + SC Secundario - Clic para ver historial de caja) */}
+          <button
+            onClick={() => setIsFloatHistoryOpen(true)}
+            className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-cyan-500/15 border border-emerald-500/40 hover:border-emerald-400/80 shadow-[0_0_15px_rgba(16,185,129,0.15)] hover:scale-[1.02] transition-all cursor-pointer text-left"
+            title="Ver Historial de Movimientos de Caja y Arqueo"
+          >
+            <Wallet className="size-4 text-emerald-400 animate-pulse shrink-0" />
             <div className="text-right">
               <span className="text-[10px] uppercase font-bold text-emerald-300 block leading-none">Saldo Flotante</span>
               <div className="flex items-baseline gap-1.5 justify-end">
@@ -359,7 +365,7 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
                 </span>
               </div>
             </div>
-          </div>
+          </button>
 
           {/* Logout Button */}
           <button
@@ -546,6 +552,14 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
         isOpen={isAdminChatOpen}
         onClose={() => setIsAdminChatOpen(false)}
         cashierName={currentCashier.name}
+      />
+
+      {/* Cashier Float Movements & Shift Ledger History Modal */}
+      <CashierFloatHistoryModal
+        isOpen={isFloatHistoryOpen}
+        onClose={() => setIsFloatHistoryOpen(false)}
+        cashier={currentCashier as any}
+        orders={orders}
       />
     </div>
   )

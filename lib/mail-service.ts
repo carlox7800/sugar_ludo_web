@@ -87,7 +87,7 @@ export async function fetchUserInbox(userId?: string): Promise<MailItem[]> {
       if (snap.exists()) {
         const data = snap.data()
         if (Array.isArray(data.inbox) && data.inbox.length > 0) {
-          return data.inbox
+          return (data.inbox as MailItem[]).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
         }
         // Initialize default inbox for new user in Firestore
         await updateDoc(userRef, { inbox: DEFAULT_INITIAL_MAILS })

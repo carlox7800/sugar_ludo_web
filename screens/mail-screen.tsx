@@ -133,7 +133,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     try {
       const inbox = await fetchUserInbox(user?.uid)
       const hidden = new Set(getHiddenMails())
-      setMailList(inbox.filter(m => !hidden.has(m.id)))
+      const filtered = inbox.filter(m => !hidden.has(m.id))
+      setMailList(filtered.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)))
     } catch (e) {
       console.warn('Error loading inbox:', e)
     } finally {
@@ -159,7 +160,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               setMailList((prev) => {
                 const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
                 const userMails = data.inbox.filter((m: any) => !m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
-                return [...supportFromOrders, ...userMails]
+                const combined = [...supportFromOrders, ...userMails]
+                return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
               })
               if (selectedMail && !selectedMail.orderId) {
                 const refreshed = data.inbox.find((m: any) => m.id === selectedMail.id)
@@ -236,7 +238,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
           setMailList((prev) => {
             const nonOrderMails = prev.filter(m => !m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
-            return [...orderSupportMails, ...nonOrderMails]
+            const combined = [...orderSupportMails, ...nonOrderMails]
+            return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
           })
 
           if (selectedMail && selectedMail.orderId) {
@@ -398,7 +401,9 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
-  const filteredMails = mailList.filter(m => m.category === activeTab)
+  const filteredMails = mailList
+    .filter(m => m.category === activeTab)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
   const unreadRewardsCount = mailList.filter(m => m.category === 'rewards' && !m.claimed).length
   const unreadSystemCount = mailList.filter(m => m.category === 'system' && !m.isRead).length
   const unreadSupportCount = mailList.filter(m => m.category === 'support' && !m.isRead).length

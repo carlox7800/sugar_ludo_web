@@ -10,7 +10,7 @@ import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/Wit
 import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../../../lib/cashier-logger'
 import { db } from '../../../../lib/firebase'
-import { doc, onSnapshot, getDoc, updateDoc, setDoc, increment } from 'firebase/firestore'
+import { doc, onSnapshot, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check, Copy, RefreshCw } from 'lucide-react'
 import { clsx } from 'clsx'
 import { OrdersCache } from '../../../../lib/orders-cache'
@@ -453,7 +453,30 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
 
       updateCashierFloat(currentCashierSession.uid, newCoins, newUSDT, netPayoutUSD)
 
-      // 2.3. Emitir evento BroadcastChannel para actualizar otras pestañas y pantallas
+      // 2.3. Registrar movimiento en cashier_shifts_ledger para auditoría de caja
+      try {
+        const ledgerEntryRef = doc(collection(db, 'cashier_shifts_ledger'))
+        await setDoc(ledgerEntryRef, {
+          id: ledgerEntryRef.id,
+          cashierUid: currentCashierSession.uid,
+          cashierName: currentCashierSession.name,
+          type: 'withdrawal_payout',
+          orderId: order.id,
+          referenceNumber: finalPayoutRef,
+          requestedFiatUSD: totalFiatRequestedUSD,
+          feeFiatUSD: withdrawalFeeUSD,
+          feePercent: feePercent,
+          amountFiatUSD: -netPayoutUSD,
+          amountCoins: -netPayoutCoins,
+          resultingBalanceUSDT: newUSDT,
+          resultingBalanceCoins: newCoins,
+          timestamp: Date.now(),
+          createdAt: Date.now(),
+          notes: `Liquidación Retiro #${order.id.slice(0, 8)} (${order.paymentMethod.toUpperCase()})`
+        })
+      } catch {}
+
+      // 2.4. Emitir evento BroadcastChannel para actualizar otras pestañas y pantallas
       try {
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
           const ch = new BroadcastChannel('sugar_ludo_social_channel')
@@ -844,20 +867,38 @@ Conserva este mensaje como comprobante formal de la transacción.`
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="p-3.5 bg-slate-950 rounded-2xl border border-white/5 space-y-1">
-                <div className="flex justify-between text-slate-400">
-                  <span>Monto a Transferir:</span>
-                  <strong className="text-pink-300 font-mono">${(order.amountFiat * 0.9).toFixed(2)} {order.currency}</strong>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Jugador Destino:</span>
-                  <strong className="text-white">{order.playerName}</strong>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Método de Pago:</span>
-                  <strong className="text-cyan-300 uppercase">{order.paymentMethod}</strong>
-                </div>
-              </div>
+              {(() => {
+                const isModalVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || order.paymentMethod === 'usdt_bep20')
+                const modalFeePercent = isModalVip ? 0.10 : 0.05
+                const modalRequestedFiat = Number(order.amountFiat || (order.amountSugarCoins / 100))
+                const modalFeeFiat = parseFloat((modalRequestedFiat * modalFeePercent).toFixed(2))
+                const modalNetPayoutFiat = parseFloat((modalRequestedFiat - modalFeeFiat).toFixed(2))
+
+                return (
+                  <div className="p-3.5 bg-slate-950 rounded-2xl border border-white/5 space-y-1.5 font-mono">
+                    <div className="flex justify-between text-slate-400 text-[11px]">
+                      <span>Monto Solicitado:</span>
+                      <strong className="text-white font-mono">${modalRequestedFiat.toFixed(2)} {order.currency}</strong>
+                    </div>
+                    <div className="flex justify-between text-slate-400 text-[11px]">
+                      <span>Comisión {isModalVip ? 'VIP (10%)' : 'Estándar (5%)'}:</span>
+                      <strong className="text-rose-400 font-mono">-${modalFeeFiat.toFixed(2)} {order.currency}</strong>
+                    </div>
+                    <div className="border-t border-white/10 pt-1.5 flex justify-between items-center text-xs">
+                      <span className="text-white font-bold">Monto Neto a Transferir:</span>
+                      <strong className="text-pink-300 font-black text-sm font-mono">${modalNetPayoutFiat.toFixed(2)} {order.currency}</strong>
+                    </div>
+                    <div className="border-t border-white/5 pt-1.5 flex justify-between text-slate-400 text-[10px]">
+                      <span>Jugador Destino:</span>
+                      <strong className="text-white">{order.playerName}</strong>
+                    </div>
+                    <div className="flex justify-between text-slate-400 text-[10px]">
+                      <span>Método de Pago:</span>
+                      <strong className="text-cyan-300 uppercase">{order.paymentMethod}</strong>
+                    </div>
+                  </div>
+                )
+              })()}
 
               <div className="space-y-1.5">
                 <label className="text-slate-300 font-bold block text-[10px] uppercase">

@@ -10,7 +10,7 @@ import { FloatRechargeModal } from '../../../components/admin/FloatRechargeModal
 import { CashierPdfReportModal } from '../../../components/admin/CashierPdfReportModal'
 import { CashierDualChatPanel } from '../../../components/admin/CashierDualChatPanel'
 import { db } from '../../../lib/firebase'
-import { doc, setDoc, increment } from 'firebase/firestore'
+import { doc, setDoc, increment, collection } from 'firebase/firestore'
 import {
   ArrowLeft,
   Users,
@@ -62,15 +62,17 @@ export default function AdminCajerosManagementPage() {
   const handleRecharge = async (cashierUid: string, amountUSDT: number, notes: string) => {
     const target = cashierList.find((c) => c.uid === cashierUid)
     const amountCoins = Math.round(amountUSDT * 100)
+    let newUSDT = amountUSDT
+    let newCoins = amountCoins
 
     if (target) {
       const currentUSDT = (target as any).floatBalanceUSDT ?? (target.floatBalanceCoins / 100)
-      const newUSDT = currentUSDT + amountUSDT
-      const newCoins = Math.round(newUSDT * 100)
+      newUSDT = currentUSDT + amountUSDT
+      newCoins = Math.round(newUSDT * 100)
       updateCashierFloat(cashierUid, newCoins, newUSDT)
     }
 
-    // Sincronizar en global_ledger en Firestore
+    // 1. Sincronizar en global_ledger en Firestore
     try {
       const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
       await setDoc(ledgerRef, {
@@ -79,6 +81,27 @@ export default function AdminCajerosManagementPage() {
         cashierFloatsCoins: increment(amountCoins),
         lastAuditedAt: Date.now()
       }, { merge: true })
+    } catch {}
+
+    // 2. Registrar movimiento en cashier_shifts_ledger
+    try {
+      const shiftRef = doc(collection(db, 'cashier_shifts_ledger'))
+      await setDoc(shiftRef, {
+        id: shiftRef.id,
+        cashierUid,
+        cashierName: target?.name || cashierUid,
+        type: 'recharge_float',
+        amountFiatUSD: amountUSDT,
+        amountCoins,
+        resultingBalanceUSDT: newUSDT,
+        resultingBalanceCoins: newCoins,
+        referenceNumber: `REC-${Date.now().toString(36).toUpperCase()}`,
+        adminUid: adminUser?.uid || 'adm_super',
+        adminName: adminUser?.displayName || 'Super Admin',
+        timestamp: Date.now(),
+        createdAt: Date.now(),
+        notes: notes || 'Recarga de Saldo Flotante'
+      })
     } catch {}
 
     // Sincronizar en Firestore de forma atómica en el backend
