@@ -395,6 +395,12 @@ export async function completeWithdrawalOrder(params: {
     const cashierRef = adminDb.collection('cashier_profiles').doc(cashierUid)
     const cashierSnap = await transaction.get(cashierRef)
     if (cashierSnap.exists) {
+      const cData = cashierSnap.data() || {}
+      const currentFloatUSDT = Number(cData.floatBalanceUSDT ?? (Number(cData.floatBalanceCoins || 0) / 100))
+      if (currentFloatUSDT < netPayoutUSD) {
+        throw new Error(`Saldo flotante insuficiente ($${currentFloatUSDT.toFixed(2)} USDT disponibles). Se requieren $${netPayoutUSD.toFixed(2)} USDT para liquidar este retiro. Solicita recarga al Administrador.`)
+      }
+
       transaction.update(cashierRef, {
         totalOrdersCompleted: admin.firestore.FieldValue.increment(1),
         totalCommissionsEarnedCoins: admin.firestore.FieldValue.increment(commissionCoins),

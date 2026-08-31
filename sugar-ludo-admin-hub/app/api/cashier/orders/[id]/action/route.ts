@@ -51,7 +51,6 @@ export async function POST(
     }
 
     if (action === 'complete_withdrawal') {
-      updateDiskOrderStatus(orderId, 'completed', finalRef)
       try {
         const result = await completeWithdrawalOrder({
           orderId,
@@ -60,10 +59,11 @@ export async function POST(
           actorUid: actorUid || 'csh_carlosandroid_001',
           actorRole: actorRole || 'cashier'
         })
+        updateDiskOrderStatus(orderId, 'completed', finalRef)
         return NextResponse.json({ success: true, message: result.message })
       } catch (err: any) {
         console.error('[ActionAPI] completeWithdrawalOrder error:', err)
-        return NextResponse.json({ success: true, message: 'Retiro liquidado con éxito' })
+        return NextResponse.json({ success: false, error: err.message || 'Error al liquidar el retiro' }, { status: 400 })
       }
     }
 

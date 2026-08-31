@@ -11,7 +11,7 @@ import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../../../lib/cashier-logger'
 import { db } from '../../../../lib/firebase'
 import { doc, onSnapshot, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check, Copy, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, AlertCircle, Wallet, Send, Check, Copy, RefreshCw } from 'lucide-react'
 import { clsx } from 'clsx'
 import { OrdersCache } from '../../../../lib/orders-cache'
 import { useAdminAuth } from '../../../../lib/admin-auth-context'
@@ -24,7 +24,7 @@ export default function OrderDetailPage() {
   const orderId = (routeParams?.id as string) || ''
   const { cashierList, updateCashierFloat } = useAdminAuth()
 
-  const [currentCashierSession, setCurrentCashierSession] = useState<{ uid: string; name: string }>(() => {
+  const [currentCashierSession, setCurrentCashierSession] = useState<{ uid: string; name: string; email?: string }>(() => {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('sugar_cashier_session')
@@ -182,6 +182,18 @@ export default function OrderDetailPage() {
   const isPaid = order.status === 'paid'
   const isCompleted = order.status === 'completed'
   const isWithdraw = order.type === 'withdraw'
+
+  // Saldo flotante real de trabajo del cajero activo
+  const cashierTarget = cashierList.find(c => c.uid === currentCashierSession.uid || (currentCashierSession.email && c.email.toLowerCase() === currentCashierSession.email.toLowerCase())) || currentCashierSession
+  const cashierFloatCoins = Number((cashierTarget as any).floatBalanceCoins ?? 0)
+  const cashierFloatUSDT = Number((cashierTarget as any).floatBalanceUSDT ?? (cashierFloatCoins / 100))
+
+  const totalFiatRequestedUSD = Number(order.amountFiat || (Number(order.amountSugarCoins || 0) / 100))
+  const isVipOrder = Boolean((order as any).isVip || (order as any).isVipWithdraw || order.paymentMethod === 'usdt_bep20')
+  const withdrawalFeePercent = isVipOrder ? 0.10 : 0.05
+  const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
+  const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
+  const hasSufficientFloat = cashierFloatUSDT >= netPayoutUSD
 
   const [isValidating, setIsValidating] = useState(false)
 
@@ -382,6 +394,13 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
     const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
     const netPayoutCoins = Math.round(netPayoutUSD * 100)
     const feeCoins = Math.round(withdrawalFeeUSD * 100)
+
+    // Candado crítico de seguridad: Bloquear si no hay saldo flotante suficiente
+    if (cashierFloatUSDT < netPayoutUSD) {
+      setNotification(`⛔ OPERACIÓN DENEGADA: Saldo insuficiente ($${cashierFloatUSDT.toFixed(2)} USDT disponibles). Se requieren $${netPayoutUSD.toFixed(2)} USDT. Solicita recarga al Administrador.`)
+      setIsValidatingPayout(false)
+      return
+    }
 
     cashierLogger.action(`Iniciando Liquidación de Retiro`, {
       orderId: order.id,
@@ -705,13 +724,32 @@ Conserva este mensaje como comprobante formal de la transacción.`
 
             {/* Payout Action for Cashier on Withdrawals */}
             {isWithdraw && order.status !== 'completed' && (
-              <div className="pt-2">
+              <div className="pt-2 space-y-3">
+                {!hasSufficientFloat && (
+                  <div className="p-4 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-xs space-y-2 shadow-[0_0_20px_rgba(244,63,94,0.2)] animate-in fade-in">
+                    <div className="flex items-center gap-2 text-rose-400 font-black">
+                      <AlertTriangle className="size-4 shrink-0 text-rose-400" />
+                      <span className="uppercase tracking-wider">SALDO FLOTANTE INSUFICIENTE</span>
+                    </div>
+                    <p className="text-rose-200/95 text-xs leading-relaxed font-sans">
+                      Tu saldo de trabajo disponible es de <strong className="text-white font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-500/30">${cashierFloatUSDT.toFixed(2)} USDT</strong> y este retiro requiere liquidar <strong className="text-rose-300 font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-500/30">${netPayoutUSD.toFixed(2)} USDT</strong>.
+                      No cuentas con saldo suficiente para pagar este retiro. Debes solicitar recarga al Administrador.
+                    </p>
+                  </div>
+                )}
+
                 <button
+                  disabled={!hasSufficientFloat}
                   onClick={() => {
+                    if (!hasSufficientFloat) return
                     cashierLogger.click(`Botón Transferir Dinero y Liquidar Retiro (Abrir modal)`)
                     setIsPayoutModalOpen(true)
                   }}
-                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(236,72,153,0.3)]"
+                  className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                    !hasSufficientFloat
+                      ? 'bg-slate-800/90 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed shadow-none'
+                      : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 shadow-[0_0_25px_rgba(236,72,153,0.35)] cursor-pointer'
+                  }`}
                 >
                   <Send className="size-4" />
                   <span>Transferir Dinero y Liquidar Retiro</span>
@@ -920,6 +958,19 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 )
               })()}
 
+              {/* Alerta roja de Saldo Insuficiente en Modal */}
+              {!hasSufficientFloat && (
+                <div className="p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-rose-300 text-xs space-y-1.5 shadow-lg animate-in fade-in">
+                  <div className="flex items-center gap-2 font-black text-rose-400">
+                    <AlertCircle className="size-4 shrink-0 text-rose-400" />
+                    <span className="uppercase tracking-wider">SALDO FLOTANTE INSUFICIENTE</span>
+                  </div>
+                  <p className="text-[11px] text-rose-200 leading-snug">
+                    Tu saldo de trabajo disponible es de <strong className="text-white font-mono">${cashierFloatUSDT.toFixed(2)} USDT</strong>. Se requieren <strong className="text-rose-300 font-mono">${netPayoutUSD.toFixed(2)} USDT</strong> para pagar este retiro. No puedes procesar esta orden. Solicita recarga al Administrador.
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="text-slate-300 font-bold block text-[10px] uppercase">
                   Número de Referencia Bancaria / TxID Cripto (Obligatorio) *
@@ -927,10 +978,15 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 <input
                   type="text"
                   required
+                  disabled={!hasSufficientFloat}
                   value={payoutTxId}
                   onChange={(e) => setPayoutTxId(e.target.value)}
-                  placeholder="Ej. 0x8f9c2a... o REF-9928172"
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-pink-400"
+                  placeholder={hasSufficientFloat ? "Ej. 0x8f9c2a... o REF-9928172" : "Bloqueado por saldo insuficiente"}
+                  className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none ${
+                    !hasSufficientFloat 
+                      ? 'border-rose-500/30 opacity-50 cursor-not-allowed text-slate-500' 
+                      : 'border-white/10 focus:border-pink-400'
+                  }`}
                 />
                 <p className="text-[10px] text-slate-400">
                   Ingresa el Hash de la transacción o número de comprobante emitido tras realizar la transferencia.
@@ -951,14 +1007,22 @@ Conserva este mensaje como comprobante formal de la transacción.`
               </button>
               <button
                 onClick={() => {
+                  if (!hasSufficientFloat) {
+                    setNotification(`⛔ Saldo insuficiente ($${cashierFloatUSDT.toFixed(2)} USDT). Se requieren $${netPayoutUSD.toFixed(2)} USDT.`)
+                    return
+                  }
                   if (!payoutTxId.trim()) return
                   cashierLogger.click(`Clic en botón Confirmar Pago Retiro`, {
                     payoutTxId: payoutTxId.trim()
                   })
                   handleConfirmPayout()
                 }}
-                disabled={!payoutTxId.trim() || isValidatingPayout}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(236,72,153,0.3)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                disabled={!hasSufficientFloat || !payoutTxId.trim() || isValidatingPayout}
+                className={`flex-1 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
+                  !hasSufficientFloat || !payoutTxId.trim()
+                    ? 'bg-slate-800 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed shadow-none'
+                    : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 shadow-[0_0_15px_rgba(236,72,153,0.3)] cursor-pointer'
+                }`}
               >
                 {isValidatingPayout ? (
                   <>
