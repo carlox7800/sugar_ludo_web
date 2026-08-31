@@ -9,8 +9,9 @@ import { DetailedTelemetryCard } from '../../components/admin/DetailedTelemetryC
 import { AccordionBlock } from '../../components/ui/AccordionBlock'
 import { TreasuryVault, HouseProfitBreakdown } from '../../types/treasury'
 import { DetailedTelemetry } from '../../types/admin-expanded'
+import { EconomicHardResetModal, EconomicResetOptions } from '../../components/admin/EconomicHardResetModal'
 import { db } from '../../lib/firebase'
-import { doc, onSnapshot, setDoc } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc, collection, getDocs, query, limit, writeBatch } from 'firebase/firestore'
 import {
   Activity,
   ShieldAlert,
@@ -22,7 +23,9 @@ import {
   Wallet,
   User,
   LogOut,
-  Wifi
+  Wifi,
+  Trash2,
+  CheckCircle2
 } from 'lucide-react'
 
 // Balances reales iniciales del sistema (Bóveda real sin mocks ficticios)
@@ -194,6 +197,265 @@ export default function AdminDashboardPage() {
     }
   }, [isAuthenticated, isLoading, router, cashierList])
 
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
+  const [notification, setNotification] = useState<string | null>(null)
+
+  const handleExecuteReset = async (options: EconomicResetOptions) => {
+    setIsResetting(true)
+    const { scope, purgeOrdersHistory, purgeShiftLedger } = options
+    const now = Date.now()
+
+    try {
+      // 1. Snapshot previo para auditoría
+      const previousSnapshot = {
+        ...vault,
+        date: now,
+        cashierListSummary: cashierList.map(c => ({
+          uid: c.uid,
+          name: c.name,
+          floatUSDT: (c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)
+        }))
+      }
+
+      // 2. Ejecutar reseteo según el alcance seleccionado
+      if (scope === 'players_only') {
+        const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+        const newVaultUSD = Math.max(0, vault.totalVaultUSD - vault.playerBalancesUSD)
+        await setDoc(ledgerRef, {
+          totalVaultUSD: newVaultUSD,
+          totalVaultSugarCoins: Math.round(newVaultUSD * 100),
+          playerCustodyUSD: 0,
+          playerCustodyCoins: 0,
+          lastAuditedAt: now
+        }, { merge: true })
+
+        try {
+          const usersSnap = await getDocs(query(collection(db, 'users'), limit(150)))
+          if (!usersSnap.empty) {
+            const batch = writeBatch(db)
+            usersSnap.forEach((uDoc) => {
+              batch.update(uDoc.ref, { coins: 0, lastResetAt: now })
+            })
+            await batch.commit()
+          }
+        } catch {}
+
+      } else if (scope === 'cashiers_only') {
+        const resetAccounts = cashierList.map((c) => ({
+          ...c,
+          floatBalanceCoins: 0,
+          floatBalanceUSDT: 0,
+          totalPaidWithdrawalsUSDT: 0,
+          initialShiftFloatUSDT: 0,
+          lastRechargeAt: now
+        }))
+
+        await setDoc(doc(db, 'system_config', 'cashier_accounts'), {
+          accounts: resetAccounts,
+          updatedAt: now
+        }, { merge: true })
+
+        try {
+          const batch = writeBatch(db)
+          for (const csh of resetAccounts) {
+            batch.set(doc(db, 'cashier_profiles', csh.uid), {
+              uid: csh.uid,
+              name: csh.name,
+              floatBalanceCoins: 0,
+              floatBalanceUSDT: 0,
+              totalPaidWithdrawalsUSDT: 0,
+              lastResetAt: now
+            }, { merge: true })
+          }
+          await batch.commit()
+        } catch {}
+
+        const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+        const newVaultUSD = Math.max(0, vault.totalVaultUSD - vault.cashierFloatsUSD)
+        await setDoc(ledgerRef, {
+          totalVaultUSD: newVaultUSD,
+          totalVaultSugarCoins: Math.round(newVaultUSD * 100),
+          cashierFloatsUSD: 0,
+          cashierFloatsCoins: 0,
+          lastAuditedAt: now
+        }, { merge: true })
+
+        if (purgeShiftLedger) {
+          try {
+            const shiftSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
+            if (!shiftSnap.empty) {
+              const batch = writeBatch(db)
+              shiftSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+              await batch.commit()
+            }
+          } catch {}
+        }
+
+      } else if (scope === 'treasury_only') {
+        const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+        const newVaultUSD = Math.max(0, vault.totalVaultUSD - vault.houseNetProfitsUSD)
+        await setDoc(ledgerRef, {
+          totalVaultUSD: newVaultUSD,
+          totalVaultSugarCoins: Math.round(newVaultUSD * 100),
+          houseNetProfitsUSD: 0,
+          houseNetProfitsCoins: 0,
+          profitsBreakdown: {
+            tableRakeUSD: 0,
+            storeSalesUSD: 0,
+            withdrawalFeesUSD: 0
+          },
+          lastAuditedAt: now
+        }, { merge: true })
+
+        try {
+          const statsSnap = await getDocs(query(collection(db, 'daily_stats'), limit(50)))
+          if (!statsSnap.empty) {
+            const batch = writeBatch(db)
+            statsSnap.forEach((docItem) => batch.delete(docItem.ref))
+            await batch.commit()
+          }
+        } catch {}
+
+      } else if (scope === 'total_hard_reset') {
+        const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+        await setDoc(ledgerRef, {
+          id: 'global_ledger',
+          totalVaultUSD: 0.0,
+          totalVaultSugarCoins: 0,
+          playerCustodyUSD: 0.0,
+          playerCustodyCoins: 0,
+          cashierFloatsUSD: 0.0,
+          cashierFloatsCoins: 0,
+          houseNetProfitsUSD: 0.0,
+          houseNetProfitsCoins: 0,
+          profitsBreakdown: {
+            tableRakeUSD: 0,
+            storeSalesUSD: 0,
+            withdrawalFeesUSD: 0
+          },
+          lastAuditedAt: now
+        })
+
+        const resetAccounts = cashierList.map((c) => ({
+          ...c,
+          floatBalanceCoins: 0,
+          floatBalanceUSDT: 0,
+          totalPaidWithdrawalsUSDT: 0,
+          initialShiftFloatUSDT: 0,
+          lastRechargeAt: now
+        }))
+
+        await setDoc(doc(db, 'system_config', 'cashier_accounts'), {
+          accounts: resetAccounts,
+          updatedAt: now
+        }, { merge: true })
+
+        try {
+          const batch = writeBatch(db)
+          for (const csh of resetAccounts) {
+            batch.set(doc(db, 'cashier_profiles', csh.uid), {
+              uid: csh.uid,
+              name: csh.name,
+              floatBalanceCoins: 0,
+              floatBalanceUSDT: 0,
+              totalPaidWithdrawalsUSDT: 0,
+              lastResetAt: now
+            }, { merge: true })
+          }
+          await batch.commit()
+        } catch {}
+
+        try {
+          const usersSnap = await getDocs(query(collection(db, 'users'), limit(150)))
+          if (!usersSnap.empty) {
+            const batch = writeBatch(db)
+            usersSnap.forEach((uDoc) => {
+              batch.update(uDoc.ref, { coins: 0, lastResetAt: now })
+            })
+            await batch.commit()
+          }
+        } catch {}
+
+        if (purgeOrdersHistory) {
+          try {
+            const ordSnap = await getDocs(query(collection(db, 'cashier_orders'), limit(150)))
+            if (!ordSnap.empty) {
+              const batch = writeBatch(db)
+              ordSnap.forEach((oDoc) => batch.delete(oDoc.ref))
+              await batch.commit()
+            }
+          } catch {}
+        }
+
+        if (purgeShiftLedger) {
+          try {
+            const shiftSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
+            if (!shiftSnap.empty) {
+              const batch = writeBatch(db)
+              shiftSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+              await batch.commit()
+            }
+          } catch {}
+        }
+
+        try {
+          const statsSnap = await getDocs(query(collection(db, 'daily_stats'), limit(50)))
+          if (!statsSnap.empty) {
+            const batch = writeBatch(db)
+            statsSnap.forEach((docItem) => batch.delete(docItem.ref))
+            await batch.commit()
+          }
+        } catch {}
+      }
+
+      // 3. Auditoría inmutable en audit_logs
+      try {
+        const auditRef = doc(collection(db, 'audit_logs'))
+        await setDoc(auditRef, {
+          id: auditRef.id,
+          action: 'ECONOMIC_HARD_RESET',
+          scope,
+          adminUid: adminUser?.uid || 'adm_super',
+          adminName: adminUser?.displayName || 'Super Admin',
+          previousVault: previousSnapshot,
+          purgeOrdersHistory,
+          purgeShiftLedger,
+          timestamp: now
+        })
+      } catch {}
+
+      // 4. Limpieza de cachés locales
+      if (typeof window !== 'undefined') {
+        if (scope === 'total_hard_reset' || scope === 'cashiers_only') {
+          localStorage.removeItem('sugar_cashier_orders')
+        }
+      }
+
+      // 5. Broadcast instantáneo
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const ch = new BroadcastChannel('sugar_ludo_social_channel')
+          ch.postMessage({
+            type: 'economic_reset_executed',
+            scope,
+            timestamp: now
+          })
+          ch.close()
+        }
+      } catch {}
+
+      setNotification(`¡Reinicio contable ejecutado con éxito! Alcance: ${scope.toUpperCase()}`)
+      setTimeout(() => setNotification(null), 5000)
+    } catch (e: any) {
+      console.error('[AdminReset] Error ejecutando reinicio:', e)
+      setNotification(`Error al ejecutar reinicio contable: ${e.message}`)
+      setTimeout(() => setNotification(null), 5000)
+    } finally {
+      setIsResetting(false)
+    }
+  }
+
   const handleLogout = () => {
     logout()
     router.push('/')
@@ -269,6 +531,18 @@ export default function AdminDashboardPage() {
             <span>Control de Economía</span>
           </Link>
 
+          {/* 4.1. Reinicio Contable (Super Admin) */}
+          {adminUser.role === 'super_admin' && (
+            <button
+              onClick={() => setIsResetModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 text-xs font-bold transition-all cursor-pointer shadow-[0_0_15px_rgba(244,63,94,0.15)]"
+              title="Reinicio Contable / Hard Reset de Economía (Super Admin)"
+            >
+              <Trash2 className="size-3.5 text-rose-400" />
+              <span>Reinicio Contable</span>
+            </button>
+          )}
+
           {/* 5. Sincronizar */}
           <button
             onClick={fetchLiveMetrics}
@@ -330,6 +604,24 @@ export default function AdminDashboardPage() {
           <DetailedTelemetryCard telemetry={{ ...telemetry, serverLatencyMs: serverPingMs }} />
         </AccordionBlock>
       </main>
+
+      {/* Toast Notification */}
+      {notification && (
+        <div className="fixed top-20 right-6 z-50 p-4 rounded-2xl bg-emerald-500 text-slate-950 font-bold text-xs shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-300">
+          <CheckCircle2 className="size-5 shrink-0" />
+          <span>{notification}</span>
+        </div>
+      )}
+
+      {/* Economic Hard Reset Modal */}
+      <EconomicHardResetModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onExecuteReset={handleExecuteReset}
+        isResetting={isResetting}
+        currentVault={vault}
+        activeCashiersCount={cashierList.length}
+      />
     </div>
   )
 }
