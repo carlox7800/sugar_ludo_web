@@ -54,6 +54,8 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
 
     // 1. Escuchar el buzón del usuario en tiempo real desde Firestore ($0 Spark Plan)
     let unsubMail: (() => void) | null = null
+    let currentInboxOrderIds = new Set<string>()
+
     if (user?.uid && !user.uid.startsWith('dev_')) {
       try {
         const userRef = doc(db, 'users', user.uid)
@@ -63,6 +65,11 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
             if (Array.isArray(data.inbox)) {
               const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
               setUnreadInboxCount(unread)
+              currentInboxOrderIds = new Set(
+                data.inbox
+                  .map((m: any) => m.orderId || (typeof m.id === 'string' && m.id.startsWith('mail_sup_') ? m.id.replace('mail_sup_', '') : typeof m.id === 'string' && m.id.startsWith('mail_ord_sup_') ? m.id.replace('mail_ord_sup_', '') : null))
+                  .filter(Boolean)
+              )
             }
           }
         }, () => {})
@@ -80,6 +87,11 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
         unsubOrders = onSnapshot(qOrders, (snap) => {
           let supportUnread = 0
           snap.forEach((d) => {
+            const orderId = d.id
+            if (currentInboxOrderIds.has(orderId)) {
+              return
+            }
+
             const ord = d.data() as any
             const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
             if (msgs.length > 0) {
@@ -240,6 +252,8 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
 
     // 1. Escuchar el buzón del usuario en tiempo real desde Firestore ($0 Spark Plan)
     let unsubMail: (() => void) | null = null
+    let currentInboxOrderIds = new Set<string>()
+
     if (user?.uid && !user.uid.startsWith('dev_')) {
       try {
         const userRef = doc(db, 'users', user.uid)
@@ -249,6 +263,11 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
             if (Array.isArray(data.inbox)) {
               const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
               setUnreadInboxCount(unread)
+              currentInboxOrderIds = new Set(
+                data.inbox
+                  .map((m: any) => m.orderId || (typeof m.id === 'string' && m.id.startsWith('mail_sup_') ? m.id.replace('mail_sup_', '') : typeof m.id === 'string' && m.id.startsWith('mail_ord_sup_') ? m.id.replace('mail_ord_sup_', '') : null))
+                  .filter(Boolean)
+              )
             }
           }
         }, () => {})
@@ -266,6 +285,11 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
         unsubOrders = onSnapshot(qOrders, (snap) => {
           let supportUnread = 0
           snap.forEach((d) => {
+            const orderId = d.id
+            if (currentInboxOrderIds.has(orderId)) {
+              return
+            }
+
             const ord = d.data() as any
             const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
             if (msgs.length > 0) {

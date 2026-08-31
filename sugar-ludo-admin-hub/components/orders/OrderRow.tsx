@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { CashierOrder } from '../../types/cashier'
-import { ArrowDownLeft, ArrowUpRight, MessageSquare, Clock, ShieldCheck, Eye, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, MessageSquare, Clock, ShieldCheck, Eye, ChevronDown, ChevronUp, Copy, Check, Crown, AlertTriangle } from 'lucide-react'
 import { clsx } from 'clsx'
 import { cashierLogger } from '../../lib/cashier-logger'
+import { getWithdrawalSla } from '../../lib/sla-calculator'
 
 interface OrderRowProps {
   order: CashierOrder
@@ -16,12 +17,20 @@ interface OrderRowProps {
 export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [copiedRef, setCopiedRef] = useState(false)
+  const [, setTick] = useState(0)
 
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 30000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const slaInfo = getWithdrawalSla(order)
   const isDeposit = order.type === 'deposit'
   const isPaid = order.status === 'paid'
   const isCompleted = order.status === 'completed'
   const isDisputed = order.status === 'disputed'
   const isPending = order.status === 'pending'
+  const isVip = slaInfo?.isVip ?? false
 
   const methodLabelMap: Record<string, string> = {
     pago_movil: 'Pago Móvil (VES)',
@@ -30,6 +39,7 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
     bancolombia: 'Bancolombia (COP)',
     mercadopago: 'MercadoPago',
     usdt_trc20: 'USDT (TRC-20)',
+    usdt_trc20_vip: 'USDT VIP (TRC-20)',
     usdt_bep20: 'USDT (BEP-20)',
     binance_pay: 'Binance Pay ID',
     zelle: 'Zelle (USD)',
@@ -58,7 +68,9 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
     <div
       className={clsx(
         'group rounded-2xl transition-all duration-200 border overflow-hidden',
-        isPending
+        isVip && !isCompleted
+          ? 'bg-gradient-to-r from-amber-950/35 via-slate-900/90 to-purple-950/30 border-amber-500/60 shadow-[0_0_18px_rgba(245,158,11,0.15)] hover:border-amber-400'
+          : isPending
           ? 'bg-amber-950/20 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)] hover:border-amber-400'
           : isPaid
           ? 'bg-cyan-950/20 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.1)] hover:border-cyan-400'
@@ -71,22 +83,37 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
         className="px-4 py-3 sm:py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
       >
         {/* 1. Tipo, ID y Tiempo */}
-        <div className="flex items-center gap-3 min-w-[200px]">
+        <div className="flex items-center gap-3 min-w-[210px]">
           <div
             className={clsx(
               'p-2 rounded-xl border shrink-0',
               isDeposit
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : isVip
+                ? 'bg-gradient-to-br from-amber-500/20 to-yellow-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
                 : 'bg-pink-500/10 text-pink-400 border-pink-500/30'
             )}
           >
-            {isDeposit ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
+            {isDeposit ? <ArrowDownLeft className="size-4" /> : isVip ? <Crown className="size-4 text-amber-400" /> : <ArrowUpRight className="size-4" />}
           </div>
 
           <div className="flex flex-col">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-mono font-bold text-white text-xs">#{order.id.slice(0, 8)}</span>
               <span className="text-[11px] text-slate-400 font-mono">• {timeAgo}</span>
+              {/* VIP / Standard Badge */}
+              {slaInfo && (
+                <span
+                  className={clsx(
+                    'px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider border shrink-0',
+                    isVip
+                      ? 'bg-amber-500/25 text-amber-300 border-amber-500/50 font-mono'
+                      : 'bg-slate-800 text-slate-300 border-white/10'
+                  )}
+                >
+                  {slaInfo.badgeLabel}
+                </span>
+              )}
             </div>
             <span className="text-[10px] uppercase font-black tracking-wider text-slate-400">
               {isDeposit ? 'Depósito' : 'Retiro'}
@@ -95,7 +122,7 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
         </div>
 
         {/* 2. Jugador & ID */}
-        <div className="flex items-center gap-2 min-w-[170px]">
+        <div className="flex items-center gap-2 min-w-[150px]">
           <div className="flex flex-col">
             <span className="text-xs font-bold text-white truncate max-w-[130px]">
               {order.playerName}
@@ -108,8 +135,38 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
           </div>
         </div>
 
-        {/* 3. Importes Financieros */}
-        <div className="flex items-baseline gap-2 min-w-[180px]">
+        {/* 3. SLA Countdown Timer Bar (Withdrawals in progress) */}
+        {slaInfo && !isCompleted ? (
+          <div
+            className={clsx(
+              'px-2.5 py-1 rounded-xl border text-[11px] font-mono flex items-center gap-1.5 min-w-[150px]',
+              slaInfo.isExpired
+                ? 'bg-rose-950/80 border-rose-500/60 text-rose-300 animate-pulse font-black shadow-[0_0_12px_rgba(244,63,94,0.25)]'
+                : slaInfo.isUrgent
+                ? 'bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse font-bold'
+                : isVip
+                ? 'bg-amber-950/40 border-amber-500/30 text-amber-200'
+                : 'bg-slate-950/60 border-white/5 text-slate-300'
+            )}
+          >
+            {slaInfo.isExpired ? (
+              <AlertTriangle className="size-3.5 text-rose-400 shrink-0" />
+            ) : (
+              <Clock className={clsx('size-3.5 shrink-0', isVip ? 'text-amber-400' : 'text-slate-400')} />
+            )}
+            <div className="flex flex-col leading-none">
+              <span className="text-[9px] uppercase font-sans text-slate-400 font-bold">
+                {slaInfo.isExpired ? 'SLA Vencido' : 'Plazo SLA'}
+              </span>
+              <span className={clsx('text-[10px] font-black', slaInfo.isExpired ? 'text-rose-400' : isVip ? 'text-amber-300' : 'text-slate-200')}>
+                {slaInfo.formattedTime}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        {/* 4. Importes Financieros */}
+        <div className="flex items-baseline gap-2 min-w-[160px]">
           <span className="font-mono font-black text-sm text-white">
             {order.amountFiat.toLocaleString()} {order.currency}
           </span>
@@ -118,8 +175,8 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
           </span>
         </div>
 
-        {/* 4. Badge de Estado */}
-        <div className="min-w-[130px]">
+        {/* 5. Badge de Estado */}
+        <div className="min-w-[120px]">
           <span
             className={clsx(
               'px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border inline-flex items-center gap-1.5',
@@ -130,7 +187,9 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
                 : isPaid
                 ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 animate-pulse font-extrabold'
                 : isPending
-                ? 'bg-amber-500/25 text-amber-300 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.2)] animate-pulse font-extrabold'
+                ? isVip
+                  ? 'bg-amber-500/30 text-amber-200 border-amber-500/70 animate-pulse font-black shadow-[0_0_10px_rgba(245,158,11,0.25)]'
+                  : 'bg-amber-500/25 text-amber-300 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.2)] animate-pulse font-extrabold'
                 : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
             )}
           >

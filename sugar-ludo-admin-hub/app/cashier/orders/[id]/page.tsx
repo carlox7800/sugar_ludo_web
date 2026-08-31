@@ -11,10 +11,11 @@ import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../../../lib/cashier-logger'
 import { db } from '../../../../lib/firebase'
 import { doc, onSnapshot, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, AlertCircle, Wallet, Send, Check, Copy, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, AlertCircle, Wallet, Send, Check, Copy, RefreshCw, Crown } from 'lucide-react'
 import { clsx } from 'clsx'
 import { OrdersCache } from '../../../../lib/orders-cache'
 import { useAdminAuth } from '../../../../lib/admin-auth-context'
+import { getWithdrawalSla } from '../../../../lib/sla-calculator'
 
 import { useParams, useRouter } from 'next/navigation'
 
@@ -188,8 +189,15 @@ export default function OrderDetailPage() {
   const cashierFloatCoins = Number((cashierTarget as any).floatBalanceCoins ?? 0)
   const cashierFloatUSDT = Number((cashierTarget as any).floatBalanceUSDT ?? (cashierFloatCoins / 100))
 
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 30000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const slaInfo = getWithdrawalSla(order)
   const totalFiatRequestedUSD = Number(order.amountFiat || (Number(order.amountSugarCoins || 0) / 100))
-  const isVipOrder = Boolean((order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
+  const isVipOrder = Boolean(slaInfo?.isVip || (order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
   const withdrawalFeePercent = isVipOrder ? 0.10 : 0.05
   const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
   const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
@@ -584,17 +592,32 @@ Conserva este mensaje como comprobante formal de la transacción.`
             <ArrowLeft className="size-5" />
           </Link>
           <div>
-            <h1 className="font-black text-base text-white tracking-wide flex items-center gap-2">
+            <h1 className="font-black text-base text-white tracking-wide flex items-center gap-2 flex-wrap">
               <span>ORDEN #{order.id.slice(0, 8)}</span>
+              {slaInfo && (
+                <span
+                  className={clsx(
+                    'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border flex items-center gap-1 shrink-0',
+                    slaInfo.isVip
+                      ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.25)] font-mono'
+                      : 'bg-slate-800 text-slate-300 border-white/10'
+                  )}
+                >
+                  {slaInfo.isVip && <Crown className="size-3 text-amber-400" />}
+                  <span>{slaInfo.badgeLabel}</span>
+                </span>
+              )}
               <span
                 className={clsx(
-                  'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border',
+                  'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0',
                   isCompleted
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                     : isPaid
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
                     : isPending
-                    ? 'bg-amber-500/30 text-amber-300 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse'
+                    ? isVipOrder
+                      ? 'bg-amber-500/35 text-amber-200 border-amber-500/70 shadow-[0_0_12px_rgba(245,158,11,0.35)] animate-pulse font-black'
+                      : 'bg-amber-500/30 text-amber-300 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse'
                     : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
                 )}
               >
@@ -641,6 +664,76 @@ Conserva este mensaje como comprobante formal de la transacción.`
           </div>
         )}
       </header>
+
+      {/* SLA Countdown & Urgency Banner for Withdrawals */}
+      {slaInfo && !isCompleted && (
+        <div className="max-w-7xl mx-auto w-full px-6 pt-4">
+          <div
+            className={clsx(
+              'p-4 rounded-3xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs font-mono transition-all',
+              slaInfo.isExpired
+                ? 'bg-rose-950/85 border-rose-500 text-rose-200 shadow-[0_0_30px_rgba(244,63,94,0.3)] animate-pulse font-black'
+                : slaInfo.isUrgent
+                ? 'bg-amber-950/85 border-amber-500 text-amber-200 shadow-[0_0_25px_rgba(245,158,11,0.25)] animate-pulse font-bold'
+                : slaInfo.isVip
+                ? 'bg-gradient-to-r from-amber-950/60 via-purple-950/40 to-slate-900 border-amber-500/60 text-amber-200 shadow-md'
+                : 'bg-slate-900/80 border-white/10 text-slate-300'
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={clsx(
+                  'p-2.5 rounded-2xl border shrink-0',
+                  slaInfo.isExpired
+                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-bounce'
+                    : slaInfo.isVip
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                    : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
+                )}
+              >
+                {slaInfo.isExpired ? (
+                  <AlertTriangle className="size-5 text-rose-400" />
+                ) : slaInfo.isVip ? (
+                  <Crown className="size-5 text-amber-400" />
+                ) : (
+                  <Clock className="size-5 text-cyan-400" />
+                )}
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold uppercase tracking-wider text-white text-xs">
+                    {slaInfo.slaTitle}
+                  </span>
+                  {slaInfo.isVip && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 shadow-sm">
+                      Prioridad Máxima
+                    </span>
+                  )}
+                  {slaInfo.isExpired && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-500 text-white animate-pulse">
+                      ¡Atención Atrasada!
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 font-sans">
+                  {slaInfo.isExpired
+                    ? '⚠️ El plazo de atención garantizado ha vencido. Realiza la transferencia de inmediato para evitar reclamos.'
+                    : slaInfo.isUrgent
+                    ? '⚡ Quedan menos de 2 horas para el vencimiento del plazo. Liquida este retiro a la brevedad.'
+                    : `Plazo de atención comprometido con el usuario: máximo ${slaInfo.maxHours} horas desde la solicitud.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-left sm:text-right shrink-0 pl-12 sm:pl-0">
+              <span className="text-[10px] uppercase text-slate-400 block font-sans font-bold">Tiempo Restante SLA</span>
+              <span className={clsx('text-base font-black font-mono tracking-tight', slaInfo.isExpired ? 'text-rose-400 text-lg' : slaInfo.isVip ? 'text-amber-300 text-lg' : 'text-white')}>
+                {slaInfo.formattedTime}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Notification Toast */}
       {notification && (

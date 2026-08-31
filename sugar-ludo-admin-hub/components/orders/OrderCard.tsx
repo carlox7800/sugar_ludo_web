@@ -1,11 +1,12 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { CashierOrder } from '../../types/cashier'
-import { ArrowDownLeft, ArrowUpRight, MessageSquare, Clock, ShieldCheck, Eye, AlertTriangle } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, MessageSquare, Clock, ShieldCheck, Eye, AlertTriangle, Crown } from 'lucide-react'
 import { clsx } from 'clsx'
 import { cashierLogger } from '../../lib/cashier-logger'
+import { getWithdrawalSla } from '../../lib/sla-calculator'
 
 interface OrderCardProps {
   order: CashierOrder
@@ -14,10 +15,21 @@ interface OrderCardProps {
 }
 
 export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardProps) {
+  const [, setTick] = useState(0)
+
+  // Tick cada 30s para refrescar reloj regresivo de SLA
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 30000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const slaInfo = getWithdrawalSla(order)
   const isDeposit = order.type === 'deposit'
   const isPaid = order.status === 'paid'
   const isCompleted = order.status === 'completed'
   const isDisputed = order.status === 'disputed'
+  const isPending = order.status === 'pending'
+  const isVip = slaInfo?.isVip ?? false
 
   const methodLabelMap: Record<string, string> = {
     pago_movil: 'Pago Móvil (VES)',
@@ -26,19 +38,21 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
     bancolombia: 'Bancolombia (COP)',
     mercadopago: 'MercadoPago',
     usdt_trc20: 'USDT (TRC-20)',
+    usdt_trc20_vip: 'USDT VIP (TRC-20)',
     usdt_bep20: 'USDT (BEP-20)',
     binance_pay: 'Binance Pay ID',
     zelle: 'Zelle (USD)',
   }
 
-  const isPending = order.status === 'pending'
   const displayPlayerId = order.playerId || (order.playerUid ? `SL-${order.playerUid.substring(0, 6).toUpperCase()}` : '')
 
   return (
     <div
       className={clsx(
-        'group p-4 rounded-2xl transition-all duration-200 space-y-3 hover:shadow-xl border',
-        isPending
+        'group p-4 rounded-2xl transition-all duration-200 space-y-3 hover:shadow-xl border relative overflow-hidden',
+        isVip && !isCompleted
+          ? 'bg-gradient-to-br from-amber-950/35 via-slate-900/90 to-purple-950/30 border-amber-500/60 shadow-[0_0_25px_rgba(245,158,11,0.18)] hover:border-amber-400'
+          : isPending
           ? 'bg-amber-950/20 border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.12)] hover:border-amber-400'
           : isPaid
           ? 'bg-cyan-950/20 border-cyan-500/40 shadow-[0_0_20px_rgba(6,182,212,0.12)] hover:border-cyan-400'
@@ -53,15 +67,30 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
               'p-2 rounded-xl border shrink-0',
               isDeposit
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : isVip
+                ? 'bg-gradient-to-br from-amber-500/20 to-yellow-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
                 : 'bg-pink-500/10 text-pink-400 border-pink-500/30'
             )}
           >
-            {isDeposit ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
+            {isDeposit ? <ArrowDownLeft className="size-4" /> : isVip ? <Crown className="size-4 text-amber-400" /> : <ArrowUpRight className="size-4" />}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-mono font-bold text-white text-xs">#{order.id.slice(0, 8)}</span>
-              <span className="text-[10px] text-slate-500 uppercase font-bold">• {isDeposit ? 'Depósito' : 'Retiro'}</span>
+              <span className="text-[10px] text-slate-400 uppercase font-bold">• {isDeposit ? 'Depósito' : 'Retiro'}</span>
+              {/* VIP / SLA Badge */}
+              {slaInfo && (
+                <span
+                  className={clsx(
+                    'px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border shrink-0',
+                    isVip
+                      ? 'bg-gradient-to-r from-amber-500/25 to-yellow-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.25)] font-mono'
+                      : 'bg-slate-800/80 text-slate-300 border-white/10'
+                  )}
+                >
+                  {slaInfo.badgeLabel}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
               <span className="font-bold text-white truncate">{order.playerName}</span>
@@ -85,13 +114,45 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
               : isPaid
               ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 animate-pulse font-extrabold'
               : isPending
-              ? 'bg-amber-500/25 text-amber-300 border-amber-500/60 animate-pulse font-extrabold'
+              ? isVip
+                ? 'bg-amber-500/30 text-amber-200 border-amber-500/70 animate-pulse font-black'
+                : 'bg-amber-500/25 text-amber-300 border-amber-500/60 animate-pulse font-extrabold'
               : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
           )}
         >
           {order.status === 'paid' ? 'Comprobante' : order.status}
         </span>
       </div>
+
+      {/* SLA Countdown Clock Bar for Active Withdrawals */}
+      {slaInfo && !isCompleted && (
+        <div
+          className={clsx(
+            'flex items-center justify-between px-3 py-1.5 rounded-xl border text-xs font-mono transition-all',
+            slaInfo.isExpired
+              ? 'bg-rose-950/80 border-rose-500/60 text-rose-300 animate-pulse shadow-[0_0_15px_rgba(244,63,94,0.25)] font-black'
+              : slaInfo.isUrgent
+              ? 'bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.2)] font-bold'
+              : isVip
+              ? 'bg-amber-950/40 border-amber-500/30 text-amber-200 shadow-sm'
+              : 'bg-slate-950/60 border-white/5 text-slate-300'
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            {slaInfo.isExpired ? (
+              <AlertTriangle className="size-3.5 text-rose-400 shrink-0 animate-bounce" />
+            ) : (
+              <Clock className={clsx('size-3.5 shrink-0', isVip ? 'text-amber-400' : 'text-slate-400')} />
+            )}
+            <span className="text-[10px] font-sans font-bold uppercase tracking-wider">
+              {slaInfo.isExpired ? 'SLA Vencido:' : 'Plazo SLA:'}
+            </span>
+          </div>
+          <span className={clsx('text-[11px] font-black', slaInfo.isExpired ? 'text-rose-400' : isVip ? 'text-amber-300' : 'text-white')}>
+            {slaInfo.formattedTime}
+          </span>
+        </div>
+      )}
 
       {/* Financial Numbers Bar (Slim 1-line strip) */}
       <div className="flex items-center justify-between px-3 py-2 bg-slate-950/60 rounded-xl border border-white/5 text-xs">

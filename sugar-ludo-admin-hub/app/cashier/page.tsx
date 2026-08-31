@@ -77,6 +77,22 @@ export default function CashierMainDeskPage() {
       )
     }
     return true
+  }).sort((a, b) => {
+    const isAClosed = a.status === 'completed' || a.status === 'cancelled'
+    const isBClosed = b.status === 'completed' || b.status === 'cancelled'
+    if (isAClosed !== isBClosed) return isAClosed ? 1 : -1
+
+    const isAVip = a.type === 'withdraw' && Boolean(
+      (a as any).isVip || (a as any).isVipWithdraw || a.paymentMethod === 'usdt_bep20' || (a.paymentMethod as string) === 'usdt_trc20_vip'
+    )
+    const isBVip = b.type === 'withdraw' && Boolean(
+      (b as any).isVip || (b as any).isVipWithdraw || b.paymentMethod === 'usdt_bep20' || (b.paymentMethod as string) === 'usdt_trc20_vip'
+    )
+
+    // Solicitudes VIP prioritarias siempre arriba
+    if (isAVip !== isBVip) return isAVip ? -1 : 1
+
+    return (b.createdAt || 0) - (a.createdAt || 0)
   })
 
   // Counts for tabs (computed against the selected date scope for clarity)
