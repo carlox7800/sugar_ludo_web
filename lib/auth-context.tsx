@@ -30,6 +30,7 @@ export interface User {
   photoURL: string | null
   nickname: string | null
   nicknameUpdatedAt: number | null
+  walletAddress?: string | null
   coins?: number
   xp?: number
   level?: number
@@ -48,6 +49,7 @@ interface AuthState {
   logout: () => Promise<void>
   setNickname: (nickname: string) => Promise<void>
   setAvatar: (photoURL: string, deleteUrl?: string) => Promise<void>
+  setWalletAddress: (address: string) => Promise<void>
   deductCoins: (amount: number) => Promise<boolean>
 }
 
@@ -77,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 photoURL: data.photoURL || firebaseUser.photoURL || '1',
                 nickname: data.nickname || null,
                 nicknameUpdatedAt: data.nicknameUpdatedAt || null,
+                walletAddress: data.walletAddress || data.usdtAddress || (typeof window !== 'undefined' ? localStorage.getItem('sugar_user_wallet_address') : null),
                 coins: data.coins ?? 200,
                 xp: data.xp ?? 0,
                 level: data.level ?? 1,
@@ -282,6 +285,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const setWalletAddress = async (address: string) => {
+    if (!user) return
+    const cleanAddress = address.trim()
+
+    if (user.isDev) {
+      const updatedUser = { ...user, walletAddress: cleanAddress }
+      saveDevUser(updatedUser)
+    } else {
+      try {
+        const userRef = doc(db, 'users', user.uid)
+        await updateDoc(userRef, {
+          walletAddress: cleanAddress,
+          usdtAddress: cleanAddress
+        })
+      } catch (err) {
+        console.warn('Error actualizando walletAddress en Firestore:', err)
+      }
+    }
+
+    setUser((prev) => (prev ? { ...prev, walletAddress: cleanAddress } : null))
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sugar_user_wallet_address', cleanAddress)
+    }
+  }
+
   const deductCoins = async (amount: number): Promise<boolean> => {
     if (!user) return false
     if ((user.coins ?? 200) < amount) return false
@@ -322,6 +350,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         setNickname,
         setAvatar,
+        setWalletAddress,
         deductCoins,
       }}
     >

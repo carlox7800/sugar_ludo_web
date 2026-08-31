@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil, Check } from 'lucide-react'
+import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil, Check, Wallet } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { AvatarSelectorModal, PRESET_AVATARS } from './avatar-selector-modal'
 import { HistoryModal } from './history-modal'
@@ -15,12 +15,15 @@ interface ProfileModalProps {
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
 
 export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
-  const { user, setNickname, setAvatar } = useAuth()
+  const { user, setNickname, setAvatar, setWalletAddress } = useAuth()
   const [isAvatarSelectorOpen, setIsAvatarSelectorOpen] = useState(false)
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [isEditingNick, setIsEditingNick] = useState(false)
   const [newNick, setNewNick] = useState('')
   const [errorNick, setErrorNick] = useState('')
+  const [walletInput, setWalletInput] = useState(user?.walletAddress || '')
+  const [isEditingWallet, setIsEditingWallet] = useState(false)
+  const [walletToast, setWalletToast] = useState<string | null>(null)
   const [inventory, setInventory] = useState<UserInventory>({
     ownedItems: ['board_default', 'token_default', 'dice_default'],
     equipped: { board: 'board_default', token: 'token_default', dice: 'dice_default' },
@@ -63,6 +66,30 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const daysRemaining = user.nicknameUpdatedAt
     ? Math.ceil((NINETY_DAYS_MS - (Date.now() - user.nicknameUpdatedAt)) / (24 * 60 * 60 * 1000))
     : 0
+
+  useEffect(() => {
+    if (user?.walletAddress) {
+      setWalletInput(user.walletAddress)
+    }
+  }, [user?.walletAddress])
+
+  const handleSaveWallet = async () => {
+    const clean = walletInput.trim()
+    if (!clean) {
+      setWalletToast('⚠️ Ingrese una dirección válida')
+      setTimeout(() => setWalletToast(null), 3000)
+      return
+    }
+    if (clean.length < 24) {
+      setWalletToast('⚠️ Dirección muy corta (mínimo 24 caracteres)')
+      setTimeout(() => setWalletToast(null), 3000)
+      return
+    }
+    await setWalletAddress(clean)
+    setIsEditingWallet(false)
+    setWalletToast('✅ ¡Billetera guardada para tus retiros!')
+    setTimeout(() => setWalletToast(null), 3500)
+  }
 
   const handleSaveNick = () => {
     const isValid = newNick.length >= 3 && newNick.length <= 20 && /^[a-zA-Z0-9_ ]+$/.test(newNick)
@@ -198,6 +225,67 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Billetera USDT para Retiros */}
+            <div className="rounded-2xl border border-border/80 bg-[oklch(1_0_0/0.03)] p-4 space-y-2.5 shadow-inner">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wallet className="size-4 text-[var(--candy-cyan)]" />
+                  <span className="font-display text-xs font-bold uppercase tracking-wider text-foreground">
+                    Billetera USDT de Retiros
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)] font-bold uppercase">
+                    TRC-20 / BEP-20
+                  </span>
+                </div>
+                {!isEditingWallet && user.walletAddress && (
+                  <button
+                    onClick={() => {
+                      setWalletInput(user.walletAddress || '')
+                      setIsEditingWallet(true)
+                    }}
+                    className="flex items-center gap-1 text-[11px] text-[var(--candy-cyan)] hover:underline font-bold cursor-pointer"
+                  >
+                    <Pencil className="size-3" /> Modificar
+                  </button>
+                )}
+              </div>
+
+              {isEditingWallet || !user.walletAddress ? (
+                <div className="space-y-2 pt-1">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={walletInput}
+                      onChange={(e) => setWalletInput(e.target.value)}
+                      placeholder="Pega tu dirección USDT (TRC-20 o BEP-20)"
+                      className="flex-1 rounded-xl border border-border bg-[oklch(1_0_0/0.05)] px-3 py-2.5 text-xs font-mono text-foreground outline-none focus:border-[var(--candy-cyan)] focus:bg-[oklch(1_0_0/0.1)] transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveWallet}
+                      className="px-4 py-2.5 rounded-xl bg-[var(--candy-cyan)] text-slate-950 font-display text-xs font-extrabold shadow-md hover:brightness-110 transition-all cursor-pointer shrink-0"
+                    >
+                      Guardar
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground leading-snug">
+                    Esta dirección queda vinculada a tu perfil. Al solicitar retiros, el cajero te transferirá directamente a esta cuenta sin tener que escribirla de nuevo.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-black/30 border border-white/5 font-mono text-xs">
+                  <span className="text-emerald-300 truncate max-w-[260px] sm:max-w-md font-semibold">{user.walletAddress}</span>
+                  <span className="text-[10px] text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 shrink-0">
+                    Vinculada
+                  </span>
+                </div>
+              )}
+
+              {walletToast && (
+                <p className="text-[11px] font-bold text-center text-emerald-300 animate-in fade-in">{walletToast}</p>
+              )}
             </div>
 
             {/* Stats Grid */}

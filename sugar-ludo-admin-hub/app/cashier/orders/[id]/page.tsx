@@ -668,20 +668,22 @@ Conserva este mensaje como comprobante formal de la transacción.`
               </div>
             </div>
 
-            {/* Reference / Hash Bar with Fast Copy */}
-            {(order.receiptReferenceNumber || order.status === 'pending') && (
-              <div className="p-3 bg-slate-950/80 rounded-2xl border border-white/10 flex items-center justify-between gap-2 text-xs">
+            {/* Reference / Wallet Address Bar with Fast Copy */}
+            {(order.receiptReferenceNumber || (order as any).paymentAddress || order.status === 'pending') && (
+              <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-white/10 flex items-center justify-between gap-2 text-xs">
                 <div className="min-w-0 flex-1">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Hash / Referencia Tx</span>
-                  <span className="font-mono text-white text-xs truncate block">
-                    {order.receiptReferenceNumber || 'Sin referencia registrada aún'}
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                    {isWithdraw ? '📍 Billetera USDT de Destino (Configurada por el Jugador)' : 'Hash / Referencia Tx'}
+                  </span>
+                  <span className="font-mono text-emerald-300 text-xs truncate block font-bold mt-0.5">
+                    {(order as any).paymentAddress || order.receiptReferenceNumber || 'Sin dirección registrada aún'}
                   </span>
                 </div>
-                {order.receiptReferenceNumber && (
+                {((order as any).paymentAddress || order.receiptReferenceNumber) && (
                   <button
-                    onClick={() => handleCopyHash(order.receiptReferenceNumber!)}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-[11px] font-bold border border-white/10 transition-colors cursor-pointer shrink-0"
-                    title="Copiar Hash"
+                    onClick={() => handleCopyHash((order as any).paymentAddress || order.receiptReferenceNumber!)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-[11px] font-bold border border-white/10 transition-colors cursor-pointer shrink-0"
+                    title={isWithdraw ? "Copiar Billetera de Destino" : "Copiar Hash"}
                   >
                     {copiedHash ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5 text-cyan-400" />}
                     <span>{copiedHash ? '¡Copiado!' : 'Copiar'}</span>
@@ -895,6 +897,24 @@ Conserva este mensaje como comprobante formal de la transacción.`
                     <div className="flex justify-between text-slate-400 text-[10px]">
                       <span>Método de Pago:</span>
                       <strong className="text-cyan-300 uppercase">{order.paymentMethod}</strong>
+                    </div>
+                    <div className="border-t border-white/10 pt-1.5 flex justify-between items-center text-slate-400 text-[10px]">
+                      <span>Billetera / Cuenta:</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <strong className="text-emerald-300 font-mono text-[11px] truncate max-w-[170px]">
+                          {(order as any).paymentAddress || order.receiptReferenceNumber || 'No especificada'}
+                        </strong>
+                        {((order as any).paymentAddress || order.receiptReferenceNumber) && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyHash((order as any).paymentAddress || order.receiptReferenceNumber!)}
+                            className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-cyan-300 text-[9px] font-bold cursor-pointer transition-colors shrink-0"
+                            title="Copiar Billetera"
+                          >
+                            Copiar
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )

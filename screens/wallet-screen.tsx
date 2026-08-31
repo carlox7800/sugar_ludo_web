@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle, X, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle, X, Trash2, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
+import { ProfileModal } from '@/components/profile-modal'
 import { db } from '@/lib/firebase'
 import { doc, onSnapshot, collection, query, where, getDoc, updateDoc } from 'firebase/firestore'
 import { globalLogger } from '@/lib/logger'
@@ -168,6 +169,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
   // UI States
   const [isCopied, setIsCopied] = useState(false)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'info' | 'error' } | null>(null)
 
   const usdtEquivalent = (coins / 100).toFixed(2)
@@ -243,27 +245,28 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
       return
     }
 
-    if (!withdrawAddress.trim()) {
-      showNotification('Ingrese la dirección TRC20 de destino', 'error')
+    const targetWalletAddress = user?.walletAddress?.trim() || (typeof window !== 'undefined' ? localStorage.getItem('sugar_user_wallet_address')?.trim() : '')
+    if (!targetWalletAddress) {
+      showNotification('Debes configurar tu dirección de billetera en tu Perfil antes de solicitar un retiro', 'error')
+      setIsProfileOpen(true)
       return
     }
 
     setIsSubmitting(true)
-    globalLogger.wallet(`Iniciando solicitud de retiro: ${amount} USDT / -${coinsToDeduct} SC`, { address: withdrawAddress.trim() })
+    globalLogger.wallet(`Iniciando solicitud de retiro: ${amount} USDT / -${coinsToDeduct} SC`, { address: targetWalletAddress })
     try {
       const res = await createWithdrawOrder({
         playerUid: user.uid,
         playerName: user.nickname || user.displayName || 'Jugador',
         amountFiat: amount,
         currency: 'USDT',
-        paymentAddress: withdrawAddress.trim(),
+        paymentAddress: targetWalletAddress,
         isVip: isVipWithdraw
       })
 
       if (res.success) {
         globalLogger.wallet(`Retiro registrado con éxito: #${res.orderId}`, res)
         setWithdrawAmount('')
-        setWithdrawAddress('')
         showNotification(`Solicitud de retiro enviada (-${coinsToDeduct} SC retenidos en espera de validación).`, 'success')
         refreshData()
       } else {
@@ -469,26 +472,74 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                   <span className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Retirar Fondos
                   </span>
-                  <div className="flex flex-col gap-3 mt-1">
+
+                  {/* Estado de Billetera Configurada */}
+                  {user?.walletAddress ? (
+                    <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 flex items-center justify-between shadow-inner">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="size-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="size-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-white">Billetera de Destino Registrada</span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/30 text-emerald-300 font-bold uppercase">
+                              USDT TRC-20
+                            </span>
+                          </div>
+                          <p className="text-xs font-mono text-emerald-200 truncate font-semibold">
+                            {user.walletAddress}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsProfileOpen(true)}
+                        className="text-[11px] text-emerald-300 hover:text-white font-bold underline shrink-0 cursor-pointer ml-2"
+                      >
+                        Cambiar en Perfil
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2.5 shadow-inner">
+                      <div className="flex items-center gap-2 text-amber-300">
+                        <AlertCircle className="size-4 shrink-0" />
+                        <span className="font-bold text-xs">Billetera de Retiro No Registrada</span>
+                      </div>
+                      <p className="text-[11px] text-amber-200/90 leading-snug">
+                        Para tu seguridad y rapidez operativa, debes registrar tu dirección USDT en tu Perfil una sola vez antes de solicitar retiros.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsProfileOpen(true)}
+                        className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display text-xs font-black transition-colors cursor-pointer shadow-md"
+                      >
+                        Configurar Billetera en mi Perfil
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Input de Monto a Retirar */}
+                  <div className="flex flex-col gap-2 mt-1">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                      Monto a Retirar en Dólares (USDT)
+                    </label>
                     <div className="relative">
                       <input 
                         type="number"
                         required
+                        min="5"
+                        step="1"
                         value={withdrawAmount}
                         onChange={(e) => setWithdrawAmount(e.target.value)}
-                        placeholder="Monto a retirar (USDT)" 
-                        className="w-full rounded-xl border border-border bg-[oklch(1_0_0/0.05)] px-4 py-3 text-sm text-foreground outline-none transition-colors focus:border-[var(--candy-magenta)] focus:bg-[oklch(1_0_0/0.1)]"
+                        placeholder="Ej: 50, 100, 200..." 
+                        className="w-full rounded-xl border border-border bg-[oklch(1_0_0/0.05)] px-4 py-3.5 text-base font-mono font-black text-foreground outline-none transition-colors focus:border-[var(--candy-magenta)] focus:bg-[oklch(1_0_0/0.1)]"
                       />
-                    </div>
-                    <div className="relative">
-                      <input 
-                        type="text" 
-                        required
-                        value={withdrawAddress}
-                        onChange={(e) => setWithdrawAddress(e.target.value)}
-                        placeholder="Tu Dirección TRC20" 
-                        className="w-full rounded-xl border border-border bg-[oklch(1_0_0/0.05)] px-4 py-3 text-sm font-mono text-foreground outline-none transition-colors focus:border-[var(--candy-magenta)] focus:bg-[oklch(1_0_0/0.1)]"
-                      />
+                      {withdrawAmount && (
+                        <span className="absolute right-4 top-3.5 text-xs font-bold text-muted-foreground font-mono">
+                          = {Number(withdrawAmount) * 100} SC
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -496,15 +547,15 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                 {/* VIP Toggle (Settings Modal style) */}
                 <div className="flex items-center justify-between rounded-2xl border border-border bg-[oklch(1_0_0/0.03)] p-4">
                   <div className="flex flex-col">
-                    <span className="font-display text-sm font-bold text-foreground">Retiro VIP (Max 12h)</span>
+                    <span className="font-display text-sm font-bold text-foreground">Retiro VIP (Prioridad Máxima)</span>
                     <span className={`text-xs font-semibold ${isVipWithdraw ? 'text-[var(--candy-magenta)]' : 'text-muted-foreground'}`}>
-                      Comisión: {isVipWithdraw ? '10%' : '5%'}
+                      Comisión: {isVipWithdraw ? '10%' : '5%'} (Llegada en minutos)
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsVipWithdraw(!isVipWithdraw)}
-                    className={`relative h-7 w-12 rounded-full transition-colors ${isVipWithdraw ? 'bg-[var(--candy-magenta)]' : 'bg-muted'}`}
+                    className={`relative h-7 w-12 rounded-full transition-colors cursor-pointer ${isVipWithdraw ? 'bg-[var(--candy-magenta)]' : 'bg-muted'}`}
                   >
                     <div className={`absolute top-1 size-5 rounded-full bg-white transition-transform ${isVipWithdraw ? 'left-6' : 'left-1'}`} />
                   </button>
@@ -512,10 +563,14 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !user?.walletAddress}
                   className="btn-3d w-full rounded-xl bg-[var(--candy-magenta)] py-4 font-display text-base font-extrabold text-primary-foreground shadow-[0_4px_12px_oklch(0.7_0.27_350/0.4)] disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmitting ? 'PROCESANDO...' : 'Realizar Retiro'}
+                  {isSubmitting
+                    ? 'PROCESANDO...'
+                    : !user?.walletAddress
+                    ? 'CONFIGURA TU BILLETERA EN EL PERFIL'
+                    : 'Confirmar Retiro'}
                 </button>
               </form>
             )}
@@ -604,6 +659,11 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       </div>
+
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+      />
     </section>
   )
 }

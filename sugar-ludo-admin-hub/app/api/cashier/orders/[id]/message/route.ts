@@ -106,7 +106,8 @@ export async function POST(
         replyItem.attachmentUrl = attachmentUrl
       }
 
-      // Vía adminDb
+      // Vía adminDb (prioridad 1)
+      let inboxUpdated = false
       if (adminDb && adminDb.collection) {
         try {
           const userRef = adminDb.collection('users').doc(playerUid)
@@ -149,55 +150,60 @@ export async function POST(
               inbox.unshift(newSupportMail)
             }
             await userRef.update({ inbox: inbox.slice(0, 50) })
+            inboxUpdated = true
           }
-        } catch {}
+        } catch (dbErr) {
+          console.warn('[MessageAPI] adminDb inbox update notice:', dbErr)
+        }
       }
 
-      // Vía REST API get/patch
-      try {
-        const userDocUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${playerUid}`
-        const userDocRes = await fetch(userDocUrl)
-        if (userDocRes.ok) {
-          const uDoc = await userDocRes.json()
-          const currentInboxValues = uDoc.fields?.inbox?.arrayValue?.values || []
-          
-          const newSupportMailRest = {
-            mapValue: {
-              fields: {
-                id: { stringValue: `mail_sup_${orderId}` },
-                title: { stringValue: `Consulta de Cajero sobre Orden #${orderId.slice(0, 8)}` },
-                sender: { stringValue: senderName || 'Cajero Autorizado' },
-                date: { stringValue: 'Hoy' },
-                category: { stringValue: 'support' },
-                isRead: { booleanValue: false },
-                content: { stringValue: message.trim() },
-                badge: { stringValue: 'Soporte P2P' },
-                orderId: { stringValue: orderId },
-                status: { stringValue: 'pending' },
-                timestamp: { integerValue: String(timestamp) }
-              }
-            }
-          }
-
-          // Prepend new or updated mail
-          const updatedInbox = [newSupportMailRest, ...currentInboxValues.filter((v: any) => v.mapValue?.fields?.orderId?.stringValue !== orderId)].slice(0, 50)
-
-          fetch(`${userDocUrl}?updateMask.fieldPaths=inbox`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fields: {
-                inbox: {
-                  arrayValue: {
-                    values: updatedInbox
-                  }
+      // Vía REST API get/patch (fallback únicamente si adminDb no estuvo disponible o falló)
+      if (!inboxUpdated) {
+        try {
+          const userDocUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${playerUid}`
+          const userDocRes = await fetch(userDocUrl)
+          if (userDocRes.ok) {
+            const uDoc = await userDocRes.json()
+            const currentInboxValues = uDoc.fields?.inbox?.arrayValue?.values || []
+            
+            const newSupportMailRest = {
+              mapValue: {
+                fields: {
+                  id: { stringValue: `mail_sup_${orderId}` },
+                  title: { stringValue: `Consulta de Cajero sobre Orden #${orderId.slice(0, 8)}` },
+                  sender: { stringValue: senderName || 'Cajero Autorizado' },
+                  date: { stringValue: 'Hoy' },
+                  category: { stringValue: 'support' },
+                  isRead: { booleanValue: false },
+                  content: { stringValue: message.trim() },
+                  badge: { stringValue: 'Soporte P2P' },
+                  orderId: { stringValue: orderId },
+                  status: { stringValue: 'pending' },
+                  timestamp: { integerValue: String(timestamp) }
                 }
               }
+            }
+
+            // Prepend new or updated mail, filtrando cualquier correo previo con el mismo orderId
+            const updatedInbox = [newSupportMailRest, ...currentInboxValues.filter((v: any) => v.mapValue?.fields?.orderId?.stringValue !== orderId)].slice(0, 50)
+
+            await fetch(`${userDocUrl}?updateMask.fieldPaths=inbox`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fields: {
+                  inbox: {
+                    arrayValue: {
+                      values: updatedInbox
+                    }
+                  }
+                }
+              })
             })
-          }).catch(() => {})
+          }
+        } catch (restErr) {
+          console.warn('[MessageAPI] REST inbox patch notice:', restErr)
         }
-      } catch (restErr) {
-        console.warn('[MessageAPI] REST inbox patch notice:', restErr)
       }
     }
 

@@ -159,7 +159,13 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               const hidden = new Set(getHiddenMails())
               setMailList((prev) => {
                 const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
-                const userMails = data.inbox.filter((m: any) => !m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
+                const supportOrderIds = new Set(supportFromOrders.map(m => m.orderId).filter(Boolean))
+                // Evitar duplicados: ignorar correos de inbox que correspondan a una orden ya cargada por cashier_orders
+                const userMails = data.inbox.filter((m: any) => 
+                  !m.id.startsWith('mail_ord_sup_') && 
+                  (!m.orderId || !supportOrderIds.has(m.orderId)) && 
+                  !hidden.has(m.id)
+                )
                 const combined = [...supportFromOrders, ...userMails]
                 return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
               })
@@ -237,7 +243,12 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
           })
 
           setMailList((prev) => {
-            const nonOrderMails = prev.filter(m => !m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
+            const orderIdsInSupport = new Set(orderSupportMails.map(m => m.orderId).filter(Boolean))
+            const nonOrderMails = prev.filter(m => 
+              !m.id.startsWith('mail_ord_sup_') && 
+              (!m.orderId || !orderIdsInSupport.has(m.orderId)) && 
+              !hidden.has(m.id)
+            )
             const combined = [...orderSupportMails, ...nonOrderMails]
             return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
           })
