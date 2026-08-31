@@ -19,6 +19,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
+import { db } from '@/lib/firebase'
+import { doc, onSnapshot } from 'firebase/firestore'
 import { 
   COIN_PACKAGES, 
   CUSTOMIZATION_ITEMS, 
@@ -38,6 +40,12 @@ import confetti from 'canvas-confetti'
 export function StoreScreen({ onBack }: { onBack: () => void }) {
   const { user, deductCoins } = useAuth()
   const { coins, setCoins } = usePlayer()
+
+  // Dynamic Catalog State (Synced with Admin Economy Control in Real-Time)
+  const [coinPackages, setCoinPackages] = useState<CoinPackage[]>(COIN_PACKAGES)
+  const [customItems, setCustomItems] = useState<StoreItem[]>(CUSTOMIZATION_ITEMS)
+  const [emoteItems, setEmoteItems] = useState<StoreItem[]>(EMOTE_ITEMS)
+  const [boosterItems, setBoosterItems] = useState<StoreItem[]>(BOOSTER_ITEMS)
 
   // Active Main Tab: 'vault' | 'custom' | 'emotes' | 'boosters'
   const [activeTab, setActiveTab] = useState<'vault' | 'custom' | 'emotes' | 'boosters'>('vault')
@@ -68,21 +76,92 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
     })
   }, [user?.uid])
 
+  // Escuchar cambios de precios de la economía en TIEMPO REAL (Firestore y BroadcastChannel)
+  useEffect(() => {
+    const applyConfig = (cfg: any) => {
+      if (!cfg) return
+      if (Array.isArray(cfg.items) && cfg.items.length > 0) {
+        const priceMap = new Map<string, number>()
+        cfg.items.forEach((it: any) => {
+          if (it && it.id && typeof it.priceCoins === 'number') {
+            priceMap.set(it.id, it.priceCoins)
+          }
+        })
+
+        setCustomItems((prev) =>
+          prev.map((item) => (priceMap.has(item.id) ? { ...item, priceSC: priceMap.get(item.id)! } : item))
+        )
+        setEmoteItems((prev) =>
+          prev.map((item) => (priceMap.has(item.id) ? { ...item, priceSC: priceMap.get(item.id)! } : item))
+        )
+        setBoosterItems((prev) =>
+          prev.map((item) => (priceMap.has(item.id) ? { ...item, priceSC: priceMap.get(item.id)! } : item))
+        )
+      }
+
+      if (Array.isArray(cfg.packages) && cfg.packages.length > 0) {
+        setCoinPackages((prev) =>
+          prev.map((pkg) => {
+            const livePkg = cfg.packages.find((p: any) => p.id === pkg.id)
+            if (livePkg) {
+              return {
+                ...pkg,
+                usdtCost: livePkg.usdtCost ?? pkg.usdtCost,
+                baseCoins: livePkg.baseCoins ?? pkg.baseCoins,
+                bonusPercent: livePkg.bonusPercent ?? pkg.bonusPercent,
+                totalCoins: livePkg.totalCoins ?? pkg.totalCoins
+              }
+            }
+            return pkg
+          })
+        )
+      }
+    }
+
+    // 1. Snapshot Firestore
+    let unsub = () => {}
+    try {
+      unsub = onSnapshot(doc(db, 'system_config', 'economy_settings'), (snap) => {
+        if (snap.exists()) {
+          applyConfig(snap.data())
+        }
+      })
+    } catch {}
+
+    // 2. BroadcastChannel para reactividad local instantánea (0 ms)
+    let channel: BroadcastChannel | null = null
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        channel = new BroadcastChannel('sugar_ludo_social_channel')
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'economy_settings_updated' && event.data.payload) {
+            applyConfig(event.data.payload)
+          }
+        }
+      }
+    } catch {}
+
+    return () => {
+      unsub()
+      if (channel) channel.close()
+    }
+  }, [])
+
   // Select initial preview item when category changes
   useEffect(() => {
     if (activeTab === 'custom') {
-      const items = CUSTOMIZATION_ITEMS.filter((i) => i.category === customCategory)
+      const items = customItems.filter((i) => i.category === customCategory)
       const equippedId = inventory.equipped[customCategory]
       const current = items.find((i) => i.id === equippedId) || items[0]
       setSelectedItem(current)
     } else if (activeTab === 'emotes') {
-      setSelectedItem(EMOTE_ITEMS[0])
+      setSelectedItem(emoteItems[0])
     } else if (activeTab === 'boosters') {
-      setSelectedItem(BOOSTER_ITEMS[0])
+      setSelectedItem(boosterItems[0])
     } else {
       setSelectedItem(null)
     }
-  }, [activeTab, customCategory, inventory.equipped])
+  }, [activeTab, customCategory, inventory.equipped, customItems, emoteItems, boosterItems])
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -279,7 +358,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
           {/* Packages Grid */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {COIN_PACKAGES.map((pkg) => {
+            {coinPackages.map((pkg) => {
               const isPopular = pkg.tag === 'Más Popular'
               const isBestValue = pkg.tag === 'Mejor Valor'
 
@@ -426,7 +505,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
           {/* Grid of Items */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            {CUSTOMIZATION_ITEMS.filter((i) => i.category === customCategory).map((item) => {
+            {customItems.filter((i) => i.category === customCategory).map((item) => {
               const isOwned = inventory.ownedItems.includes(item.id) || item.priceSC === 0
               const isEquipped = inventory.equipped[customCategory] === item.id
               const isSelected = selectedItem?.id === item.id
@@ -486,7 +565,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {EMOTE_ITEMS.map((emote) => {
+            {emoteItems.map((emote) => {
               const isOwned = inventory.ownedItems.includes(emote.id) || emote.priceSC === 0
 
               return (
@@ -575,7 +654,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {BOOSTER_ITEMS.map((booster) => (
+            {boosterItems.map((booster) => (
               <div
                 key={booster.id}
                 className="glass flex flex-col justify-between p-5 rounded-3xl border border-border/60 bg-[oklch(1_0_0/0.02)] shadow-lg hover:border-[var(--candy-orange)]/50 transition-all"

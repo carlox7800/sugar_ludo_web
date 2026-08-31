@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
+import { db } from '../../../lib/firebase'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { MOCK_REAL_STORE_CATALOG } from '../../../lib/mock-treasury'
 import {
   MOCK_REAL_COMPETITIVE_MATRIX,
@@ -170,6 +172,28 @@ export default function EconomiaAdminPage() {
   // Cargar configuración guardada al montar
   useEffect(() => {
     const loadSavedEconomy = async () => {
+      // 1. Intentar cargar directamente desde Firestore (system_config/economy_settings)
+      try {
+        const snap = await getDoc(doc(db, 'system_config', 'economy_settings'))
+        if (snap.exists()) {
+          const cfg = snap.data()
+          if (cfg.items) setItems(cfg.items)
+          if (cfg.competitiveMatrix) setCompetitiveMatrix(cfg.competitiveMatrix)
+          if (cfg.packages) setPackages(cfg.packages)
+          if (cfg.tournaments) setTournaments(cfg.tournaments)
+          if (cfg.seasonRanking) setSeasonRanking(cfg.seasonRanking)
+          if (cfg.goldRushMultiplier) setGoldRushMultiplier(cfg.goldRushMultiplier)
+          if (cfg.doubleXpActive !== undefined) setDoubleXpActive(cfg.doubleXpActive)
+          if (cfg.tournamentBonusPct) setTournamentBonusPct(cfg.tournamentBonusPct)
+          if (cfg.normalFee) setNormalFee(cfg.normalFee)
+          if (cfg.vipFee) setVipFee(cfg.vipFee)
+          return
+        }
+      } catch (err) {
+        console.warn('Fallback a API local de economía:', err)
+      }
+
+      // 2. Fallback a API
       try {
         const res = await fetch('/api/economy/config')
         if (res.ok) {
@@ -216,19 +240,40 @@ export default function EconomiaAdminPage() {
       updatedAt: Date.now()
     }
 
-    // 1. Guardar en localStorage para persistencia local del ecosistema
+    // 1. Guardar en localStorage para persistencia local del navegador
     localStorage.setItem('sugar_global_economy_config', JSON.stringify(payload))
 
-    // 2. Transmitir por API global
+    // 2. Guardar DIRECTAMENTE en Firebase Firestore (system_config/economy_settings)
+    try {
+      const configDocRef = doc(db, 'system_config', 'economy_settings')
+      await setDoc(configDocRef, payload, { merge: true })
+      console.log('[EconomiaAdmin] Configuración guardada en Firestore exitosamente.')
+    } catch (e) {
+      console.error('[EconomiaAdmin] Error guardando en Firestore:', e)
+    }
+
+    // 3. Notificar por BroadcastChannel para sincronización inmediata (0 ms) en el juego
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const channel = new BroadcastChannel('sugar_ludo_social_channel')
+        channel.postMessage({
+          type: 'economy_settings_updated',
+          payload
+        })
+        channel.close()
+      }
+    } catch {}
+
+    // 4. Transmitir por API global
     try {
       await fetch('/api/economy/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
-      setNotification('¡Parámetros de modo competitivo, catálogo y comisiones guardados y sincronizados en TIEMPO REAL!')
+      setNotification('✨ ¡Precios del catálogo, comisiones y modo competitivo guardados y sincronizados en TIEMPO REAL!')
     } catch {
-      setNotification('¡Guardado local completado!')
+      setNotification('✨ ¡Configuración guardada en la base de datos con éxito!')
     }
     setTimeout(() => setNotification(null), 4500)
   }

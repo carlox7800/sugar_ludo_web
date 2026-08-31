@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
-import { RegisterCashierModal } from '../../../components/admin/RegisterCashierModal'
 import {
   User,
   Shield,
@@ -40,14 +39,8 @@ export default function AdminPerfilPage() {
     createNewAdmin,
     toggleAdminStatus,
     deleteAdminAccount,
-    cashierList,
-    createNewCashier,
-    deleteCashierAccount,
     logout
   } = useAdminAuth()
-
-  // Active Management Tab: 'admins' | 'cashiers'
-  const [managementTab, setManagementTab] = useState<'admins' | 'cashiers'>('admins')
 
   // Profile Edit Form State
   const [displayName, setDisplayName] = useState(adminUser?.displayName || '')
@@ -65,12 +58,8 @@ export default function AdminPerfilPage() {
   const [newAdminPass, setNewAdminPass] = useState('')
   const [showNewAdminPass, setShowNewAdminPass] = useState(false)
 
-  // Modal para alta de cajero
-  const [isRegisterCashierModalOpen, setIsRegisterCashierModalOpen] = useState(false)
-
   // Modal de Confirmación de Eliminación Permanente
   const [accountToDelete, setAccountToDelete] = useState<{
-    type: 'admin' | 'cashier'
     uid: string
     name: string
   } | null>(null)
@@ -157,20 +146,11 @@ export default function AdminPerfilPage() {
 
   const handleConfirmDelete = () => {
     if (!accountToDelete) return
-    if (accountToDelete.type === 'admin') {
-      const res = deleteAdminAccount(accountToDelete.uid)
-      if (res.success) {
-        showToast(res.message)
-      } else {
-        showError(res.message)
-      }
+    const res = deleteAdminAccount(accountToDelete.uid)
+    if (res.success) {
+      showToast(res.message)
     } else {
-      const res = deleteCashierAccount(accountToDelete.uid)
-      if (res.success) {
-        showToast(res.message)
-      } else {
-        showError(res.message)
-      }
+      showError(res.message)
     }
     setAccountToDelete(null)
   }
@@ -188,10 +168,10 @@ export default function AdminPerfilPage() {
           </Link>
           <div>
             <h1 className="font-black text-base text-white tracking-wide flex items-center gap-2">
-              <User className="size-5 text-cyan-400" /> PERFIL Y ADMINISTRACIÓN CENTRALIZADA DE CUENTAS
+              <User className="size-5 text-cyan-400" /> PERFIL Y CUENTAS DE ADMINISTRACIÓN
             </h1>
             <p className="text-[11px] text-slate-400 font-mono">
-              admin.sugarludo.com &bull; Altas, Bajas y Control de Credenciales para Admins y Cajeros
+              admin.sugarludo.com &bull; Credenciales, Permisos y Control de Cuentas de Administradores
             </p>
           </div>
         </div>
@@ -334,262 +314,153 @@ export default function AdminPerfilPage() {
             </div>
           </div>
 
-          {/* Col 2 & 3: Pestañas de Gestión Centralizada de Cuentas (Admins & Cajeros) */}
+          {/* Col 2 & 3: Gestión de Cuentas de Administradores */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Selector de Pestaña */}
-            <div className="p-1.5 rounded-2xl bg-slate-950 border border-white/5 grid grid-cols-2 gap-1 text-xs font-bold">
-              <button
-                onClick={() => setManagementTab('admins')}
-                className={clsx(
-                  'py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer',
-                  managementTab === 'admins'
-                    ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md font-black'
-                    : 'text-slate-400 hover:text-white'
-                )}
-              >
-                <Shield className="size-4" />
-                <span>Administradores ({adminList.length})</span>
-              </button>
+            {/* Formulario para Crear Nuevo Administrador */}
+            <div className="p-6 rounded-3xl bg-slate-900/60 border border-white/10 space-y-4">
+              <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                <UserPlus className="size-4 text-purple-400" /> CREAR Y AUTORIZAR NUEVO ADMINISTRADOR
+              </h4>
 
-              <button
-                onClick={() => setManagementTab('cashiers')}
-                className={clsx(
-                  'py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer',
-                  managementTab === 'cashiers'
-                    ? 'bg-gradient-to-r from-pink-500 to-pink-600 text-slate-950 shadow-md font-black'
-                    : 'text-slate-400 hover:text-white'
-                )}
-              >
-                <CreditCard className="size-4" />
-                <span>Cajeros Autorizados ({cashierList.length})</span>
-              </button>
+              <form onSubmit={handleCreateAdmin} className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold">Usuario (Login)</label>
+                  <input
+                    type="text"
+                    value={newAdminUser}
+                    onChange={(e) => setNewAdminUser(e.target.value)}
+                    placeholder="ej. auditor.carlos"
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold">Correo Electrónico</label>
+                  <input
+                    type="email"
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    placeholder="ej. auditor@sugarludo.com"
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold">Nombre Completo</label>
+                  <input
+                    type="text"
+                    value={newAdminDisplayName}
+                    onChange={(e) => setNewAdminDisplayName(e.target.value)}
+                    placeholder="ej. Carlos Mendoza"
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-bold"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-slate-400 font-bold">Rol Administrativo</label>
+                  <select
+                    value={newAdminRole}
+                    onChange={(e: any) => setNewAdminRole(e.target.value)}
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-bold"
+                  >
+                    <option value="financial_admin">Admin Financiero / Cajeros</option>
+                    <option value="support_admin">Admin de Soporte y Disputas</option>
+                    <option value="super_admin">Super Admin (Control Total)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-slate-400 font-bold">Contraseña Temporal</label>
+                  <div className="relative">
+                    <input
+                      type={showNewAdminPass ? 'text' : 'password'}
+                      value={newAdminPass}
+                      onChange={(e) => setNewAdminPass(e.target.value)}
+                      placeholder="Mínimo 6 caracteres"
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 pr-10 py-2 text-white font-mono"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewAdminPass(!showNewAdminPass)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1 cursor-pointer"
+                      title={showNewAdminPass ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      {showNewAdminPass ? <EyeOff className="size-4 text-purple-400" /> : <Eye className="size-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="sm:col-span-2 py-3 rounded-2xl bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-400 hover:to-purple-500 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(168,85,247,0.3)] mt-1"
+                >
+                  <UserPlus className="size-4" />
+                  <span>Crear Cuenta de Administrador</span>
+                </button>
+              </form>
             </div>
 
-            {/* TAB 1: GESTIÓN DE ADMINISTRADORES */}
-            {managementTab === 'admins' && (
-              <div className="space-y-6">
-                {/* Formulario para Crear Nuevo Administrador */}
-                <div className="p-6 rounded-3xl bg-slate-900/60 border border-white/10 space-y-4">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                    <UserPlus className="size-4 text-purple-400" /> CREAR Y AUTORIZAR NUEVO ADMINISTRADOR
-                  </h4>
+            {/* Lista de Administradores con Bajas / Eliminación */}
+            <div className="p-6 rounded-3xl bg-slate-900/60 border border-white/10 space-y-4">
+              <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                <Users className="size-4 text-purple-400" /> ADMINISTRADORES ACTIVOS ({adminList.length})
+              </h4>
 
-                  <form onSubmit={handleCreateAdmin} className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div className="space-y-1">
-                      <label className="text-slate-400 font-bold">Usuario (Login)</label>
-                      <input
-                        type="text"
-                        value={newAdminUser}
-                        onChange={(e) => setNewAdminUser(e.target.value)}
-                        placeholder="ej. auditor.carlos"
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-slate-400 font-bold">Correo Electrónico</label>
-                      <input
-                        type="email"
-                        value={newAdminEmail}
-                        onChange={(e) => setNewAdminEmail(e.target.value)}
-                        placeholder="ej. auditor@sugarludo.com"
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-slate-400 font-bold">Nombre Completo</label>
-                      <input
-                        type="text"
-                        value={newAdminDisplayName}
-                        onChange={(e) => setNewAdminDisplayName(e.target.value)}
-                        placeholder="ej. Carlos Mendoza"
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-bold"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-slate-400 font-bold">Rol Administrativo</label>
-                      <select
-                        value={newAdminRole}
-                        onChange={(e: any) => setNewAdminRole(e.target.value)}
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-bold"
-                      >
-                        <option value="financial_admin">Admin Financiero / Cajeros</option>
-                        <option value="support_admin">Admin de Soporte y Disputas</option>
-                        <option value="super_admin">Super Admin (Control Total)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1 sm:col-span-2">
-                      <label className="text-slate-400 font-bold">Contraseña Temporal</label>
-                      <div className="relative">
-                        <input
-                          type={showNewAdminPass ? 'text' : 'password'}
-                          value={newAdminPass}
-                          onChange={(e) => setNewAdminPass(e.target.value)}
-                          placeholder="Mínimo 6 caracteres"
-                          className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 pr-10 py-2 text-white font-mono"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowNewAdminPass(!showNewAdminPass)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1 cursor-pointer"
-                          title={showNewAdminPass ? 'Ocultar contraseña' : 'Ver contraseña'}
-                        >
-                          {showNewAdminPass ? <EyeOff className="size-4 text-purple-400" /> : <Eye className="size-4" />}
-                        </button>
+              <div className="divide-y divide-white/5">
+                {adminList.map((admin) => (
+                  <div key={admin.uid} className="py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="size-10 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 font-black">
+                        {admin.displayName.charAt(0)}
                       </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="sm:col-span-2 py-3 rounded-2xl bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-400 hover:to-purple-500 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(168,85,247,0.3)] mt-1"
-                    >
-                      <UserPlus className="size-4" />
-                      <span>Crear Cuenta de Administrador</span>
-                    </button>
-                  </form>
-                </div>
-
-                {/* Lista de Administradores con Bajas / Eliminación */}
-                <div className="p-6 rounded-3xl bg-slate-900/60 border border-white/10 space-y-4">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                    <Users className="size-4 text-purple-400" /> ADMINISTRADORES ACTIVOS ({adminList.length})
-                  </h4>
-
-                  <div className="divide-y divide-white/5">
-                    {adminList.map((admin) => (
-                      <div key={admin.uid} className="py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="size-10 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 font-black">
-                            {admin.displayName.charAt(0)}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-white">{admin.displayName}</span>
-                              <span className="text-[10px] px-2 py-0.2 rounded-full bg-white/5 text-slate-300 font-mono">
-                                @{admin.username}
-                              </span>
-                            </div>
-                            <span className="text-[11px] text-slate-400">{admin.email} &bull; <strong className="text-pink-300 uppercase">{admin.role}</strong></span>
-                          </div>
-                        </div>
-
+                      <div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${admin.isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                            {admin.isActive ? 'Activo' : 'Suspendido'}
+                          <span className="font-bold text-white">{admin.displayName}</span>
+                          <span className="text-[10px] px-2 py-0.2 rounded-full bg-white/5 text-slate-300 font-mono">
+                            @{admin.username}
                           </span>
-
-                          {admin.uid !== 'adm_super_carlos_001' && (
-                            <>
-                              <button
-                                onClick={() => toggleAdminStatus(admin.uid)}
-                                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
-                                  admin.isActive ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                }`}
-                              >
-                                {admin.isActive ? 'Suspender' : 'Reactivar'}
-                              </button>
-
-                              <button
-                                onClick={() => setAccountToDelete({ type: 'admin', uid: admin.uid, name: admin.displayName })}
-                                className="p-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-all cursor-pointer"
-                                title="Eliminar permanentemente"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </>
-                          )}
                         </div>
+                        <span className="text-[11px] text-slate-400">{admin.email} &bull; <strong className="text-pink-300 uppercase">{admin.role}</strong></span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+                    </div>
 
-            {/* TAB 2: GESTIÓN CENTRALIZADA DE CAJEROS */}
-            {managementTab === 'cashiers' && (
-              <div className="space-y-6">
-                {/* Botón para Abrir Modal de Alta de Cajero */}
-                <div className="p-6 rounded-3xl bg-slate-900/60 border border-pink-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div>
-                    <h4 className="text-sm font-black text-white flex items-center gap-2">
-                      <CreditCard className="size-5 text-pink-400" /> ALTA DE NUEVOS CAJEROS AUTORIZADOS
-                    </h4>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Registra documento de identidad, credenciales y asignación inicial de saldo flotante.
-                    </p>
-                  </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${admin.isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                        {admin.isActive ? 'Activo' : 'Suspendido'}
+                      </span>
 
-                  <button
-                    onClick={() => setIsRegisterCashierModalOpen(true)}
-                    className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(236,72,153,0.3)] shrink-0"
-                  >
-                    <UserPlus className="size-4" />
-                    <span>Registrar Nuevo Cajero</span>
-                  </button>
-                </div>
-
-                {/* Lista de Cajeros con Bajas / Eliminación */}
-                <div className="p-6 rounded-3xl bg-slate-900/60 border border-white/10 space-y-4">
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                    <Users className="size-4 text-pink-400" /> CAJEROS EN LA RED ({cashierList.length})
-                  </h4>
-
-                  <div className="divide-y divide-white/5">
-                    {cashierList.map((csh) => (
-                      <div key={csh.uid} className="py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-3">
-                          <img src={csh.avatarUrl || 'https://i.ibb.co/3YBC35Xm/avatar-1786744277377.jpg'} alt={csh.name} className="size-10 rounded-2xl object-cover border border-white/10" />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-white">{csh.name}</span>
-                              <span className="text-[10px] px-2 py-0.2 rounded-full bg-pink-500/10 text-pink-300 font-mono font-bold">
-                                Flotante: {csh.floatBalanceCoins.toLocaleString()} SC
-                              </span>
-                            </div>
-                            <span className="text-[11px] text-slate-400">{csh.email} &bull; <strong className="text-white">${(csh.floatBalanceCoins / 100).toFixed(2)} USDT</strong></span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
+                      {admin.uid !== 'adm_super_carlos_001' && (
+                        <>
                           <button
-                            onClick={() => setAccountToDelete({ type: 'cashier', uid: csh.uid, name: csh.name })}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold transition-all cursor-pointer"
+                            onClick={() => toggleAdminStatus(admin.uid)}
+                            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                              admin.isActive ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            }`}
+                          >
+                            {admin.isActive ? 'Suspender' : 'Reactivar'}
+                          </button>
+
+                          <button
+                            onClick={() => setAccountToDelete({ uid: admin.uid, name: admin.displayName })}
+                            className="p-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-all cursor-pointer"
+                            title="Eliminar permanentemente"
                           >
                             <Trash2 className="size-3.5" />
-                            <span>Eliminar Cajero</span>
                           </button>
-                        </div>
-                      </div>
-                    ))}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            )}
+            </div>
           </div>
         </div>
       </main>
-
-      {/* Modal de Alta de Cajero */}
-      <RegisterCashierModal
-        isOpen={isRegisterCashierModalOpen}
-        onClose={() => setIsRegisterCashierModalOpen(false)}
-        onRegister={async (newCashier, pass) => {
-          const res = await createNewCashier(newCashier, pass)
-          if (res.success) {
-            showToast(res.message)
-          } else {
-            showError(res.message)
-          }
-        }}
-      />
 
       {/* Modal de Confirmación de Eliminación Permanente */}
       {accountToDelete && (
@@ -599,9 +470,9 @@ export default function AdminPerfilPage() {
               <AlertTriangle className="size-8" />
             </div>
 
-            <h3 className="text-lg font-black text-white">¿Eliminar Cuenta Permanentemente?</h3>
+            <h3 className="text-lg font-black text-white">¿Eliminar Administrador Permanentemente?</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Está a punto de eliminar la cuenta de <strong className="text-white">{accountToDelete.name}</strong> ({accountToDelete.type === 'admin' ? 'Administrador' : 'Cajero'}). Esta acción revocará de inmediato sus accesos al sistema y no se puede deshacer.
+              Está a punto de eliminar la cuenta de <strong className="text-white">{accountToDelete.name}</strong>. Esta acción revocará de inmediato sus accesos al sistema y no se puede deshacer.
             </p>
 
             <div className="flex gap-3 pt-2">

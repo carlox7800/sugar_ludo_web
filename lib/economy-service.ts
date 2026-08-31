@@ -1,4 +1,6 @@
 import { subscribeToP2PData } from './friends-service'
+import { db } from './firebase'
+import { doc, onSnapshot } from 'firebase/firestore'
 
 export interface EconomyMatrixEntry {
   entry: number
@@ -25,6 +27,8 @@ export const DEFAULT_ECONOMY_MATRIX: Record<number, EconomyMatrixEntry> = {
 // In-Memory RAM Cache en el cliente de juego ($0.00 Firestore)
 let liveEconomyMatrix: Record<number, EconomyMatrixEntry> = { ...DEFAULT_ECONOMY_MATRIX }
 let liveCoinPackages: any[] | null = null
+const liveItemPrices = new Map<string, number>()
+let liveFees = { normalFee: 5.0, vipFee: 10.0 }
 let isInitialized = false
 
 const listeners = new Set<() => void>()
@@ -33,20 +37,77 @@ export function initEconomyService() {
   if (typeof window === 'undefined' || isInitialized) return
   isInitialized = true
 
-  // Escuchar eventos reactivos transmitidos por el canal SSE / Server Relay
+  // 1. Escuchar en TIEMPO REAL desde Firebase Firestore (system_config/economy_settings)
+  try {
+    onSnapshot(doc(db, 'system_config', 'economy_settings'), (snap) => {
+      if (snap.exists()) {
+        const config = snap.data()
+        applyEconomyConfig(config)
+      }
+    }, (err) => {
+      console.warn('[EconomyService] Fallback modo offline para economía:', err.message)
+    })
+  } catch (e) {
+    console.warn('[EconomyService] Error iniciando listener Firestore:', e)
+  }
+
+  // 2. Escuchar evento instantáneo por BroadcastChannel (0 ms)
+  try {
+    if ('BroadcastChannel' in window) {
+      const channel = new BroadcastChannel('sugar_ludo_social_channel')
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'economy_settings_updated' && event.data.payload) {
+          applyEconomyConfig(event.data.payload)
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Escuchar eventos reactivos transmitidos por el canal SSE / Server Relay
   subscribeToP2PData((data: any) => {
     if (data && (data.dataType === 'economy_updated' || data.type === 'economy_updated')) {
       const config = data.config || data
-      if (config.matrix) {
-        liveEconomyMatrix = { ...DEFAULT_ECONOMY_MATRIX, ...config.matrix }
-      }
-      if (config.coinPackages) {
-        liveCoinPackages = config.coinPackages
-      }
-      // Notificar a componentes suscritos
-      listeners.forEach((cb) => cb())
+      applyEconomyConfig(config)
     }
   })
+}
+
+function applyEconomyConfig(config: any) {
+  if (!config) return
+
+  if (config.matrix) {
+    liveEconomyMatrix = { ...DEFAULT_ECONOMY_MATRIX, ...config.matrix }
+  } else if (Array.isArray(config.competitiveMatrix)) {
+    const mat: Record<number, EconomyMatrixEntry> = {}
+    config.competitiveMatrix.forEach((t: any) => {
+      if (t.playerCount) {
+        mat[t.playerCount] = {
+          entry: t.entryFeeSC,
+          pot: t.potSC,
+          prizes: t.prizesSC || []
+        }
+      }
+    })
+    liveEconomyMatrix = { ...DEFAULT_ECONOMY_MATRIX, ...mat }
+  }
+
+  if (Array.isArray(config.packages)) {
+    liveCoinPackages = config.packages
+  }
+
+  if (Array.isArray(config.items)) {
+    config.items.forEach((it: any) => {
+      if (it && it.id && typeof it.priceCoins === 'number') {
+        liveItemPrices.set(it.id, it.priceCoins)
+      }
+    })
+  }
+
+  if (typeof config.normalFee === 'number') liveFees.normalFee = config.normalFee
+  if (typeof config.vipFee === 'number') liveFees.vipFee = config.vipFee
+
+  // Notificar a componentes suscritos
+  listeners.forEach((cb) => cb())
 }
 
 export function getLiveEconomyMatrix(): Record<number, EconomyMatrixEntry> {
@@ -57,6 +118,16 @@ export function getLiveEconomyMatrix(): Record<number, EconomyMatrixEntry> {
 export function getLiveCoinPackages(): any[] | null {
   initEconomyService()
   return liveCoinPackages
+}
+
+export function getLiveItemPrice(itemId: string, defaultPrice: number): number {
+  initEconomyService()
+  return liveItemPrices.has(itemId) ? liveItemPrices.get(itemId)! : defaultPrice
+}
+
+export function getLiveWithdrawalFees() {
+  initEconomyService()
+  return liveFees
 }
 
 export function subscribeToEconomyUpdates(cb: () => void): () => void {

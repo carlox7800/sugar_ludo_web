@@ -100,6 +100,7 @@ export interface CashierManagementProfile {
   ordersCompletedToday: number
   commissionEarnedTodayCoins: number
   paymentMethodsCount: number
+  assignedPaymentMethods?: string[]
   password?: string
   role?: 'cashier'
 }

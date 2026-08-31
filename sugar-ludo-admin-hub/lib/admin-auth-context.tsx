@@ -34,6 +34,11 @@ interface AdminAuthContextType {
     newCashier: CashierManagementProfile,
     pass?: string
   ) => Promise<{ success: boolean; message: string }>
+  updateCashierProfile: (
+    uid: string,
+    updates: Partial<CashierManagementProfile>,
+    newPassword?: string
+  ) => Promise<{ success: boolean; message: string }>
   deleteCashierAccount: (uid: string) => { success: boolean; message: string }
   updateCashierFloat: (uid: string, newCoins: number, newUSDT?: number, paidWithdrawalDelta?: number) => void
 }
@@ -500,6 +505,88 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     return { success: true, message: 'Cuenta de cajero eliminada permanentemente.' }
   }
 
+  // Modificar Datos y Credenciales / Contraseña de Cajero
+  const updateCashierProfile = async (
+    uid: string,
+    updates: Partial<CashierManagementProfile>,
+    newPassword?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    let updatedCashier: CashierManagementProfile | null = null
+
+    const updatedList = cashierList.map((c) => {
+      if (c.uid === uid) {
+        updatedCashier = {
+          ...c,
+          ...updates,
+          ...(newPassword ? { password: newPassword } : {})
+        }
+        return updatedCashier
+      }
+      return c
+    })
+
+    if (!updatedCashier) {
+      return { success: false, message: 'Cajero no encontrado.' }
+    }
+
+    setCashierList(updatedList)
+    localStorage.setItem('sugar_cashier_accounts', JSON.stringify(updatedList))
+
+    if (newPassword) {
+      localStorage.setItem(`sugar_cashier_pass_${uid}`, newPassword)
+      if (updates.email) {
+        localStorage.setItem(`sugar_cashier_pass_${updates.email.toLowerCase()}`, newPassword)
+      }
+    }
+
+    // Persistir en Firestore en system_config/cashier_accounts
+    await persistCashiersToCloud(updatedList)
+
+    // Persistir en cashier_profiles/{uid}
+    try {
+      const cashierProfileRef = doc(db, 'cashier_profiles', uid)
+      await setDoc(cashierProfileRef, {
+        uid,
+        name: (updatedCashier as CashierManagementProfile).name,
+        email: (updatedCashier as CashierManagementProfile).email,
+        phone: (updatedCashier as CashierManagementProfile).phone,
+        idDocument: (updatedCashier as CashierManagementProfile).idDocument,
+        assignedPaymentMethods: (updatedCashier as CashierManagementProfile).assignedPaymentMethods,
+        paymentMethodsCount: (updatedCashier as CashierManagementProfile).assignedPaymentMethods?.length || (updatedCashier as CashierManagementProfile).paymentMethodsCount,
+        ...(newPassword ? { password: newPassword } : {}),
+        updatedAt: Date.now()
+      }, { merge: true })
+    } catch (e) {
+      console.warn('[AdminAuth] Error actualizando cashier_profiles:', e)
+    }
+
+    // Actualizar sesión activa local si coincide
+    try {
+      const savedSession = localStorage.getItem('sugar_cashier_session')
+      if (savedSession) {
+        const parsed = JSON.parse(savedSession)
+        if (parsed.uid === uid) {
+          localStorage.setItem('sugar_cashier_session', JSON.stringify(updatedCashier))
+        }
+      }
+    } catch {}
+
+    // Notificar por BroadcastChannel
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('sugar_ludo_social_channel')
+        ch.postMessage({
+          type: 'cashier_profile_updated',
+          uid,
+          cashier: updatedCashier
+        })
+        ch.close()
+      }
+    } catch {}
+
+    return { success: true, message: `Datos y credenciales de ${(updatedCashier as CashierManagementProfile).name} actualizados exitosamente.` }
+  }
+
   // Recarga y Asignación de Saldo Flotante en Vivo
   const updateCashierFloat = async (uid: string, newCoins: number, newUSDT?: number, paidWithdrawalDelta?: number) => {
     const finalUSDT = newUSDT !== undefined ? newUSDT : newCoins / 100
@@ -560,6 +647,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         deleteAdminAccount,
         cashierList,
         createNewCashier,
+        updateCashierProfile,
         deleteCashierAccount,
         updateCashierFloat
       }}
