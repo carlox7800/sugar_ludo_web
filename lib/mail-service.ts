@@ -256,19 +256,68 @@ export async function markAllMailsAsRead(userId: string | undefined): Promise<vo
   }
 }
 
-export async function deleteMail(userId: string | undefined, mailId: string): Promise<void> {
-  let inbox = await fetchUserInbox(userId)
-  inbox = inbox.filter(m => m.id !== mailId)
-  if (userId && !userId.startsWith('dev_')) {
-    try {
-      const userRef = doc(db, 'users', userId)
-      await updateDoc(userRef, { inbox })
-    } catch {}
+const HIDDEN_MAILS_KEY = 'sugar_hidden_mails'
+
+export function getHiddenMails(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(HIDDEN_MAILS_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
   }
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+}
+
+export function hideMailLocal(mailId: string) {
+  if (typeof window === 'undefined') return
+  try {
+    const current = getHiddenMails()
+    if (!current.includes(mailId)) {
+      current.push(mailId)
+      localStorage.setItem(HIDDEN_MAILS_KEY, JSON.stringify(current))
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
+  } catch {}
+}
+
+export function hideMailsBatchLocal(mailIds: string[]) {
+  if (typeof window === 'undefined' || !mailIds.length) return
+  try {
+    const current = new Set(getHiddenMails())
+    mailIds.forEach(id => current.add(id))
+    localStorage.setItem(HIDDEN_MAILS_KEY, JSON.stringify(Array.from(current)))
     window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+  } catch {}
+}
+
+export async function deleteMailsBatch(userId: string | undefined, mailIds: string[]): Promise<void> {
+  if (!mailIds.length) return
+  
+  // 1. Ocultar localmente (sirve tanto para mensajes de orden P2P como para mensajes regulares)
+  hideMailsBatchLocal(mailIds)
+
+  // 2. Si son mensajes de la colección del usuario (recompensas/sistema), removerlos de user.inbox
+  const regularIds = mailIds.filter(id => !id.startsWith('mail_ord_sup_'))
+  if (regularIds.length > 0) {
+    let inbox = await fetchUserInbox(userId)
+    const idSet = new Set(regularIds)
+    inbox = inbox.filter(m => !idSet.has(m.id))
+    
+    if (userId && !userId.startsWith('dev_')) {
+      try {
+        const userRef = doc(db, 'users', userId)
+        await updateDoc(userRef, { inbox })
+      } catch {}
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sugar_user_inbox', JSON.stringify(inbox))
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
   }
+}
+
+export async function deleteMail(userId: string | undefined, mailId: string): Promise<void> {
+  await deleteMailsBatch(userId, [mailId])
 }
 
 export async function getUnreadMailCount(userId?: string): Promise<number> {
