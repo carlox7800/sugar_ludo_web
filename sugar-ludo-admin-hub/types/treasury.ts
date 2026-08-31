@@ -4,6 +4,50 @@
  * ============================================================================
  */
 
+export interface GlobalTreasuryLedger {
+  id: 'global_ledger'
+  // 1. Bóveda Total de Respaldo (efectivo real en el ecosistema)
+  totalVaultUSD: number
+  totalVaultSugarCoins: number
+
+  // 2. Fondos de Jugadores en Custodia (pasivo en billeteras)
+  playerCustodyUSD: number
+  playerCustodyCoins: number
+
+  // 3. Saldo Flotante Asignado a Cajeros
+  cashierFloatsUSD: number
+  cashierFloatsCoins: number
+
+  // 4. Ganancias Netas Casa (activo retirable acumulado)
+  houseNetProfitsUSD: number
+  houseNetProfitsCoins: number
+
+  // Desglose de ingresos
+  profitsBreakdown: {
+    withdrawalFeesUSD: number
+    tableRakeUSD: number
+    storeSalesUSD: number
+    tournamentMarginUSD: number
+  }
+
+  lastAuditedAt: number
+}
+
+export interface CashierShiftLedgerEntry {
+  id: string
+  cashierUid: string
+  cashierName: string
+  type: 'shift_open' | 'recharge' | 'withdraw_payout' | 'shift_close'
+  amountUSDT: number
+  amountCoins: number
+  previousBalanceUSDT: number
+  newBalanceUSDT: number
+  orderId?: string
+  payoutTxId?: string
+  notes?: string
+  timestamp: number
+}
+
 export interface TreasuryVault {
   totalVaultUSD: number             // Respaldo total del ecosistema en USD/USDT
   totalVaultSugarCoins: number      // Equivalente en Sugar Coins (SC)

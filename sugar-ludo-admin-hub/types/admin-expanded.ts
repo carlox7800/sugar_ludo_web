@@ -91,6 +91,10 @@ export interface CashierManagementProfile {
   idDocument?: string
   shiftStatus: 'on_shift' | 'off_shift' | 'break'
   floatBalanceCoins: number
+  floatBalanceUSDT?: number
+  initialShiftFloatUSDT?: number
+  totalPaidWithdrawalsUSDT?: number
+  totalPaidWithdrawalsCoins?: number
   assignedShiftAt?: number
   lastRechargeAt?: number
   ordersCompletedToday: number

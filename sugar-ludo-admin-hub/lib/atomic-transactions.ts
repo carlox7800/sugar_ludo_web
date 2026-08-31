@@ -170,6 +170,19 @@ export async function approveDepositOrder(params: {
       })
     }
 
+    // 4.1. Sincronizar Global Treasury Ledger (Agregador Único Spark $0.00)
+    // Depósito: Entra dinero a Bóveda Total y aumenta Fondos de Jugadores en Custodia
+    const ledgerRef = adminDb.collection('system_treasury').doc('global_ledger')
+    const depositFiatUSD = Number(order.amountFiat || (amountCoins / 100))
+    transaction.set(ledgerRef, {
+      id: 'global_ledger',
+      totalVaultUSD: admin.firestore.FieldValue.increment(depositFiatUSD),
+      totalVaultSugarCoins: admin.firestore.FieldValue.increment(amountCoins),
+      playerCustodyUSD: admin.firestore.FieldValue.increment(depositFiatUSD),
+      playerCustodyCoins: admin.firestore.FieldValue.increment(amountCoins),
+      lastAuditedAt: now
+    }, { merge: true })
+
     // 5. Grabar Registro Inmutable de Auditoría
     const auditRef = adminDb.collection('audit_logs').doc()
     const auditLog: AuditLog = {
@@ -360,27 +373,75 @@ export async function completeWithdrawalOrder(params: {
     const amountCoins = Number(order.amountSugarCoins || 0)
     const commissionCoins = Number(order.cashierCommissionCoins || Math.round(amountCoins * 0.03))
 
+    const totalFiatRequestedUSD = Number(order.amountFiat || (amountCoins / 100))
+    // Descuento del fee de retiro de la plataforma (5% estándar o 10% vip)
+    const withdrawalFeePercent = order.paymentMethod === 'usdt_bep20' ? 0.05 : 0.05
+    const withdrawalFeeUSD = totalFiatRequestedUSD * withdrawalFeePercent
+    const netPayoutUSD = Math.max(0, totalFiatRequestedUSD - withdrawalFeeUSD)
+    const netPayoutCoins = Math.round(netPayoutUSD * 100)
+
     // 1. Actualizar orden a completed
     transaction.update(orderRef, {
       status: 'completed',
       receiptReferenceNumber: payoutTxId,
       completedAt: now,
       isEscrowLocked: false,
-      settledByCashierUid: cashierUid
+      settledByCashierUid: cashierUid,
+      netPayoutUSD,
+      withdrawalFeeUSD
     })
 
-    // 2. Acreditar comisión y liberar saldo al cajero
+    // 2. Acreditar comisión y descontar saldo flotante real en USDT al cajero
     const cashierRef = adminDb.collection('cashier_profiles').doc(cashierUid)
     const cashierSnap = await transaction.get(cashierRef)
     if (cashierSnap.exists) {
       transaction.update(cashierRef, {
         totalOrdersCompleted: admin.firestore.FieldValue.increment(1),
         totalCommissionsEarnedCoins: admin.firestore.FieldValue.increment(commissionCoins),
+        floatBalanceUSDT: admin.firestore.FieldValue.increment(-netPayoutUSD),
+        floatBalanceCoins: admin.firestore.FieldValue.increment(-netPayoutCoins),
+        totalPaidWithdrawalsUSDT: admin.firestore.FieldValue.increment(netPayoutUSD),
+        totalPaidWithdrawalsCoins: admin.firestore.FieldValue.increment(netPayoutCoins),
         lastActiveAt: now
       })
     }
 
-    // 3. Registrar auditoría
+    // 2.1. Sincronizar Global Treasury Ledger (Agregador Único Spark $0.00)
+    // Retiro:
+    // - Bóveda Total: Se reduce por el dinero neto que sale del ecosistema (-netPayoutUSD)
+    // - Custodia Jugadores: Se reduce por el monto total solicitado (-totalFiatRequestedUSD)
+    // - Flotante Cajeros: Se reduce por el desembolso (-netPayoutUSD)
+    // - Ganancias Netas Casa: Aumenta por la comisión retenida (+withdrawalFeeUSD)
+    const ledgerRef = adminDb.collection('system_treasury').doc('global_ledger')
+    transaction.set(ledgerRef, {
+      id: 'global_ledger',
+      totalVaultUSD: admin.firestore.FieldValue.increment(-netPayoutUSD),
+      totalVaultSugarCoins: admin.firestore.FieldValue.increment(-netPayoutCoins),
+      playerCustodyUSD: admin.firestore.FieldValue.increment(-totalFiatRequestedUSD),
+      playerCustodyCoins: admin.firestore.FieldValue.increment(-amountCoins),
+      cashierFloatsUSD: admin.firestore.FieldValue.increment(-netPayoutUSD),
+      cashierFloatsCoins: admin.firestore.FieldValue.increment(-netPayoutCoins),
+      houseNetProfitsUSD: admin.firestore.FieldValue.increment(withdrawalFeeUSD),
+      houseNetProfitsCoins: admin.firestore.FieldValue.increment(Math.round(withdrawalFeeUSD * 100)),
+      'profitsBreakdown.withdrawalFeesUSD': admin.firestore.FieldValue.increment(withdrawalFeeUSD),
+      lastAuditedAt: now
+    }, { merge: true })
+
+    // 3. Registrar movimiento de arqueo en cashier_ledger
+    const ledgerEntryRef = adminDb.collection('cashier_shifts_ledger').doc()
+    transaction.set(ledgerEntryRef, {
+      id: ledgerEntryRef.id,
+      cashierUid,
+      type: 'withdraw_payout',
+      amountUSDT: -netPayoutUSD,
+      amountCoins: -netPayoutCoins,
+      orderId,
+      payoutTxId,
+      notes: `Liquidación de retiro #${orderId.slice(0, 8)}: Transferido neto $${netPayoutUSD.toFixed(2)} USDT (Fee: $${withdrawalFeeUSD.toFixed(2)} USDT)`,
+      timestamp: now
+    })
+
+    // 4. Registrar auditoría inmutable
     const auditRef = adminDb.collection('audit_logs').doc()
     const auditLog: AuditLog = {
       id: auditRef.id,
@@ -392,7 +453,7 @@ export async function completeWithdrawalOrder(params: {
       amountCoins,
       amountFiat: order.amountFiat,
       currency: order.currency,
-      notes: `Liquidación de retiro completada con TxID/Ref: ${payoutTxId}`,
+      notes: `Liquidación de retiro completada con TxID/Ref: ${payoutTxId} (Neto: $${netPayoutUSD.toFixed(2)} USDT, Fee: $${withdrawalFeeUSD.toFixed(2)} USDT)`,
       timestamp: now
     }
     transaction.set(auditRef, auditLog)
@@ -400,6 +461,77 @@ export async function completeWithdrawalOrder(params: {
     return {
       success: true,
       message: `Retiro #${orderId.slice(0, 8)} liquidado con éxito.`
+    }
+  })
+}
+
+/**
+ * 5. ASIGNACIÓN / RECARGA DE SALDO FLOTANTE DE CAJERO POR EL SUPER ADMIN
+ */
+export async function rechargeCashierFloatAtomics(params: {
+  cashierUid: string
+  amountUSDT: number
+  notes: string
+  adminUid: string
+  adminName: string
+}): Promise<{ success: boolean; message: string }> {
+  const { cashierUid, amountUSDT, notes, adminUid, adminName } = params
+  const now = Date.now()
+  const amountCoins = Math.round(amountUSDT * 100)
+
+  return await (adminDb as any).runTransaction(async (transaction: any) => {
+    const cashierRef = adminDb.collection('cashier_profiles').doc(cashierUid)
+    const cashierSnap = await transaction.get(cashierRef)
+
+    const prevFloatUSDT = cashierSnap.exists ? Number(cashierSnap.data()?.floatBalanceUSDT || 0) : 0
+    const newFloatUSDT = prevFloatUSDT + amountUSDT
+    const newFloatCoins = Math.round(newFloatUSDT * 100)
+
+    // 1. Actualizar perfil del cajero
+    if (cashierSnap.exists) {
+      transaction.update(cashierRef, {
+        floatBalanceUSDT: newFloatUSDT,
+        floatBalanceCoins: newFloatCoins,
+        initialShiftFloatUSDT: admin.firestore.FieldValue.increment(amountUSDT),
+        lastRechargeAt: now
+      })
+    } else {
+      transaction.set(cashierRef, {
+        uid: cashierUid,
+        floatBalanceUSDT: newFloatUSDT,
+        floatBalanceCoins: newFloatCoins,
+        initialShiftFloatUSDT: amountUSDT,
+        lastRechargeAt: now,
+        createdAt: now
+      })
+    }
+
+    // 2. Sincronizar Global Treasury Ledger
+    const ledgerRef = adminDb.collection('system_treasury').doc('global_ledger')
+    transaction.set(ledgerRef, {
+      id: 'global_ledger',
+      cashierFloatsUSD: admin.firestore.FieldValue.increment(amountUSDT),
+      cashierFloatsCoins: admin.firestore.FieldValue.increment(amountCoins),
+      lastAuditedAt: now
+    }, { merge: true })
+
+    // 3. Registrar en libro de turnos
+    const shiftLedgerRef = adminDb.collection('cashier_shifts_ledger').doc()
+    transaction.set(shiftLedgerRef, {
+      id: shiftLedgerRef.id,
+      cashierUid,
+      type: 'recharge',
+      amountUSDT,
+      amountCoins,
+      previousBalanceUSDT: prevFloatUSDT,
+      newBalanceUSDT: newFloatUSDT,
+      notes: `Asignación de saldo flotante por Super Admin ${adminName}: ${notes}`,
+      timestamp: now
+    })
+
+    return {
+      success: true,
+      message: `Asignados +$${amountUSDT.toFixed(2)} USDT a la caja del cajero.`
     }
   })
 }

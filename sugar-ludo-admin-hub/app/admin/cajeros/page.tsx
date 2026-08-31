@@ -57,10 +57,33 @@ export default function AdminCajerosManagementPage() {
     )
   }
 
-  const handleRecharge = (cashierUid: string, amountCoins: number, notes: string) => {
+  const handleRecharge = async (cashierUid: string, amountUSDT: number, notes: string) => {
     const target = cashierList.find((c) => c.uid === cashierUid)
+    const amountCoins = Math.round(amountUSDT * 100)
+
     if (target) {
-      updateCashierFloat(cashierUid, target.floatBalanceCoins + amountCoins)
+      const currentUSDT = (target as any).floatBalanceUSDT ?? (target.floatBalanceCoins / 100)
+      const newUSDT = currentUSDT + amountUSDT
+      const newCoins = Math.round(newUSDT * 100)
+      updateCashierFloat(cashierUid, newCoins)
+    }
+
+    // Sincronizar en Firestore de forma atómica en el backend
+    try {
+      await fetch('/api/cashier/orders/recharge/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'recharge_float',
+          cashierUid,
+          amountUSDT,
+          notes,
+          adminUid: adminUser?.uid || 'adm_super_001',
+          adminName: adminUser?.displayName || 'Super Admin'
+        })
+      })
+    } catch (e) {
+      console.warn('[AdminCajeros] Fallback local para recarga de flotante:', e)
     }
 
     // Notify in staff chat
@@ -69,11 +92,11 @@ export default function AdminCajerosManagementPage() {
       senderUid: adminUser.uid,
       senderName: adminUser.displayName,
       senderRole: 'super_admin',
-      message: `💰 Recarga manual aprobada: +${amountCoins.toLocaleString()} SC asignados a ${target?.name || cashierUid}. Motivo: ${notes}`,
+      message: `💰 Asignación de saldo flotante aprobada: +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) asignados a ${target?.name || cashierUid}. Motivo: ${notes}`,
       timestamp: Date.now()
     }
     setStaffChat((prev) => [...prev, newChat])
-    setNotification(`¡Recarga de +${amountCoins.toLocaleString()} SC acreditada con éxito!`)
+    setNotification(`¡Asignados +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) con éxito!`)
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -183,22 +206,27 @@ export default function AdminCajerosManagementPage() {
 
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="text-right font-mono pr-4 border-r border-white/10">
-                      <span className="text-[10px] text-slate-500 uppercase block">Saldo Flotante</span>
-                      <span className="text-sm font-black text-cyan-300">
-                        {csh.floatBalanceCoins.toLocaleString()} SC
+                      <span className="text-[10px] text-slate-500 uppercase block">Saldo Flotante Actual</span>
+                      <span className="text-sm font-black text-emerald-400">
+                        ${(((csh as any).floatBalanceUSDT ?? (csh.floatBalanceCoins / 100))).toFixed(2)} USDT
                       </span>
                       <span className="text-[10px] text-slate-400 block font-bold">
-                        ${(csh.floatBalanceCoins / 100).toFixed(2)} USDT
+                        {csh.floatBalanceCoins.toLocaleString()} SC
                       </span>
+                      {(csh as any).totalPaidWithdrawalsUSDT > 0 && (
+                        <span className="text-[9px] text-pink-400 block">
+                          Pagado Retiros: -${Number((csh as any).totalPaidWithdrawalsUSDT).toFixed(2)}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setSelectedCashierForRecharge(csh)}
-                        className="px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                        className="px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                       >
                         <Plus className="size-3.5" />
-                        <span>Recargar Flotante</span>
+                        <span>Asignar Flotante</span>
                       </button>
 
                       <button
@@ -206,7 +234,7 @@ export default function AdminCajerosManagementPage() {
                         className="px-3.5 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                       >
                         <Printer className="size-3.5" />
-                        <span>Arqueo PDF</span>
+                        <span>Arqueo Turno</span>
                       </button>
                     </div>
                   </div>

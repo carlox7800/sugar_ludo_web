@@ -319,14 +319,19 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
             <span className="hidden sm:inline">Chat con Administrador</span>
           </button>
 
-          {/* Assigned Cashier Float Balance Badge */}
-          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-500/15 via-yellow-500/15 to-pink-500/15 border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.15)]">
-            <Coins className="size-4 text-amber-400 animate-pulse" />
+          {/* Assigned Cashier Float Balance Badge (USDT Principal + SC Secundario) */}
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-cyan-500/15 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+            <Wallet className="size-4 text-emerald-400 animate-pulse" />
             <div className="text-right">
-              <span className="text-[10px] uppercase font-bold text-amber-300 block leading-none">Saldo Flotante</span>
-              <span className="text-sm font-black text-white font-mono" suppressHydrationWarning>
-                {currentCashier.floatBalanceCoins.toLocaleString()} SC
-              </span>
+              <span className="text-[10px] uppercase font-bold text-emerald-300 block leading-none">Saldo Flotante</span>
+              <div className="flex items-baseline gap-1.5 justify-end">
+                <span className="text-sm font-black text-white font-mono" suppressHydrationWarning>
+                  ${((currentCashier as any).floatBalanceUSDT ?? (currentCashier.floatBalanceCoins / 100)).toFixed(2)} USDT
+                </span>
+                <span className="text-[10px] font-bold text-slate-400 font-mono" suppressHydrationWarning>
+                  ({currentCashier.floatBalanceCoins.toLocaleString()} SC)
+                </span>
+              </div>
             </div>
           </div>
 

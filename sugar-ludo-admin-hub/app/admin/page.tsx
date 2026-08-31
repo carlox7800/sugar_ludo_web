@@ -9,6 +9,8 @@ import { DetailedTelemetryCard } from '../../components/admin/DetailedTelemetryC
 import { AccordionBlock } from '../../components/ui/AccordionBlock'
 import { TreasuryVault, HouseProfitBreakdown } from '../../types/treasury'
 import { DetailedTelemetry } from '../../types/admin-expanded'
+import { db } from '../../lib/firebase'
+import { doc, onSnapshot } from 'firebase/firestore'
 import {
   Activity,
   ShieldAlert,
@@ -77,6 +79,56 @@ export default function AdminDashboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [serverPingMs, setServerPingMs] = useState(0)
 
+  // Suscripción en tiempo real a 1 solo documento global_ledger (Spark Plan Costo $0.00)
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    let unsubLedger: (() => void) | null = null
+    try {
+      const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+      unsubLedger = onSnapshot(ledgerRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as any
+          const totalFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
+          const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
+
+          const vaultUSD = Number(data.totalVaultUSD || (Number(data.playerCustodyUSD || 0) + totalFloatsUSD + Number(data.houseNetProfitsUSD || 0)))
+          const vaultCoins = Math.round(vaultUSD * 100)
+
+          setVault({
+            totalVaultUSD: vaultUSD,
+            totalVaultSugarCoins: vaultCoins,
+            playerBalancesUSD: Number(data.playerCustodyUSD || 0),
+            playerBalancesCoins: Number(data.playerCustodyCoins || 0),
+            cashierFloatsUSD: totalFloatsUSD,
+            cashierFloatsCoins: totalFloatsCoins,
+            houseNetProfitsUSD: Number(data.houseNetProfitsUSD || 0),
+            houseNetProfitsCoins: Number(data.houseNetProfitsCoins || 0),
+            lastAuditedAt: data.lastAuditedAt || Date.now()
+          })
+
+          if (data.profitsBreakdown) {
+            setProfits((prev) => ({
+              ...prev,
+              tableRakeUSD: data.profitsBreakdown.tableRakeUSD || 0,
+              tableRakeCoins: Math.round((data.profitsBreakdown.tableRakeUSD || 0) * 100),
+              storeSalesUSD: data.profitsBreakdown.storeSalesUSD || 0,
+              storeSalesCoins: Math.round((data.profitsBreakdown.storeSalesUSD || 0) * 100),
+              normalWithdrawalFeesUSD: data.profitsBreakdown.withdrawalFeesUSD || 0,
+              normalWithdrawalFeesCoins: Math.round((data.profitsBreakdown.withdrawalFeesUSD || 0) * 100),
+              totalProfitUSD: Number(data.houseNetProfitsUSD || 0),
+              totalProfitCoins: Number(data.houseNetProfitsCoins || 0)
+            }))
+          }
+        }
+      })
+    } catch {}
+
+    return () => {
+      if (unsubLedger) unsubLedger()
+    }
+  }, [isAuthenticated, cashierList])
+
   // Polling y consolidación de saldos y telemetría en tiempo real
   const fetchLiveMetrics = async () => {
     setIsRefreshing(true)
@@ -95,29 +147,17 @@ export default function AdminDashboardPage() {
       }
 
       // 2. Consolidación de saldos reales de cajeros y pasivos en custodia
+      const totalCashierFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
       const totalCashierFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
-      const totalCashierFloatsUSD = totalCashierFloatsCoins / 100
 
-      // Lectura de balances de transacciones persistidas
-      const savedVault = typeof window !== 'undefined' ? localStorage.getItem('sugar_real_vault_state') : null
-      const savedProfits = typeof window !== 'undefined' ? localStorage.getItem('sugar_real_profits_state') : null
-
-      const baseVault = savedVault ? JSON.parse(savedVault) : {}
-      setVault({
-        totalVaultUSD: totalCashierFloatsUSD + (baseVault.playerBalancesUSD || 0) + (baseVault.houseNetProfitsUSD || 0),
-        totalVaultSugarCoins: totalCashierFloatsCoins + (baseVault.playerBalancesCoins || 0) + (baseVault.houseNetProfitsCoins || 0),
-        playerBalancesUSD: baseVault.playerBalancesUSD || 0.0,
-        playerBalancesCoins: baseVault.playerBalancesCoins || 0,
+      setVault((prev) => ({
+        ...prev,
         cashierFloatsUSD: totalCashierFloatsUSD,
         cashierFloatsCoins: totalCashierFloatsCoins,
-        houseNetProfitsUSD: baseVault.houseNetProfitsUSD || 0.0,
-        houseNetProfitsCoins: baseVault.houseNetProfitsCoins || 0,
+        totalVaultUSD: totalCashierFloatsUSD + prev.playerBalancesUSD + prev.houseNetProfitsUSD,
+        totalVaultSugarCoins: totalCashierFloatsCoins + prev.playerBalancesCoins + prev.houseNetProfitsCoins,
         lastAuditedAt: Date.now()
-      })
-
-      if (savedProfits) {
-        setProfits(JSON.parse(savedProfits))
-      }
+      }))
     } catch {
       setServerPingMs(42)
     } finally {
