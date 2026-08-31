@@ -99,24 +99,21 @@ export default function AdminDashboardPage() {
       const totalCashierFloatsUSD = totalCashierFloatsCoins / 100
 
       // Lectura de balances de transacciones persistidas
-      const savedVault = localStorage.getItem('sugar_real_vault_state')
-      const savedProfits = localStorage.getItem('sugar_real_profits_state')
+      const savedVault = typeof window !== 'undefined' ? localStorage.getItem('sugar_real_vault_state') : null
+      const savedProfits = typeof window !== 'undefined' ? localStorage.getItem('sugar_real_profits_state') : null
 
-      if (savedVault) {
-        setVault(JSON.parse(savedVault))
-      } else {
-        setVault({
-          totalVaultUSD: totalCashierFloatsUSD,
-          totalVaultSugarCoins: totalCashierFloatsCoins,
-          playerBalancesUSD: 0.0,
-          playerBalancesCoins: 0,
-          cashierFloatsUSD: totalCashierFloatsUSD,
-          cashierFloatsCoins: totalCashierFloatsCoins,
-          houseNetProfitsUSD: 0.0,
-          houseNetProfitsCoins: 0,
-          lastAuditedAt: Date.now()
-        })
-      }
+      const baseVault = savedVault ? JSON.parse(savedVault) : {}
+      setVault({
+        totalVaultUSD: totalCashierFloatsUSD + (baseVault.playerBalancesUSD || 0) + (baseVault.houseNetProfitsUSD || 0),
+        totalVaultSugarCoins: totalCashierFloatsCoins + (baseVault.playerBalancesCoins || 0) + (baseVault.houseNetProfitsCoins || 0),
+        playerBalancesUSD: baseVault.playerBalancesUSD || 0.0,
+        playerBalancesCoins: baseVault.playerBalancesCoins || 0,
+        cashierFloatsUSD: totalCashierFloatsUSD,
+        cashierFloatsCoins: totalCashierFloatsCoins,
+        houseNetProfitsUSD: baseVault.houseNetProfitsUSD || 0.0,
+        houseNetProfitsCoins: baseVault.houseNetProfitsCoins || 0,
+        lastAuditedAt: Date.now()
+      })
 
       if (savedProfits) {
         setProfits(JSON.parse(savedProfits))

@@ -185,7 +185,25 @@ export const MOCK_SEASON_RANKING: SeasonRankingConfig = {
   thirdPlacePrizeSC: 4000    // $40.00 USDT
 }
 
-export const MOCK_CASHIERS_MANAGEMENT: CashierManagementProfile[] = []
+export const MOCK_CASHIERS_MANAGEMENT: CashierManagementProfile[] = [
+  {
+    uid: 'csh_carlosandroid_001',
+    name: 'carlosandroid (Cajero)',
+    email: 'carlos.cajero@sugarludo.com',
+    password: 'CajeroSugar2026!',
+    avatarUrl: 'https://i.ibb.co/3YBC35Xm/avatar-1786744277377.jpg',
+    shiftStatus: 'on_shift',
+    floatBalanceCoins: 30000,
+    assignedShiftAt: Date.now(),
+    lastRechargeAt: Date.now(),
+    ordersCompletedToday: 0,
+    commissionEarnedTodayCoins: 0,
+    paymentMethodsCount: 2,
+    phone: '+58 412-0000000',
+    idDocument: 'V-12345678',
+    role: 'cashier'
+  }
+]
 
 export const MOCK_STAFF_CHAT: StaffChatMessage[] = []
 

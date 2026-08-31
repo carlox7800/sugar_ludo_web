@@ -96,6 +96,8 @@ export interface CashierManagementProfile {
   ordersCompletedToday: number
   commissionEarnedTodayCoins: number
   paymentMethodsCount: number
+  password?: string
+  role?: 'cashier'
 }
 
 export interface StaffChatMessage {
@@ -138,4 +140,5 @@ export interface AdminUserProfile {
   createdAt: number
   lastLoginAt: number
   isActive: boolean
+  password?: string
 }

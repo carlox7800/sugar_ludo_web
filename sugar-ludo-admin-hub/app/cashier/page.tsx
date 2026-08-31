@@ -84,7 +84,8 @@ export default function CashierMainDeskPage() {
         if (savedSession) {
           const parsed = JSON.parse(savedSession)
           if (parsed && parsed.uid) {
-            setActiveCashierSession(parsed)
+            const live = cashierList.find((c) => c.uid === parsed.uid || (parsed.email && c.email.toLowerCase() === parsed.email.toLowerCase()))
+            setActiveCashierSession(live || parsed)
             return
           }
         }
