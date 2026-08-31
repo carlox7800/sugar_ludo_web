@@ -95,18 +95,24 @@ export default function AdminDashboardPage() {
           const totalFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
           const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
 
-          const vaultUSD = Number(data.totalVaultUSD ?? (Number(data.playerCustodyUSD || 0) + totalFloatsUSD + Number(data.houseNetProfitsUSD || 0)))
+          const playerBalancesUSD = Number(data.playerCustodyUSD || 0)
+          const playerBalancesCoins = Number(data.playerCustodyCoins || Math.round(playerBalancesUSD * 100))
+          const houseNetProfitsUSD = Number(data.houseNetProfitsUSD || 0)
+          const houseNetProfitsCoins = Number(data.houseNetProfitsCoins || Math.round(houseNetProfitsUSD * 100))
+
+          // REGLA DE ORO CONTABLE: Bóveda Total = Fondos de Jugadores (Custodia) + Ganancias Netas de la Casa
+          const vaultUSD = playerBalancesUSD + houseNetProfitsUSD
           const vaultCoins = Math.round(vaultUSD * 100)
 
           setVault({
             totalVaultUSD: vaultUSD,
             totalVaultSugarCoins: vaultCoins,
-            playerBalancesUSD: Number(data.playerCustodyUSD || 0),
-            playerBalancesCoins: Number(data.playerCustodyCoins || 0),
+            playerBalancesUSD,
+            playerBalancesCoins,
             cashierFloatsUSD: totalFloatsUSD,
             cashierFloatsCoins: totalFloatsCoins,
-            houseNetProfitsUSD: Number(data.houseNetProfitsUSD || 0),
-            houseNetProfitsCoins: Number(data.houseNetProfitsCoins || 0),
+            houseNetProfitsUSD,
+            houseNetProfitsCoins,
             lastAuditedAt: data.lastAuditedAt || Date.now()
           })
 
@@ -119,8 +125,8 @@ export default function AdminDashboardPage() {
               storeSalesCoins: Math.round((data.profitsBreakdown.storeSalesUSD || 0) * 100),
               normalWithdrawalFeesUSD: data.profitsBreakdown.withdrawalFeesUSD || 0,
               normalWithdrawalFeesCoins: Math.round((data.profitsBreakdown.withdrawalFeesUSD || 0) * 100),
-              totalProfitUSD: Number(data.houseNetProfitsUSD || 0),
-              totalProfitCoins: Number(data.houseNetProfitsCoins || 0)
+              totalProfitUSD: houseNetProfitsUSD,
+              totalProfitCoins: houseNetProfitsCoins
             }))
           }
         } else {
@@ -129,8 +135,8 @@ export default function AdminDashboardPage() {
           const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
           setDoc(ledgerRef, {
             id: 'global_ledger',
-            totalVaultUSD: totalFloatsUSD,
-            totalVaultSugarCoins: totalFloatsCoins,
+            totalVaultUSD: 0,
+            totalVaultSugarCoins: 0,
             playerCustodyUSD: 0,
             playerCustodyCoins: 0,
             cashierFloatsUSD: totalFloatsUSD,
@@ -174,14 +180,18 @@ export default function AdminDashboardPage() {
       const totalCashierFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
       const totalCashierFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
 
-      setVault((prev) => ({
-        ...prev,
-        cashierFloatsUSD: totalCashierFloatsUSD,
-        cashierFloatsCoins: totalCashierFloatsCoins,
-        totalVaultUSD: totalCashierFloatsUSD + prev.playerBalancesUSD + prev.houseNetProfitsUSD,
-        totalVaultSugarCoins: totalCashierFloatsCoins + prev.playerBalancesCoins + prev.houseNetProfitsCoins,
-        lastAuditedAt: Date.now()
-      }))
+      setVault((prev) => {
+        // Ecuación Contable: Bóveda Total = Custodia de Jugadores + Ganancias Netas
+        const vaultUSD = prev.playerBalancesUSD + prev.houseNetProfitsUSD
+        return {
+          ...prev,
+          cashierFloatsUSD: totalCashierFloatsUSD,
+          cashierFloatsCoins: totalCashierFloatsCoins,
+          totalVaultUSD: vaultUSD,
+          totalVaultSugarCoins: Math.round(vaultUSD * 100),
+          lastAuditedAt: Date.now()
+        }
+      })
     } catch {
       setServerPingMs(42)
     } finally {
@@ -306,7 +316,7 @@ export default function AdminDashboardPage() {
         } catch {}
 
         const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
-        const newVaultUSD = Math.max(0, vault.totalVaultUSD - vault.cashierFloatsUSD)
+        const newVaultUSD = vault.playerBalancesUSD + vault.houseNetProfitsUSD
         await setDoc(ledgerRef, {
           totalVaultUSD: newVaultUSD,
           totalVaultSugarCoins: Math.round(newVaultUSD * 100),

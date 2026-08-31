@@ -7,8 +7,8 @@ import {
 } from '../types/treasury'
 
 export const MOCK_TREASURY_VAULT: TreasuryVault = {
-  totalVaultUSD: 78500.0,
-  totalVaultSugarCoins: 7850000,
+  totalVaultUSD: 62900.0,
+  totalVaultSugarCoins: 6290000,
   playerBalancesUSD: 45000.0,
   playerBalancesCoins: 4500000,
   cashierFloatsUSD: 15600.0,
