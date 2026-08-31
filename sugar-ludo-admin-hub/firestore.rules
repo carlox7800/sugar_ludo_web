@@ -1,0 +1,49 @@
+﻿rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Reglas universales y abiertas para Sugar Ludo (Web, APK y Admin Hub)
+    // Garantiza sincronización en tiempo real multiplataforma y costo $0 Spark
+
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /cashier_orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    match /system_config/{configId} {
+      allow read, write: if true;
+    }
+
+    match /system_treasury/{treasuryId} {
+      allow read, write: if true;
+    }
+
+    match /cashier_profiles/{cashierId} {
+      allow read, write: if true;
+    }
+
+    match /cashier_shifts_ledger/{ledgerId} {
+      allow read, write: if true;
+    }
+
+    match /audit_logs/{auditId} {
+      allow read, write: if true;
+    }
+
+    match /daily_stats/{statId} {
+      allow read, write: if true;
+    }
+
+    match /dispute_cases/{disputeId} {
+      allow read, write: if true;
+    }
+
+    // Regla global
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

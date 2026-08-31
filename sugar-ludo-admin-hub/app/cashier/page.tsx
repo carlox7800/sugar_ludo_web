@@ -119,6 +119,32 @@ export default function CashierMainDeskPage() {
     }
   }, [cashierList])
 
+  // Escuchar actualizaciones de saldo flotante en tiempo real vía BroadcastChannel
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const channel = new BroadcastChannel('sugar_ludo_social_channel')
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'cashier_float_updated') {
+          const { cashierUid, newCoins, newUSDT } = event.data
+          setActiveCashierSession((prev: any) => {
+            if (!prev || prev.uid === cashierUid) {
+              return {
+                ...(prev || {}),
+                floatBalanceCoins: newCoins,
+                floatBalanceUSDT: newUSDT !== undefined ? newUSDT : newCoins / 100
+              }
+            }
+            return prev
+          })
+        }
+      }
+      return () => {
+        channel.close()
+      }
+    } catch {}
+  }, [])
+
   const currentCashier = activeCashierSession || cashierList[0] || {
     uid: 'csh_primary',
     name: 'Cajero Autorizado',

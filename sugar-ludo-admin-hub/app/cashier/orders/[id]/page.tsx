@@ -10,10 +10,11 @@ import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/Wit
 import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../../../lib/cashier-logger'
 import { db } from '../../../../lib/firebase'
-import { doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore'
+import { doc, onSnapshot, getDoc, updateDoc, setDoc, increment } from 'firebase/firestore'
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, Wallet, Send, Check, Copy, RefreshCw } from 'lucide-react'
 import { clsx } from 'clsx'
 import { OrdersCache } from '../../../../lib/orders-cache'
+import { useAdminAuth } from '../../../../lib/admin-auth-context'
 
 import { useParams, useRouter } from 'next/navigation'
 
@@ -21,6 +22,37 @@ export default function OrderDetailPage() {
   const router = useRouter()
   const routeParams = useParams()
   const orderId = (routeParams?.id as string) || ''
+  const { cashierList, updateCashierFloat } = useAdminAuth()
+
+  const [currentCashierSession, setCurrentCashierSession] = useState<{ uid: string; name: string }>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('sugar_cashier_session')
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (parsed && parsed.uid) return parsed
+        }
+      } catch {}
+    }
+    return { uid: 'csh_carlosandroid_001', name: 'carlosandroid (Cajero)' }
+  })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('sugar_cashier_session')
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (parsed && parsed.uid) {
+            const live = cashierList.find(c => c.uid === parsed.uid || (parsed.email && c.email.toLowerCase() === parsed.email.toLowerCase()))
+            setCurrentCashierSession(live || parsed)
+          }
+        } else if (cashierList.length > 0) {
+          setCurrentCashierSession(cashierList[0])
+        }
+      } catch {}
+    }
+  }, [cashierList])
 
   const [order, setOrder] = useState<CashierOrder | null>(() => {
     const cached = OrdersCache.get()
@@ -166,8 +198,8 @@ export default function OrderDetailPage() {
     const newMsg: OrderChatMessage = {
       id: `msg_${Date.now()}`,
       orderId: order.id,
-      senderUid: 'csh_carlosandroid_001',
-      senderName: 'carlosandroid (Cajero)',
+      senderUid: currentCashierSession.uid,
+      senderName: currentCashierSession.name,
       senderRole: 'cashier',
       message: text.trim(),
       timestamp: Date.now(),
@@ -176,7 +208,7 @@ export default function OrderDetailPage() {
     }
     setMessages((prev) => [...prev, newMsg])
 
-    // 1. Escritura directa a cashier_orders/{order.id}.supportMessages en Firestore (Permisos 100% abiertos)
+    // 1. Escritura directa a cashier_orders/{order.id}.supportMessages en Firestore
     try {
       cashierLogger.firestore(`Guardando mensaje en cashier_orders/${order.id}.supportMessages`)
       const orderDocRef = doc(db, 'cashier_orders', order.id)
@@ -188,8 +220,8 @@ export default function OrderDetailPage() {
       const cleanMsg: any = {
         id: newMsg.id,
         orderId: order.id,
-        senderUid: 'csh_carlosandroid_001',
-        senderName: 'carlosandroid (Cajero)',
+        senderUid: currentCashierSession.uid,
+        senderName: currentCashierSession.name,
         senderRole: 'cashier',
         message: text.trim(),
         timestamp: Date.now()
@@ -212,38 +244,32 @@ export default function OrderDetailPage() {
       })
     }
 
-    // 2. Post al backend API para garantizar persistencia y sincronizacion
+    // 2. Post al backend API
     try {
-      cashierLogger.api(`POST /api/cashier/orders/${order.id}/message`)
-      const res = await fetch(`/api/cashier/orders/${order.id}/message`, {
+      fetch(`/api/cashier/orders/${order.id}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text.trim(),
-          senderName: 'carlosandroid (Cajero)',
-          senderUid: 'csh_carlosandroid_001',
+          senderName: currentCashierSession.name,
+          senderUid: currentCashierSession.uid,
           senderRole: 'cashier',
           attachmentUrl,
           playerUid: order.playerUid
         })
-      })
-      const data = await res.json()
-      if (res.ok) {
-        cashierLogger.api(`Respuesta exitosa de /api/cashier/orders/${order.id}/message`, { data })
-      } else {
-        cashierLogger.error(`Respuesta con error de /api/cashier/orders/${order.id}/message (HTTP ${res.status})`, { data })
-      }
-    } catch (e: any) {
-      cashierLogger.error(`Excepción en fetch /api/cashier/orders/${order.id}/message`, { message: e?.message })
-    }
+      }).catch(() => {})
+    } catch {}
   }
 
   const handleApprove = async (verifiedTxId?: string) => {
     const finalRef = verifiedTxId || order.receiptReferenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
+    const depositUSD = Number(order.amountFiat || (order.amountSugarCoins / 100))
+    const depositCoins = Number(order.amountSugarCoins || Math.round(depositUSD * 100))
+
     cashierLogger.action(`Iniciando Validación y Liberación de Depósito`, {
       orderId: order.id,
-      amountFiat: order.amountFiat,
-      amountSugarCoins: order.amountSugarCoins,
+      amountFiat: depositUSD,
+      amountSugarCoins: depositCoins,
       playerUid: order.playerUid,
       referenceNumber: finalRef
     })
@@ -254,7 +280,8 @@ export default function OrderDetailPage() {
       ...order,
       status: 'completed' as const,
       completedAt: Date.now(),
-      receiptReferenceNumber: finalRef
+      receiptReferenceNumber: finalRef,
+      verifiedAt: Date.now()
     }
     OrdersCache.updateOrder(updatedOrder)
     if (typeof window !== 'undefined') {
@@ -262,49 +289,67 @@ export default function OrderDetailPage() {
       const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
       localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
     }
-    cashierLogger.info(`Actualización optimista de orden en caché local completada`)
 
     try {
-      // 2. Direct Firestore update (Client side on cashier_orders where write is allowed)
-      cashierLogger.firestore(`Actualizando cashier_orders/${order.id} a status: completed`)
+      // 2. Direct Firestore update en cashier_orders
       const orderDocRef = doc(db, 'cashier_orders', order.id)
       await updateDoc(orderDocRef, {
         status: 'completed',
         completedAt: Date.now(),
-        receiptReferenceNumber: finalRef
+        verifiedAt: Date.now(),
+        receiptReferenceNumber: finalRef,
+        settledByCashierUid: currentCashierSession.uid
       })
-      cashierLogger.firestore(`Firestore update exitoso en cashier_orders/${order.id}`)
 
-      // 3. Backend Atomic Action (Server side with Firebase Admin privileges to credit player balance safely)
-      cashierLogger.api(`Llamando backend /api/cashier/orders/${order.id}/action con approve_deposit`)
-      const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
+      // 2.1. Sincronizar Global Treasury Ledger en Firestore (Costo $0 Spark)
+      try {
+        const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+        await setDoc(ledgerRef, {
+          id: 'global_ledger',
+          totalVaultUSD: increment(depositUSD),
+          totalVaultSugarCoins: increment(depositCoins),
+          playerCustodyUSD: increment(depositUSD),
+          playerCustodyCoins: increment(depositCoins),
+          lastAuditedAt: Date.now()
+        }, { merge: true })
+      } catch (lErr) {
+        console.warn('[Deposit] Ledger sync notice:', lErr)
+      }
+
+      // 2.2. Acreditar saldo en documento de usuario
+      if (order.playerUid) {
+        try {
+          const playerDocRef = doc(db, 'users', order.playerUid)
+          await setDoc(playerDocRef, {
+            coins: increment(depositCoins),
+            lastActiveAt: Date.now()
+          }, { merge: true })
+        } catch {}
+      }
+
+      // 3. Llamada al backend
+      fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'approve_deposit',
-          cashierUid: 'csh_carlosandroid_001',
-          actorUid: 'csh_carlosandroid_001',
+          cashierUid: currentCashierSession.uid,
+          actorUid: currentCashierSession.uid,
           actorRole: 'cashier',
           txId: finalRef,
           referenceNumber: finalRef
         })
-      })
-      const actionData = await res.json()
-      if (res.ok) {
-        cashierLogger.api(`Respuesta exitosa de acción backend approve_deposit`, { actionData })
-      } else {
-        cashierLogger.error(`Error en acción backend approve_deposit (HTTP ${res.status})`, { actionData })
-      }
+      }).catch(() => {})
 
-      // 4. Inyección automática del comprobante formal institucional al chat de soporte
+      // 4. Inyección del comprobante formal al chat
       const depositNoticeText = `✅ ¡DEPÓSITO VALIDADO CON ÉXITO!
 
 Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están acreditados en tu cuenta:
 ━━━━━━━━━━━━━━━━━━━━
-💰 Monto Pagado: ${order.amountFiat} ${order.currency}
-🪙 Crédito Acreditado: +${order.amountSugarCoins} Sugar Coins (SC)
+💰 Monto Pagado: ${depositUSD} ${order.currency}
+🪙 Crédito Acreditado: +${depositCoins} Sugar Coins (SC)
 🔖 Referencia / Hash: ${finalRef}
-👨‍💼 Atendido por: carlosandroid (Cajero)
+👨‍💼 Atendido por: ${currentCashierSession.name}
 ━━━━━━━━━━━━━━━━━━━━
 ¡Gracias por jugar en Sugar Ludo! Ya puedes disfrutar de tus partidas y salas de juego.`
 
@@ -320,7 +365,7 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
 
     setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalRef } : null))
     setIsDirectValidationModalOpen(false)
-    setNotification(`¡Depósito #${order.id.slice(0, 10)} validado y liberado con éxito (+${order.amountSugarCoins} SC acreditados al jugador)!`)
+    setNotification(`¡Depósito #${order.id.slice(0, 10)} validado y liberado con éxito (+${depositCoins} SC acreditados al jugador)!`)
     setTimeout(() => setNotification(null), 4000)
   }
 
@@ -329,11 +374,21 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
   const handleConfirmPayout = async () => {
     const finalPayoutRef = payoutTxId.trim() || `TX-PAYOUT-${Date.now().toString(36).toUpperCase()}`
     setPayoutTxId(finalPayoutRef)
-    
+
+    const totalFiatRequestedUSD = Number(order.amountFiat || (order.amountSugarCoins / 100))
+    const isVip = order.paymentMethod === 'usdt_bep20' || (order as any).isVip
+    const feePercent = isVip ? 0.10 : 0.05
+    const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * feePercent).toFixed(2))
+    const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
+    const netPayoutCoins = Math.round(netPayoutUSD * 100)
+    const feeCoins = Math.round(withdrawalFeeUSD * 100)
+
     cashierLogger.action(`Iniciando Liquidación de Retiro`, {
       orderId: order.id,
       playerUid: order.playerUid,
-      amountFiat: order.amountFiat,
+      amountFiat: totalFiatRequestedUSD,
+      netPayoutUSD,
+      withdrawalFeeUSD,
       payoutTxId: finalPayoutRef
     })
     setIsValidatingPayout(true)
@@ -343,7 +398,10 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       ...order,
       status: 'completed' as const,
       completedAt: Date.now(),
-      receiptReferenceNumber: finalPayoutRef
+      receiptReferenceNumber: finalPayoutRef,
+      netPayoutUSD,
+      withdrawalFeeUSD,
+      settledByCashierUid: currentCashierSession.uid
     }
     OrdersCache.updateOrder(updatedOrder)
     if (typeof window !== 'undefined') {
@@ -351,7 +409,6 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
       localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
     }
-    cashierLogger.info(`Actualización optimista de retiro en caché local completada`)
 
     try {
       // 2. Direct Firestore update (Client side)
@@ -360,41 +417,80 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       await updateDoc(orderDocRef, {
         status: 'completed',
         completedAt: Date.now(),
-        receiptReferenceNumber: finalPayoutRef
+        receiptReferenceNumber: finalPayoutRef,
+        netPayoutUSD,
+        withdrawalFeeUSD,
+        settledByCashierUid: currentCashierSession.uid,
+        isEscrowLocked: false
       })
-      cashierLogger.firestore(`Firestore update exitoso en cashier_orders/${order.id}`)
 
-      // 3. Backend Atomic Action (Server side - guaranteed persistence in Firestore)
-      cashierLogger.api(`Llamando backend /api/cashier/orders/${order.id}/action con complete_withdrawal`)
-      const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
+      // 2.1. Sincronizar Global Treasury Ledger en Firestore (Costo $0 Spark)
+      try {
+        const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+        await setDoc(ledgerRef, {
+          id: 'global_ledger',
+          totalVaultUSD: increment(-netPayoutUSD),
+          totalVaultSugarCoins: increment(-netPayoutCoins),
+          playerCustodyUSD: increment(-totalFiatRequestedUSD),
+          playerCustodyCoins: increment(-order.amountSugarCoins),
+          cashierFloatsUSD: increment(-netPayoutUSD),
+          cashierFloatsCoins: increment(-netPayoutCoins),
+          houseNetProfitsUSD: increment(withdrawalFeeUSD),
+          houseNetProfitsCoins: increment(feeCoins),
+          'profitsBreakdown.withdrawalFeesUSD': increment(withdrawalFeeUSD),
+          lastAuditedAt: Date.now()
+        }, { merge: true })
+      } catch (lErr) {
+        console.warn('[Withdrawal] Ledger sync notice:', lErr)
+      }
+
+      // 2.2. Descontar Saldo Flotante del Cajero en Tiempo Real
+      const cashierTarget = cashierList.find(c => c.uid === currentCashierSession.uid) || currentCashierSession
+      const currentCoins = (cashierTarget as any).floatBalanceCoins ?? 30000
+      const currentUSDT = (cashierTarget as any).floatBalanceUSDT ?? (currentCoins / 100)
+      const newCoins = Math.max(0, currentCoins - netPayoutCoins)
+      const newUSDT = Math.max(0, parseFloat((currentUSDT - netPayoutUSD).toFixed(2)))
+
+      updateCashierFloat(currentCashierSession.uid, newCoins, newUSDT, netPayoutUSD)
+
+      // 2.3. Emitir evento BroadcastChannel para actualizar otras pestañas y pantallas
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const ch = new BroadcastChannel('sugar_ludo_social_channel')
+          ch.postMessage({
+            type: 'cashier_float_updated',
+            cashierUid: currentCashierSession.uid,
+            newCoins,
+            newUSDT,
+            orderId: order.id
+          })
+          ch.close()
+        }
+      } catch {}
+
+      // 3. Backend Atomic Action
+      fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'complete_withdrawal',
-          cashierUid: 'csh_carlosandroid_001',
-          actorUid: 'csh_carlosandroid_001',
+          cashierUid: currentCashierSession.uid,
+          actorUid: currentCashierSession.uid,
           actorRole: 'cashier',
           payoutTxId: finalPayoutRef
         })
-      })
-      const resData = await res.json()
-      if (res.ok) {
-        cashierLogger.api(`Respuesta exitosa de acción backend complete_withdrawal`, { resData })
-      } else {
-        cashierLogger.error(`Error en acción backend complete_withdrawal (HTTP ${res.status})`, { resData })
-      }
+      }).catch(() => {})
 
       // 4. Inyección automática del comprobante de liquidación al chat de soporte
-      const netFiat = (order.amountFiat * 0.9).toFixed(2)
       const payoutNoticeText = `💸 ¡RETIRO LIQUIDADO Y TRANSFERIDO!
 
 Hola ${order.playerName}, hemos enviado tus fondos a tu cuenta de destino:
 ━━━━━━━━━━━━━━━━━━━━
-💵 Monto Transferido: ${netFiat} ${order.currency} (después de comisión)
+💵 Monto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency} (Neto tras comisión de ${Math.round(feePercent * 100)}%)
 🪙 Sugar Coins Liquidados: -${order.amountSugarCoins} SC
 🏦 Destino: ${order.paymentMethod.toUpperCase()} (${order.receiptReferenceNumber || 'Dirección registrada'})
 🔗 Hash / TxID Oficial: ${finalPayoutRef}
-👨‍💼 Cajero Responsable: carlosandroid (Cajero)
+👨‍💼 Cajero Responsable: ${currentCashierSession.name}
 ━━━━━━━━━━━━━━━━━━━━
 Conserva este mensaje como comprobante formal de la transacción.`
 

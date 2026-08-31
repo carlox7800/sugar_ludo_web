@@ -10,7 +10,7 @@ import { AccordionBlock } from '../../components/ui/AccordionBlock'
 import { TreasuryVault, HouseProfitBreakdown } from '../../types/treasury'
 import { DetailedTelemetry } from '../../types/admin-expanded'
 import { db } from '../../lib/firebase'
-import { doc, onSnapshot } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc } from 'firebase/firestore'
 import {
   Activity,
   ShieldAlert,
@@ -92,7 +92,7 @@ export default function AdminDashboardPage() {
           const totalFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
           const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
 
-          const vaultUSD = Number(data.totalVaultUSD || (Number(data.playerCustodyUSD || 0) + totalFloatsUSD + Number(data.houseNetProfitsUSD || 0)))
+          const vaultUSD = Number(data.totalVaultUSD ?? (Number(data.playerCustodyUSD || 0) + totalFloatsUSD + Number(data.houseNetProfitsUSD || 0)))
           const vaultCoins = Math.round(vaultUSD * 100)
 
           setVault({
@@ -120,6 +120,27 @@ export default function AdminDashboardPage() {
               totalProfitCoins: Number(data.houseNetProfitsCoins || 0)
             }))
           }
+        } else {
+          // Sembrar global_ledger inicial en Firestore
+          const totalFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
+          const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
+          setDoc(ledgerRef, {
+            id: 'global_ledger',
+            totalVaultUSD: totalFloatsUSD,
+            totalVaultSugarCoins: totalFloatsCoins,
+            playerCustodyUSD: 0,
+            playerCustodyCoins: 0,
+            cashierFloatsUSD: totalFloatsUSD,
+            cashierFloatsCoins: totalFloatsCoins,
+            houseNetProfitsUSD: 0,
+            houseNetProfitsCoins: 0,
+            profitsBreakdown: {
+              tableRakeUSD: 0,
+              storeSalesUSD: 0,
+              withdrawalFeesUSD: 0
+            },
+            lastAuditedAt: Date.now()
+          }, { merge: true }).catch(() => {})
         }
       })
     } catch {}

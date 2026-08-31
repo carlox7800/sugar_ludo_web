@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { CashierOrder, OrderType } from '../../../types/cashier'
+import { CashierManagementProfile } from '../../../types/admin-expanded'
 import { OrderFilterTabs, FilterStatus } from '../../../components/orders/OrderFilterTabs'
 import { OrderCard } from '../../../components/orders/OrderCard'
 import { OrderRow } from '../../../components/orders/OrderRow'
@@ -23,6 +24,8 @@ export default function CashierOrdersPage() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [isMounted, setIsMounted] = useState(false)
 
+  const [activeCashierSession, setActiveCashierSession] = useState<CashierManagementProfile | null>(null)
+
   useEffect(() => {
     setIsMounted(true)
     try {
@@ -40,10 +43,30 @@ export default function CashierOrdersPage() {
     } catch {}
   }
 
-  const currentCashier = cashierList[0] || {
+  // Resolve current active cashier profile
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedSession = localStorage.getItem('sugar_cashier_session')
+        if (savedSession) {
+          const parsed = JSON.parse(savedSession)
+          if (parsed && parsed.uid) {
+            const live = cashierList.find((c) => c.uid === parsed.uid || (parsed.email && c.email.toLowerCase() === parsed.email.toLowerCase()))
+            setActiveCashierSession(live || parsed)
+            return
+          }
+        }
+      } catch {}
+    }
+    if (cashierList && cashierList.length > 0) {
+      setActiveCashierSession(cashierList[0])
+    }
+  }, [cashierList])
+
+  const currentCashier = activeCashierSession || cashierList[0] || {
     uid: 'csh_primary',
     name: 'Cajero Autorizado',
-    floatBalanceCoins: 0
+    floatBalanceCoins: 30000
   }
 
   const fetchOrders = async () => {
@@ -88,6 +111,19 @@ export default function CashierOrdersPage() {
               return [newOrd, ...filtered]
             })
             setIsLoading(false)
+          }
+          if (event.data?.type === 'cashier_float_updated') {
+            const { cashierUid, newCoins, newUSDT } = event.data
+            setActiveCashierSession((prev: any) => {
+              if (!prev || prev.uid === cashierUid) {
+                return {
+                  ...(prev || {}),
+                  floatBalanceCoins: newCoins,
+                  floatBalanceUSDT: newUSDT !== undefined ? newUSDT : newCoins / 100
+                }
+              }
+              return prev
+            })
           }
         }
       }

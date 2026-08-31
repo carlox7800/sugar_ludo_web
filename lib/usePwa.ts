@@ -21,28 +21,13 @@ export function usePWA() {
     }
     detectDevice()
 
-    // 1. Inicializar estado desde LocalStorage (Para Android donde getInstalledRelatedApps no siempre funciona)
+    // 1. Inicializar estado desde LocalStorage (Sin invocar APIs invasivas de permisos del navegador)
     if (typeof window !== 'undefined') {
       const storedStatus = localStorage.getItem('sugar_ludo_installed')
       if (storedStatus === 'true') {
         setIsAppInstalled(true)
       }
     }
-
-    // Check if already installed via API (Chrome/Edge/Android)
-    const checkInstalledApps = async () => {
-      if ('getInstalledRelatedApps' in navigator) {
-        try {
-          const relatedApps = await (navigator as any).getInstalledRelatedApps()
-          if (relatedApps && relatedApps.length > 0) {
-            setIsAppInstalled(true)
-          }
-        } catch (e) {
-          console.error('PWA detection error', e)
-        }
-      }
-    }
-    checkInstalledApps()
 
     // Detect if running as installed standalone PWA
     const checkStandalone = () => {

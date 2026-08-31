@@ -5,10 +5,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
 import { StaffChatMessage, ProcessedWithdrawalAudit } from '../../../types/admin-expanded'
+import { MOCK_STAFF_CHAT, MOCK_WITHDRAWAL_AUDITS } from '../../../lib/mock-admin-expanded'
 import { FloatRechargeModal } from '../../../components/admin/FloatRechargeModal'
 import { CashierPdfReportModal } from '../../../components/admin/CashierPdfReportModal'
 import { CashierDualChatPanel } from '../../../components/admin/CashierDualChatPanel'
-import { MOCK_STAFF_CHAT, MOCK_WITHDRAWAL_AUDITS } from '../../../lib/mock-admin-expanded'
+import { db } from '../../../lib/firebase'
+import { doc, setDoc, increment } from 'firebase/firestore'
 import {
   ArrowLeft,
   Users,
@@ -65,8 +67,19 @@ export default function AdminCajerosManagementPage() {
       const currentUSDT = (target as any).floatBalanceUSDT ?? (target.floatBalanceCoins / 100)
       const newUSDT = currentUSDT + amountUSDT
       const newCoins = Math.round(newUSDT * 100)
-      updateCashierFloat(cashierUid, newCoins)
+      updateCashierFloat(cashierUid, newCoins, newUSDT)
     }
+
+    // Sincronizar en global_ledger en Firestore
+    try {
+      const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+      await setDoc(ledgerRef, {
+        id: 'global_ledger',
+        cashierFloatsUSD: increment(amountUSDT),
+        cashierFloatsCoins: increment(amountCoins),
+        lastAuditedAt: Date.now()
+      }, { merge: true })
+    } catch {}
 
     // Sincronizar en Firestore de forma atómica en el backend
     try {

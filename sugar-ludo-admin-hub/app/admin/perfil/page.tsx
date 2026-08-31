@@ -581,8 +581,8 @@ export default function AdminPerfilPage() {
       <RegisterCashierModal
         isOpen={isRegisterCashierModalOpen}
         onClose={() => setIsRegisterCashierModalOpen(false)}
-        onRegister={(newCashier, pass) => {
-          const res = createNewCashier(newCashier, pass)
+        onRegister={async (newCashier, pass) => {
+          const res = await createNewCashier(newCashier, pass)
           if (res.success) {
             showToast(res.message)
           } else {
