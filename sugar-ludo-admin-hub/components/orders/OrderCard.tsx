@@ -32,6 +32,7 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
   }
 
   const isPending = order.status === 'pending'
+  const displayPlayerId = order.playerId || (order.playerUid ? `SL-${order.playerUid.substring(0, 6).toUpperCase()}` : '')
 
   return (
     <div
@@ -114,9 +115,14 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
 
       {/* User & Payment Detail */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-        <div>
+        <div className="flex items-center flex-wrap gap-1.5">
           <span>Jugador: <strong className="text-white">{order.playerName}</strong></span>
-          <span className="mx-2">&bull;</span>
+          {displayPlayerId && (
+            <span className="font-mono text-[11px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 rounded-md">
+              ID: {displayPlayerId}
+            </span>
+          )}
+          <span className="text-slate-600 mx-1">&bull;</span>
           <span>Método: <strong className="text-cyan-300">{methodLabelMap[order.paymentMethod] || order.paymentMethod}</strong></span>
         </div>
         {order.receiptReferenceNumber && (

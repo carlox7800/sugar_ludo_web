@@ -1,4 +1,18 @@
-# v0 sandbox internal files
+# Dependencias y paquetes
+node_modules/
+**/node_modules/
+
+# Compilaciones Next.js y estáticos
+.next/
+**/.next/
+out/
+dist/
+build/
+releases/
+*.exe
+*.zip
+
+# Entorno de trabajo V0 / Vercel
 __v0_runtime_loader.js
 __v0_devtools.tsx
 __v0_jsx-dev-runtime.ts
@@ -6,21 +20,32 @@ __v0_jsx-dev-runtime.ts
 .v0-trash/
 .vercel/
 
-# Environment variables
+# Variables de entorno y secretos
 .env
 .env*.local
 
-# Common ignores
-node_modules
-.next/
-.DS_Store
-dist/
-out/
-releases/
-*.exe
-*.zip
+# Android / Capacitor
 android/app/build/
 android/build/
 android/.gradle/
 .gradle/
+
+# Logs y diagnósticos pesados
 *.log
+sugar-ludo-logs-*.txt
+*.tmp
+
+# Archivos multimedia (ahorro de tokens y peso)
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.webp
+*.ico
+*.mp3
+*.wav
+*.ogg
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

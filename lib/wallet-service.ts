@@ -1,6 +1,6 @@
 import { db } from './firebase'
 import { updateDoc, doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore'
-import { broadcastLocalMessage } from './friends-service'
+import { broadcastLocalMessage, getSugarId } from './friends-service'
 
 export type TransactionType = 'deposit' | 'withdraw' | 'match_fee' | 'match_prize' | 'bonus'
 
@@ -18,6 +18,7 @@ export interface PlayerP2POrder {
   type: 'deposit' | 'withdraw'
   status: 'pending' | 'assigned' | 'paid' | 'verified' | 'completed' | 'disputed' | 'cancelled'
   playerUid: string
+  playerId?: string
   playerName: string
   amountFiat: number
   currency: string
@@ -155,12 +156,14 @@ export async function createDepositOrder(params: {
   const { playerUid, playerName, amountFiat, currency, receiptReferenceNumber } = params
   const orderId = `dep_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
   const amountSugarCoins = Math.round(amountFiat * 100)
+  const playerId = getSugarId(playerUid)
 
   const orderData: PlayerP2POrder = {
     id: orderId,
     type: 'deposit',
     status: 'pending',
     playerUid,
+    playerId,
     playerName: playerName || 'Jugador',
     amountFiat,
     currency,
@@ -222,6 +225,7 @@ export async function createDepositOrder(params: {
           type: { stringValue: orderData.type },
           status: { stringValue: orderData.status },
           playerUid: { stringValue: orderData.playerUid },
+          playerId: { stringValue: orderData.playerId || playerId },
           playerName: { stringValue: orderData.playerName },
           amountFiat: { doubleValue: orderData.amountFiat },
           currency: { stringValue: orderData.currency },
@@ -259,12 +263,14 @@ export async function createWithdrawOrder(params: {
   const { playerUid, playerName, amountFiat, currency, paymentAddress, isVip } = params
   const orderId = `wit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
   const amountSugarCoins = Math.round(amountFiat * 100)
+  const playerId = getSugarId(playerUid)
 
   const orderData: PlayerP2POrder = {
     id: orderId,
     type: 'withdraw',
     status: 'pending',
     playerUid,
+    playerId,
     playerName: playerName || 'Jugador',
     amountFiat,
     currency,
@@ -326,6 +332,7 @@ export async function createWithdrawOrder(params: {
           type: { stringValue: orderData.type },
           status: { stringValue: orderData.status },
           playerUid: { stringValue: orderData.playerUid },
+          playerId: { stringValue: orderData.playerId || playerId },
           playerName: { stringValue: orderData.playerName },
           amountFiat: { doubleValue: orderData.amountFiat },
           currency: { stringValue: orderData.currency },

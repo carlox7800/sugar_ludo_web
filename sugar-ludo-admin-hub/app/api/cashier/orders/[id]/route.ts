@@ -82,6 +82,7 @@ export async function GET(
             type: parseField(fields.type) || (orderId.includes('wit') ? 'withdraw' : 'deposit'),
             status: parseField(fields.status) || 'pending',
             playerUid: parseField(fields.playerUid) || '',
+            playerId: parseField(fields.playerId) || (parseField(fields.playerUid) ? `SL-${String(parseField(fields.playerUid)).substring(0, 6).toUpperCase()}` : undefined),
             playerName: parseField(fields.playerName) || 'Jugador',
             playerAvatar: parseField(fields.playerAvatar),
             playerPhone: parseField(fields.playerPhone),

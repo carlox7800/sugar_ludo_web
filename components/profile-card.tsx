@@ -1,11 +1,14 @@
 'use client'
 
-import { Crown, Sparkles, Zap } from 'lucide-react'
+import { useState } from 'react'
+import { Crown, Sparkles, Zap, Copy, Check } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { PRESET_AVATARS } from './avatar-selector-modal'
+import { getSugarId } from '@/lib/friends-service'
 
 export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
   const { user } = useAuth()
+  const [copiedId, setCopiedId] = useState(false)
 
   // Use preset avatars or default
   const getActiveAvatar = () => {
@@ -14,6 +17,16 @@ export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
   }
   const activeAvatar = getActiveAvatar()
   const nickname = user?.nickname || 'Jugador'
+  const playerId = getSugarId(user?.uid)
+
+  const handleCopyId = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (typeof navigator !== 'undefined') {
+      navigator.clipboard.writeText(playerId)
+      setCopiedId(true)
+      setTimeout(() => setCopiedId(false), 2000)
+    }
+  }
 
   return (
     <section 
@@ -42,11 +55,26 @@ export function ProfileCard({ onOpen }: { onOpen?: () => void }) {
         </span>
       </div>
 
-      <div className="mt-2">
+      <div className="mt-2 flex flex-col items-center gap-1">
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--candy-cyan)]">
           Bienvenido
         </p>
         <h2 className="font-display text-2xl font-extrabold text-foreground">{nickname}</h2>
+        
+        {/* Número de ID Único Visible */}
+        <button
+          onClick={handleCopyId}
+          title="Copiar mi ID único de jugador"
+          className="flex items-center gap-1.5 px-3 py-1 mt-0.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-muted-foreground hover:text-white transition-all text-xs font-mono group/id cursor-pointer"
+        >
+          <span className="text-[10px] uppercase font-bold text-[var(--candy-cyan)]">ID:</span>
+          <span className="font-black text-foreground tracking-wider">{playerId}</span>
+          {copiedId ? (
+            <Check className="size-3 text-emerald-400" />
+          ) : (
+            <Copy className="size-3 text-muted-foreground/60 group-hover/id:text-white transition-colors" />
+          )}
+        </button>
       </div>
 
       {/* Active XP Booster Badge */}

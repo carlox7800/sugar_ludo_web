@@ -17,8 +17,8 @@ import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, M
 
 export default function CashierMainDeskPage() {
   const { cashierList, logout, adminUser } = useAdminAuth()
-  const [orders, setOrders] = useState<CashierOrder[]>(() => OrdersCache.get() || [])
-  const [isLoading, setIsLoading] = useState(() => (OrdersCache.get() && OrdersCache.get()!.length > 0 ? false : true))
+  const [orders, setOrders] = useState<CashierOrder[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [currentStatus, setCurrentStatus] = useState<FilterStatus>('pending')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'all'>('today')
@@ -47,6 +47,8 @@ export default function CashierMainDeskPage() {
       const q = searchQuery.toLowerCase()
       return (
         o.id.toLowerCase().includes(q) ||
+        (o.playerId && o.playerId.toLowerCase().includes(q)) ||
+        (o.playerUid && o.playerUid.toLowerCase().includes(q)) ||
         o.playerName.toLowerCase().includes(q) ||
         (o.receiptReferenceNumber && o.receiptReferenceNumber.toLowerCase().includes(q))
       )
@@ -252,7 +254,7 @@ export default function CashierMainDeskPage() {
               BANDEJA DE ÓRDENES P2P
             </h1>
             <p className="text-[11px] text-slate-400 font-mono">
-              cajeros.sugarludo.com &bull; Turno: <strong className="text-cyan-300">{currentCashier.name}</strong>
+              cajeros.sugarludo.com &bull; Turno: <strong className="text-cyan-300" suppressHydrationWarning>{currentCashier.name}</strong>
             </p>
           </div>
         </div>
@@ -272,7 +274,7 @@ export default function CashierMainDeskPage() {
             <Coins className="size-4 text-amber-400 animate-pulse" />
             <div className="text-right">
               <span className="text-[10px] uppercase font-bold text-amber-300 block leading-none">Saldo Flotante</span>
-              <span className="text-sm font-black text-white font-mono">
+              <span className="text-sm font-black text-white font-mono" suppressHydrationWarning>
                 {currentCashier.floatBalanceCoins.toLocaleString()} SC
               </span>
             </div>

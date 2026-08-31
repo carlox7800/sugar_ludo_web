@@ -145,6 +145,8 @@ export default function CashierOrdersPage() {
       const q = searchQuery.toLowerCase()
       return (
         o.id.toLowerCase().includes(q) ||
+        (o.playerId && o.playerId.toLowerCase().includes(q)) ||
+        (o.playerUid && o.playerUid.toLowerCase().includes(q)) ||
         o.playerName.toLowerCase().includes(q) ||
         (o.receiptReferenceNumber && o.receiptReferenceNumber.toLowerCase().includes(q))
       )

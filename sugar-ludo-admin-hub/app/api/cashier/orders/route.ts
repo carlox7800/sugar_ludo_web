@@ -91,6 +91,7 @@ export async function GET(request: Request) {
                 type: parseField(fields.type) || 'deposit',
                 status: parseField(fields.status) || 'pending',
                 playerUid: parseField(fields.playerUid) || '',
+                playerId: parseField(fields.playerId) || (parseField(fields.playerUid) ? `SL-${String(parseField(fields.playerUid)).substring(0, 6).toUpperCase()}` : undefined),
                 playerName: parseField(fields.playerName) || 'Jugador',
                 playerAvatar: parseField(fields.playerAvatar),
                 playerPhone: parseField(fields.playerPhone),
@@ -167,11 +168,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Orden inválida' }, { status: 400 })
     }
 
+    const rawPlayerUid = body.playerUid || ''
+    const rawPlayerId = body.playerId || (rawPlayerUid ? `SL-${rawPlayerUid.substring(0, 6).toUpperCase()}` : '')
+
     const orderData: CashierOrder = {
       id: body.id,
       type: body.type || 'deposit',
       status: body.status || 'pending',
-      playerUid: body.playerUid || '',
+      playerUid: rawPlayerUid,
+      playerId: rawPlayerId,
       playerName: body.playerName || 'Jugador',
       amountFiat: Number(body.amountFiat || 0),
       currency: body.currency || 'USDT',
@@ -207,6 +212,7 @@ export async function POST(request: Request) {
             type: { stringValue: orderData.type },
             status: { stringValue: orderData.status },
             playerUid: { stringValue: orderData.playerUid },
+            playerId: { stringValue: orderData.playerId || rawPlayerId },
             playerName: { stringValue: orderData.playerName },
             amountFiat: { doubleValue: orderData.amountFiat },
             currency: { stringValue: orderData.currency },

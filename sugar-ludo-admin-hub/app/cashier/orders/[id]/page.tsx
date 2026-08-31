@@ -430,8 +430,12 @@ export default function OrderDetailPage() {
                 {order.status === 'paid' ? 'Comprobante Subido' : order.status}
               </span>
             </h1>
-            <p className="text-[11px] text-slate-400 font-mono">
-              Jugador: <strong className="text-white">{order.playerName}</strong> &bull; {order.currency}
+            <p className="text-[11px] text-slate-400 font-mono flex items-center gap-2">
+              <span>Jugador: <strong className="text-white">{order.playerName}</strong></span>
+              <span className="text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                ID: {order.playerId || (order.playerUid ? `SL-${order.playerUid.substring(0, 6).toUpperCase()}` : 'N/A')}
+              </span>
+              <span>&bull; {order.currency}</span>
             </p>
           </div>
         </div>

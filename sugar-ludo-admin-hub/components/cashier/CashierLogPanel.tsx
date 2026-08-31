@@ -5,6 +5,7 @@ import { cashierLogger, CashierLogEntry, CashierLogLevel } from '../../lib/cashi
 import { Terminal, X, Copy, Check, Trash2, ShieldAlert, Zap, Filter, Search } from 'lucide-react'
 
 export function CashierLogPanel() {
+  const [isMounted, setIsMounted] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const [logs, setLogs] = useState<CashierLogEntry[]>([])
   const [copied, setCopied] = useState(false)
@@ -12,12 +13,15 @@ export function CashierLogPanel() {
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
+    setIsMounted(true)
     setLogs([...cashierLogger.getLogs()])
     const unsubscribe = cashierLogger.subscribe(() => {
       setLogs([...cashierLogger.getLogs()])
     })
     return () => unsubscribe()
   }, [])
+
+  if (!isMounted) return null
 
   const handleCopy = () => {
     const text = cashierLogger.exportLogs()

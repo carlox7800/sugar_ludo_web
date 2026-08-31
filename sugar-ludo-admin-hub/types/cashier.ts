@@ -46,6 +46,7 @@ export interface CashierOrder {
   
   // Datos del Jugador
   playerUid: string
+  playerId?: string
   playerName: string
   playerAvatar?: string
   playerPhone?: string

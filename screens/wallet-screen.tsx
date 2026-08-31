@@ -7,6 +7,7 @@ import { usePlayer } from '@/lib/player-context'
 import { db } from '@/lib/firebase'
 import { doc, onSnapshot, collection, query, where, getDoc, updateDoc } from 'firebase/firestore'
 import { globalLogger } from '@/lib/logger'
+import { getSugarId } from '@/lib/friends-service'
 import {
   fetchWalletTransactions,
   createDepositOrder,
@@ -22,6 +23,7 @@ import {
 export function WalletScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const { coins, setCoins } = usePlayer()
+  const [copiedPlayerId, setCopiedPlayerId] = useState(false)
   const [transactions, setTransactions] = useState<WalletTransaction[]>([])
   const [activeOrders, setActiveOrders] = useState<PlayerP2POrder[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -305,6 +307,30 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
               Gestiona tus depósitos, retiros USDT y consulta tu balance de Sugar Coins.
             </p>
           </div>
+        </div>
+
+        {/* Player Unique ID Pill */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const myId = getSugarId(user?.uid)
+              if (typeof navigator !== 'undefined') {
+                navigator.clipboard.writeText(myId)
+                setCopiedPlayerId(true)
+                setTimeout(() => setCopiedPlayerId(false), 2000)
+              }
+            }}
+            title="Copiar mi ID único para cajeros y soporte"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-[oklch(1_0_0/0.05)] hover:bg-[oklch(1_0_0/0.1)] border border-border text-xs font-mono transition-all cursor-pointer shadow-sm group"
+          >
+            <span className="text-[10px] uppercase font-bold text-[var(--candy-cyan)]">Mi ID:</span>
+            <span className="font-black text-foreground">{getSugarId(user?.uid)}</span>
+            {copiedPlayerId ? (
+              <Check className="size-3.5 text-emerald-400" />
+            ) : (
+              <Copy className="size-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+            )}
+          </button>
         </div>
       </div>
 
