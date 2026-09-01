@@ -15,6 +15,7 @@ interface CashierDualChatPanelProps {
   onSendPrivate: (text: string, cashierUid: string) => Promise<void> | void
   unreadByAdminTotal?: number
   unreadByCashierMap?: Record<string, number>
+  initialMode?: 'broadcast' | 'private'
 }
 
 export function CashierDualChatPanel({
@@ -26,13 +27,23 @@ export function CashierDualChatPanel({
   onSendBroadcast,
   onSendPrivate,
   unreadByAdminTotal = 0,
-  unreadByCashierMap = {}
+  unreadByCashierMap = {},
+  initialMode
 }: CashierDualChatPanelProps) {
-  const [chatMode, setChatMode] = useState<'broadcast' | 'private'>('broadcast')
+  const [chatMode, setChatMode] = useState<'broadcast' | 'private'>(
+    initialMode || (unreadByAdminTotal > 0 ? 'private' : 'broadcast')
+  )
   const [inputText, setInputText] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const isSubmittingRef = useRef(false)
+
+  useEffect(() => {
+    if (initialMode) {
+      setChatMode(initialMode)
+    }
+  }, [initialMode])
 
   const activeMessages = chatMode === 'broadcast' ? broadcastMessages : privateMessages
 
@@ -42,10 +53,13 @@ export function CashierDualChatPanel({
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     const text = inputText.trim()
-    if (!text || isSending) return
+    if (!text || isSending || isSubmittingRef.current) return
 
+    isSubmittingRef.current = true
     setIsSending(true)
+    setInputText('') // Limpiar inmediatamente para evitar doble click o doble submit
     setSendError(null)
 
     try {
@@ -58,13 +72,14 @@ export function CashierDualChatPanel({
         }
         await onSendPrivate(text, targetUid)
       }
-      setInputText('')
     } catch (err: any) {
       console.error('[CashierDualChatPanel] Error enviando:', err)
+      setInputText(text) // Restaurar texto si hubo error
       setSendError(`Error al enviar mensaje: ${err.message || 'Sin permisos en Firebase'}`)
       setTimeout(() => setSendError(null), 6000)
     } finally {
       setIsSending(false)
+      isSubmittingRef.current = false
     }
   }
 

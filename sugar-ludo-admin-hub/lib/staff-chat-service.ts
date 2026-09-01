@@ -37,15 +37,20 @@ export function subscribeToBroadcastMessages(
       limit(50)
     )
     return onSnapshot(q, (snap) => {
-      const msgs: StaffChatMessage[] = snap.docs.map((d) => {
-        const data = d.data()
-        return {
-          id: d.id,
-          senderUid: data.senderUid || 'adm_super',
-          senderName: data.senderName || 'Super Admin',
-          senderRole: (data.senderRole || 'super_admin') as any,
-          message: data.message || '',
-          timestamp: data.timestamp || Date.now()
+      const seenIds = new Set<string>()
+      const msgs: StaffChatMessage[] = []
+      snap.docs.forEach((d) => {
+        if (!seenIds.has(d.id)) {
+          seenIds.add(d.id)
+          const data = d.data()
+          msgs.push({
+            id: d.id,
+            senderUid: data.senderUid || 'adm_super',
+            senderName: data.senderName || 'Super Admin',
+            senderRole: (data.senderRole || 'super_admin') as any,
+            message: data.message || '',
+            timestamp: data.timestamp || Date.now()
+          })
         }
       })
       callback(msgs)
@@ -58,17 +63,31 @@ export function subscribeToBroadcastMessages(
   }
 }
 
+let lastBroadcastTextSent = ''
+let lastBroadcastTimestampSent = 0
+
 export async function sendBroadcastMessage(
   adminUid: string,
   adminName: string,
   text: string
 ): Promise<void> {
+  const trimmed = text.trim()
+  if (!trimmed) return
+
   const now = Date.now()
+  // Candado contra doble disparo accidental (mismo texto en menos de 1500ms)
+  if (trimmed === lastBroadcastTextSent && now - lastBroadcastTimestampSent < 1500) {
+    console.warn('[StaffChat] Descartado envío duplicado de difusión masiva:', trimmed)
+    return
+  }
+  lastBroadcastTextSent = trimmed
+  lastBroadcastTimestampSent = now
+
   await addDoc(collection(db, 'staff_broadcast_messages'), {
     senderUid: adminUid,
     senderName: adminName,
     senderRole: 'super_admin',
-    message: text.trim(),
+    message: trimmed,
     timestamp: now
   })
 
@@ -77,7 +96,7 @@ export async function sendBroadcastMessage(
       const channel = new BroadcastChannel('sugar_ludo_social_channel')
       channel.postMessage({
         type: 'staff_broadcast_received',
-        payload: { text, timestamp: now }
+        payload: { text: trimmed, timestamp: now }
       })
       channel.close()
     } catch {}

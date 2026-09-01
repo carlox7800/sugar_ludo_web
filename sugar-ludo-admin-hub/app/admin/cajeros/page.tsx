@@ -55,6 +55,7 @@ export default function AdminCajerosManagementPage() {
 
   // Ergonomic View Switcher: 'monitoring' | 'communications'
   const [activeView, setActiveView] = useState<'monitoring' | 'communications'>('monitoring')
+  const [communicationsInitialMode, setCommunicationsInitialMode] = useState<'broadcast' | 'private'>('broadcast')
 
   // Estados de Chat Staff en Tiempo Real
   const [broadcastMessages, setBroadcastMessages] = useState<StaffChatMessage[]>([])
@@ -339,10 +340,14 @@ export default function AdminCajerosManagementPage() {
             <button
               onClick={() => {
                 setActiveView('communications')
-                const cashierWithUnread = cashierList.find((c) => (unreadByCashierMap[c.uid] || 0) > 0)
-                const targetUid = cashierWithUnread ? cashierWithUnread.uid : (selectedChatCashierUid || (cashierList.length > 0 ? cashierList[0].uid : ''))
-                if (targetUid) {
-                  handleSelectCashier(targetUid)
+                if (totalUnreadByAdmin > 0) {
+                  setCommunicationsInitialMode('private')
+                  const cashierWithUnread = cashierList.find((c) => (unreadByCashierMap[c.uid] || 0) > 0)
+                  if (cashierWithUnread) {
+                    setSelectedChatCashierUid(cashierWithUnread.uid)
+                  }
+                } else {
+                  setCommunicationsInitialMode('broadcast')
                 }
               }}
               className={clsx(
@@ -590,6 +595,7 @@ export default function AdminCajerosManagementPage() {
                 onSendPrivate={handleSendPrivate}
                 unreadByAdminTotal={totalUnreadByAdmin}
                 unreadByCashierMap={unreadByCashierMap}
+                initialMode={communicationsInitialMode}
               />
             </div>
           </div>

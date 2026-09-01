@@ -380,13 +380,7 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
         {/* Action Controls, Float Balance & Logout */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => {
-              setIsAdminChatOpen(true)
-              setUnreadBroadcastCount(0)
-              setUnreadPrivateCount(0)
-              markBroadcastAsReadByCashier(currentCashier.uid)
-              markPrivateChatAsReadByCashier(currentCashier.uid)
-            }}
+            onClick={() => setIsAdminChatOpen(true)}
             className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${
               unreadBroadcastCount > 0
                 ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30'
@@ -611,20 +605,14 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
       {/* Admin Chat Modal */}
       <CashierAdminChatModal
         isOpen={isAdminChatOpen}
-        onClose={() => {
-          setIsAdminChatOpen(false)
-          setUnreadBroadcastCount(0)
-          setUnreadPrivateCount(0)
-          markBroadcastAsReadByCashier(currentCashier.uid)
-          markPrivateChatAsReadByCashier(currentCashier.uid)
-        }}
+        onClose={() => setIsAdminChatOpen(false)}
         cashierUid={currentCashier.uid}
         cashierName={currentCashier.name}
         initialTab={unreadBroadcastCount > 0 ? 'broadcast' : 'private'}
-        onMarkAllAsRead={() => {
-          setUnreadBroadcastCount(0)
-          setUnreadPrivateCount(0)
-        }}
+        unreadBroadcastCount={unreadBroadcastCount}
+        unreadPrivateCount={unreadPrivateCount}
+        onReadBroadcast={() => setUnreadBroadcastCount(0)}
+        onReadPrivate={() => setUnreadPrivateCount(0)}
       />
 
       {/* Cashier Float Movements & Shift Ledger History Modal */}

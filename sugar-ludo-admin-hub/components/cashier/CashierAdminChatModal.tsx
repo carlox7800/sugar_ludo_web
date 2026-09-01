@@ -17,7 +17,10 @@ interface CashierAdminChatModalProps {
   cashierUid: string
   cashierName: string
   initialTab?: 'broadcast' | 'private'
-  onMarkAllAsRead?: () => void
+  unreadBroadcastCount?: number
+  unreadPrivateCount?: number
+  onReadBroadcast?: () => void
+  onReadPrivate?: () => void
 }
 
 export function CashierAdminChatModal({
@@ -26,48 +29,74 @@ export function CashierAdminChatModal({
   cashierUid,
   cashierName,
   initialTab = 'private',
-  onMarkAllAsRead
+  unreadBroadcastCount = 0,
+  unreadPrivateCount = 0,
+  onReadBroadcast,
+  onReadPrivate
 }: CashierAdminChatModalProps) {
   // 1. Todos los hooks SIEMPRE al inicio del componente (nunca después de retornos condicionales)
   const [activeTab, setActiveTab] = useState<'broadcast' | 'private'>(initialTab)
+  const [localUnreadBroadcast, setLocalUnreadBroadcast] = useState(unreadBroadcastCount)
+  const [localUnreadPrivate, setLocalUnreadPrivate] = useState(unreadPrivateCount)
   const [privateMessages, setPrivateMessages] = useState<StaffChatMessage[]>([])
   const [broadcastMessages, setBroadcastMessages] = useState<StaffChatMessage[]>([])
   const [inputText, setInputText] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const isSubmittingRef = useRef(false)
+
+  // Sincronizar unreads de props al abrir o cambiar initialTab
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab)
+      setLocalUnreadBroadcast(unreadBroadcastCount)
+      setLocalUnreadPrivate(unreadPrivateCount)
+    }
+  }, [isOpen, initialTab, unreadBroadcastCount, unreadPrivateCount])
 
   const handleTabChange = (tab: 'broadcast' | 'private') => {
     setActiveTab(tab)
     if (tab === 'broadcast') {
+      setLocalUnreadBroadcast(0)
       markBroadcastAsReadByCashier(cashierUid)
+      onReadBroadcast?.()
     } else {
+      setLocalUnreadPrivate(0)
       markPrivateChatAsReadByCashier(cashierUid)
+      onReadPrivate?.()
     }
-    onMarkAllAsRead?.()
   }
 
   useEffect(() => {
     if (!isOpen || !cashierUid) return
 
-    // Al abrir el modal, limpiar marcas de no leídos tanto en Firestore como en memoria
-    markPrivateChatAsReadByCashier(cashierUid)
-    markBroadcastAsReadByCashier(cashierUid)
-    onMarkAllAsRead?.()
+    // Marcar como leído el canal activo
+    if (activeTab === 'broadcast') {
+      setLocalUnreadBroadcast(0)
+      markBroadcastAsReadByCashier(cashierUid)
+      onReadBroadcast?.()
+    } else {
+      setLocalUnreadPrivate(0)
+      markPrivateChatAsReadByCashier(cashierUid)
+      onReadPrivate?.()
+    }
 
     const unsubPrivate = subscribeToCashierPrivateMessages(cashierUid, (liveMsgs) => {
       setPrivateMessages(liveMsgs)
       if (activeTab === 'private') {
+        setLocalUnreadPrivate(0)
         markPrivateChatAsReadByCashier(cashierUid)
-        onMarkAllAsRead?.()
+        onReadPrivate?.()
       }
     })
 
     const unsubBroadcast = subscribeToBroadcastMessages((liveBroadcasts) => {
       setBroadcastMessages(liveBroadcasts)
       if (activeTab === 'broadcast') {
+        setLocalUnreadBroadcast(0)
         markBroadcastAsReadByCashier(cashierUid)
-        onMarkAllAsRead?.()
+        onReadBroadcast?.()
       }
     })
 
@@ -75,7 +104,7 @@ export function CashierAdminChatModal({
       unsubPrivate()
       unsubBroadcast()
     }
-  }, [isOpen, cashierUid, activeTab, onMarkAllAsRead])
+  }, [isOpen, cashierUid, activeTab, onReadBroadcast, onReadPrivate])
 
   useEffect(() => {
     if (isOpen) {
@@ -90,10 +119,13 @@ export function CashierAdminChatModal({
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!inputText.trim() || isSending) return
-
+    e.stopPropagation()
     const textToSend = inputText.trim()
+    if (!textToSend || isSending || isSubmittingRef.current) return
+
+    isSubmittingRef.current = true
     setIsSending(true)
+    setInputText('') // Limpieza inmediata para evitar doble click
     setSendError(null)
 
     try {
@@ -105,13 +137,14 @@ export function CashierAdminChatModal({
         cashierName: cashierName || 'Cajero Oficial',
         text: textToSend
       })
-      setInputText('')
     } catch (err: any) {
       console.error('[CashierChatModal] Error al enviar mensaje:', err)
+      setInputText(textToSend)
       setSendError(`Error al enviar mensaje: ${err.message || 'Sin permisos en Firebase'}`)
       setTimeout(() => setSendError(null), 6000)
     } finally {
       setIsSending(false)
+      isSubmittingRef.current = false
     }
   }
 
@@ -139,12 +172,12 @@ export function CashierAdminChatModal({
           </button>
         </div>
 
-        {/* Tabs: Difusión Oficial vs Chat Privado */}
+        {/* Tabs: Difusión Oficial vs Chat Privado con Badges Numéricos Precisos */}
         <div className="grid grid-cols-2 p-1.5 bg-slate-950/90 border-b border-white/10 gap-1.5 text-xs font-bold">
           <button
             type="button"
             onClick={() => handleTabChange('broadcast')}
-            className={`py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`relative py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'broadcast'
                 ? 'bg-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -152,12 +185,17 @@ export function CashierAdminChatModal({
           >
             <Radio className="size-3.5 text-purple-300" />
             <span>Difusión Oficial</span>
+            {localUnreadBroadcast > 0 && activeTab !== 'broadcast' && (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black animate-pulse shadow-md">
+                {localUnreadBroadcast}
+              </span>
+            )}
           </button>
 
           <button
             type="button"
             onClick={() => handleTabChange('private')}
-            className={`py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            className={`relative py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'private'
                 ? 'bg-cyan-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -165,6 +203,11 @@ export function CashierAdminChatModal({
           >
             <Lock className="size-3.5 text-cyan-300" />
             <span>Chat Privado</span>
+            {localUnreadPrivate > 0 && activeTab !== 'private' && (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black animate-pulse shadow-md">
+                {localUnreadPrivate}
+              </span>
+            )}
           </button>
         </div>
 
