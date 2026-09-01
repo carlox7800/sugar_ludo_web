@@ -96,17 +96,15 @@ export function CashierDualChatPanel({
             >
               <Radio className="size-3.5" />
               <span>Difusión Masiva</span>
-              {broadcastMessages.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-slate-950/40 text-[10px] font-mono">
-                  {broadcastMessages.length}
-                </span>
-              )}
             </button>
             <button
               onClick={() => {
                 setChatMode('private')
-                if (!selectedCashierUid && cashiers.length > 0) {
-                  onSelectCashier(cashiers[0].uid)
+                // Si hay un cajero con mensajes no leídos, priorizarlo
+                const cashierWithUnread = cashiers.find((c) => (unreadByCashierMap[c.uid] || 0) > 0)
+                const targetUid = cashierWithUnread ? cashierWithUnread.uid : (selectedCashierUid || (cashiers.length > 0 ? cashiers[0].uid : ''))
+                if (targetUid) {
+                  onSelectCashier(targetUid)
                 }
               }}
               className={clsx(

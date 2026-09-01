@@ -17,6 +17,7 @@ interface CashierAdminChatModalProps {
   cashierUid: string
   cashierName: string
   initialTab?: 'broadcast' | 'private'
+  onMarkAllAsRead?: () => void
 }
 
 export function CashierAdminChatModal({
@@ -24,7 +25,8 @@ export function CashierAdminChatModal({
   onClose,
   cashierUid,
   cashierName,
-  initialTab = 'private'
+  initialTab = 'private',
+  onMarkAllAsRead
 }: CashierAdminChatModalProps) {
   // 1. Todos los hooks SIEMPRE al inicio del componente (nunca después de retornos condicionales)
   const [activeTab, setActiveTab] = useState<'broadcast' | 'private'>(initialTab)
@@ -35,17 +37,29 @@ export function CashierAdminChatModal({
   const [sendError, setSendError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  const handleTabChange = (tab: 'broadcast' | 'private') => {
+    setActiveTab(tab)
+    if (tab === 'broadcast') {
+      markBroadcastAsReadByCashier(cashierUid)
+    } else {
+      markPrivateChatAsReadByCashier(cashierUid)
+    }
+    onMarkAllAsRead?.()
+  }
+
   useEffect(() => {
     if (!isOpen || !cashierUid) return
 
-    // Al abrir el modal, limpiar marcas de no leídos
+    // Al abrir el modal, limpiar marcas de no leídos tanto en Firestore como en memoria
     markPrivateChatAsReadByCashier(cashierUid)
     markBroadcastAsReadByCashier(cashierUid)
+    onMarkAllAsRead?.()
 
     const unsubPrivate = subscribeToCashierPrivateMessages(cashierUid, (liveMsgs) => {
       setPrivateMessages(liveMsgs)
       if (activeTab === 'private') {
         markPrivateChatAsReadByCashier(cashierUid)
+        onMarkAllAsRead?.()
       }
     })
 
@@ -53,6 +67,7 @@ export function CashierAdminChatModal({
       setBroadcastMessages(liveBroadcasts)
       if (activeTab === 'broadcast') {
         markBroadcastAsReadByCashier(cashierUid)
+        onMarkAllAsRead?.()
       }
     })
 
@@ -60,7 +75,7 @@ export function CashierAdminChatModal({
       unsubPrivate()
       unsubBroadcast()
     }
-  }, [isOpen, cashierUid, activeTab])
+  }, [isOpen, cashierUid, activeTab, onMarkAllAsRead])
 
   useEffect(() => {
     if (isOpen) {
@@ -128,10 +143,7 @@ export function CashierAdminChatModal({
         <div className="grid grid-cols-2 p-1.5 bg-slate-950/90 border-b border-white/10 gap-1.5 text-xs font-bold">
           <button
             type="button"
-            onClick={() => {
-              setActiveTab('broadcast')
-              markBroadcastAsReadByCashier(cashierUid)
-            }}
+            onClick={() => handleTabChange('broadcast')}
             className={`py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'broadcast'
                 ? 'bg-purple-600 text-white shadow-md'
@@ -139,15 +151,12 @@ export function CashierAdminChatModal({
             }`}
           >
             <Radio className="size-3.5 text-purple-300" />
-            <span>Difusión Oficial ({broadcastMessages.length})</span>
+            <span>Difusión Oficial</span>
           </button>
 
           <button
             type="button"
-            onClick={() => {
-              setActiveTab('private')
-              markPrivateChatAsReadByCashier(cashierUid)
-            }}
+            onClick={() => handleTabChange('private')}
             className={`py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'private'
                 ? 'bg-cyan-600 text-white shadow-md'
@@ -155,7 +164,7 @@ export function CashierAdminChatModal({
             }`}
           >
             <Lock className="size-3.5 text-cyan-300" />
-            <span>Chat Privado ({privateMessages.length})</span>
+            <span>Chat Privado</span>
           </button>
         </div>
 

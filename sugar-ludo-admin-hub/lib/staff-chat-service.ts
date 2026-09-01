@@ -160,20 +160,26 @@ export async function markPrivateChatAsReadByAdmin(cashierUid: string): Promise<
   if (!cashierUid) return
   try {
     const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
-    await updateDoc(chatMetaRef, {
-      unreadByAdmin: 0
-    })
-  } catch {}
+    await setDoc(chatMetaRef, {
+      unreadByAdmin: 0,
+      updatedAt: Date.now()
+    }, { merge: true })
+  } catch (err) {
+    console.error('[StaffChat] Error en markPrivateChatAsReadByAdmin:', err)
+  }
 }
 
 export async function markPrivateChatAsReadByCashier(cashierUid: string): Promise<void> {
   if (!cashierUid) return
   try {
     const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
-    await updateDoc(chatMetaRef, {
-      unreadByCashier: 0
-    })
-  } catch {}
+    await setDoc(chatMetaRef, {
+      unreadByCashier: 0,
+      updatedAt: Date.now()
+    }, { merge: true })
+  } catch (err) {
+    console.error('[StaffChat] Error en markPrivateChatAsReadByCashier:', err)
+  }
 }
 
 /**
@@ -255,6 +261,7 @@ export function markBroadcastAsReadByCashier(cashierUid: string): void {
   if (typeof window === 'undefined' || !cashierUid) return
   try {
     localStorage.setItem(`sugar_cashier_last_read_broadcast_${cashierUid}`, Date.now().toString())
+    window.dispatchEvent(new CustomEvent('sugar_broadcast_read', { detail: { cashierUid } }))
   } catch {}
 }
 
@@ -264,25 +271,49 @@ export function subscribeToBroadcastUnreadCount(
 ): () => void {
   if (!cashierUid) return () => {}
   try {
-    const q = query(
-      collection(db, 'staff_broadcast_messages'),
-      orderBy('timestamp', 'desc'),
-      limit(25)
-    )
-    return onSnapshot(q, (snap) => {
+    let lastSnapDocs: any[] = []
+
+    const recompute = () => {
       const currentLastRead = getCashierLastReadBroadcastTime(cashierUid)
       let count = 0
-      snap.docs.forEach((d) => {
-        const data = d.data()
+      lastSnapDocs.forEach((d) => {
+        const data = typeof d.data === 'function' ? d.data() : d
         const ts = Number(data.timestamp || 0)
         if (ts > currentLastRead) {
           count++
         }
       })
       callback(count)
+    }
+
+    const onBroadcastRead = (e: any) => {
+      if (!e?.detail || e.detail.cashierUid === cashierUid) {
+        recompute()
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('sugar_broadcast_read', onBroadcastRead)
+    }
+
+    const q = query(
+      collection(db, 'staff_broadcast_messages'),
+      orderBy('timestamp', 'desc'),
+      limit(25)
+    )
+    const unsub = onSnapshot(q, (snap) => {
+      lastSnapDocs = snap.docs
+      recompute()
     }, () => {
       callback(0)
     })
+
+    return () => {
+      unsub()
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('sugar_broadcast_read', onBroadcastRead)
+      }
+    }
   } catch {
     return () => {}
   }

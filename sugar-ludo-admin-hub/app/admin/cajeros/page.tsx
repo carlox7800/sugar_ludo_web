@@ -227,10 +227,54 @@ export default function AdminCajerosManagementPage() {
   // Escuchar chat privado del cajero seleccionado y marcar como leído
   useEffect(() => {
     if (!selectedChatCashierUid) return
-    markPrivateChatAsReadByAdmin(selectedChatCashierUid)
-    const unsubPrivate = subscribeToCashierPrivateMessages(selectedChatCashierUid, setPrivateMessages)
+
+    if (activeView === 'communications') {
+      markPrivateChatAsReadByAdmin(selectedChatCashierUid)
+      setChatMetas((prev) => {
+        if (!prev[selectedChatCashierUid] || prev[selectedChatCashierUid].unreadByAdmin === 0) return prev
+        return {
+          ...prev,
+          [selectedChatCashierUid]: {
+            ...prev[selectedChatCashierUid],
+            unreadByAdmin: 0
+          }
+        }
+      })
+    }
+
+    const unsubPrivate = subscribeToCashierPrivateMessages(selectedChatCashierUid, (msgs) => {
+      setPrivateMessages(msgs)
+      if (activeView === 'communications') {
+        markPrivateChatAsReadByAdmin(selectedChatCashierUid)
+        setChatMetas((prev) => {
+          if (!prev[selectedChatCashierUid] || prev[selectedChatCashierUid].unreadByAdmin === 0) return prev
+          return {
+            ...prev,
+            [selectedChatCashierUid]: {
+              ...prev[selectedChatCashierUid],
+              unreadByAdmin: 0
+            }
+          }
+        })
+      }
+    })
     return () => unsubPrivate()
-  }, [selectedChatCashierUid])
+  }, [selectedChatCashierUid, activeView])
+
+  const handleSelectCashier = (uid: string) => {
+    setSelectedChatCashierUid(uid)
+    markPrivateChatAsReadByAdmin(uid)
+    setChatMetas((prev) => {
+      if (!prev[uid] || prev[uid].unreadByAdmin === 0) return prev
+      return {
+        ...prev,
+        [uid]: {
+          ...prev[uid],
+          unreadByAdmin: 0
+        }
+      }
+    })
+  }
 
   const totalUnreadByAdmin = Object.values(chatMetas).reduce((acc, m) => acc + (m.unreadByAdmin || 0), 0)
   const unreadByCashierMap = Object.fromEntries(
@@ -295,8 +339,10 @@ export default function AdminCajerosManagementPage() {
             <button
               onClick={() => {
                 setActiveView('communications')
-                if (selectedChatCashierUid) {
-                  markPrivateChatAsReadByAdmin(selectedChatCashierUid)
+                const cashierWithUnread = cashierList.find((c) => (unreadByCashierMap[c.uid] || 0) > 0)
+                const targetUid = cashierWithUnread ? cashierWithUnread.uid : (selectedChatCashierUid || (cashierList.length > 0 ? cashierList[0].uid : ''))
+                if (targetUid) {
+                  handleSelectCashier(targetUid)
                 }
               }}
               className={clsx(
@@ -308,15 +354,11 @@ export default function AdminCajerosManagementPage() {
             >
               <MessageSquare className="size-3.5" />
               <span>Comunicaciones Staff</span>
-              {totalUnreadByAdmin > 0 ? (
+              {totalUnreadByAdmin > 0 && (
                 <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.6)]">
                   {totalUnreadByAdmin}
                 </span>
-              ) : broadcastMessages.length > 0 ? (
-                <span className="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-mono">
-                  {broadcastMessages.length}
-                </span>
-              ) : null}
+              )}
             </button>
           </div>
 
@@ -543,10 +585,7 @@ export default function AdminCajerosManagementPage() {
                 broadcastMessages={broadcastMessages}
                 privateMessages={privateMessages}
                 selectedCashierUid={selectedChatCashierUid}
-                onSelectCashier={(uid) => {
-                  setSelectedChatCashierUid(uid)
-                  markPrivateChatAsReadByAdmin(uid)
-                }}
+                onSelectCashier={handleSelectCashier}
                 onSendBroadcast={handleSendBroadcast}
                 onSendPrivate={handleSendPrivate}
                 unreadByAdminTotal={totalUnreadByAdmin}
