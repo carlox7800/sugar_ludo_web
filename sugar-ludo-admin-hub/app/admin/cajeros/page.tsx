@@ -5,7 +5,16 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
 import { StaffChatMessage, ProcessedWithdrawalAudit, CashierManagementProfile } from '../../../types/admin-expanded'
-import { MOCK_STAFF_CHAT, MOCK_WITHDRAWAL_AUDITS } from '../../../lib/mock-admin-expanded'
+import { MOCK_WITHDRAWAL_AUDITS } from '../../../lib/mock-admin-expanded'
+import {
+  subscribeToBroadcastMessages,
+  sendBroadcastMessage,
+  subscribeToCashierPrivateMessages,
+  sendPrivateMessage,
+  subscribeToAllPrivateChatsMeta,
+  markPrivateChatAsReadByAdmin,
+  PrivateChatMeta
+} from '../../../lib/staff-chat-service'
 import { FloatRechargeModal } from '../../../components/admin/FloatRechargeModal'
 import { CashierPdfReportModal } from '../../../components/admin/CashierPdfReportModal'
 import { CashierDualChatPanel } from '../../../components/admin/CashierDualChatPanel'
@@ -47,7 +56,12 @@ export default function AdminCajerosManagementPage() {
   // Ergonomic View Switcher: 'monitoring' | 'communications'
   const [activeView, setActiveView] = useState<'monitoring' | 'communications'>('monitoring')
 
-  const [staffChat, setStaffChat] = useState<StaffChatMessage[]>(MOCK_STAFF_CHAT)
+  // Estados de Chat Staff en Tiempo Real
+  const [broadcastMessages, setBroadcastMessages] = useState<StaffChatMessage[]>([])
+  const [privateMessages, setPrivateMessages] = useState<StaffChatMessage[]>([])
+  const [chatMetas, setChatMetas] = useState<Record<string, PrivateChatMeta>>({})
+  const [selectedChatCashierUid, setSelectedChatCashierUid] = useState<string>(cashierList[0]?.uid || '')
+
   const [withdrawalAudits, setWithdrawalAudits] = useState<ProcessedWithdrawalAudit[]>(MOCK_WITHDRAWAL_AUDITS)
   
   // Modals state
@@ -182,30 +196,63 @@ export default function AdminCajerosManagementPage() {
       console.warn('[AdminCajeros] Fallback local para recarga de flotante:', e)
     }
 
-    // Notify in staff chat
-    const newChat: StaffChatMessage = {
-      id: `stf_${Date.now()}`,
-      senderUid: adminUser.uid,
-      senderName: adminUser.displayName,
-      senderRole: 'super_admin',
-      message: `💰 Asignación de saldo flotante aprobada: +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) asignados a ${target?.name || cashierUid}. Motivo: ${notes}`,
-      timestamp: Date.now()
+    // Notificar en canal de difusión oficial
+    if (adminUser) {
+      sendBroadcastMessage(
+        adminUser.uid,
+        adminUser.displayName,
+        `💰 Asignación de saldo flotante aprobada: +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) asignados a ${target?.name || cashierUid}. Motivo: ${notes}`
+      ).catch(() => {})
     }
-    setStaffChat((prev) => [...prev, newChat])
     setNotification(`¡Asignados +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) con éxito!`)
     setTimeout(() => setNotification(null), 4000)
   }
 
-  const handleSendStaffMessage = (text: string, recipientUid?: string) => {
-    const newChat: StaffChatMessage = {
-      id: `stf_${Date.now()}`,
-      senderUid: adminUser.uid,
-      senderName: adminUser.displayName,
-      senderRole: 'super_admin',
-      message: recipientUid ? `[Privado a ${cashierList.find(c => c.uid === recipientUid)?.name}]: ${text}` : text,
-      timestamp: Date.now()
+  useEffect(() => {
+    if (!selectedChatCashierUid && cashierList.length > 0) {
+      setSelectedChatCashierUid(cashierList[0].uid)
     }
-    setStaffChat((prev) => [...prev, newChat])
+  }, [cashierList, selectedChatCashierUid])
+
+  // Escuchar difusión masiva y metadatos de chats privados
+  useEffect(() => {
+    const unsubBroadcast = subscribeToBroadcastMessages(setBroadcastMessages)
+    const unsubMetas = subscribeToAllPrivateChatsMeta(setChatMetas)
+    return () => {
+      unsubBroadcast()
+      unsubMetas()
+    }
+  }, [])
+
+  // Escuchar chat privado del cajero seleccionado y marcar como leído
+  useEffect(() => {
+    if (!selectedChatCashierUid) return
+    markPrivateChatAsReadByAdmin(selectedChatCashierUid)
+    const unsubPrivate = subscribeToCashierPrivateMessages(selectedChatCashierUid, setPrivateMessages)
+    return () => unsubPrivate()
+  }, [selectedChatCashierUid])
+
+  const totalUnreadByAdmin = Object.values(chatMetas).reduce((acc, m) => acc + (m.unreadByAdmin || 0), 0)
+  const unreadByCashierMap = Object.fromEntries(
+    Object.entries(chatMetas).map(([k, v]) => [k, v.unreadByAdmin || 0])
+  )
+
+  const handleSendBroadcast = async (text: string) => {
+    if (!adminUser) return
+    await sendBroadcastMessage(adminUser.uid, adminUser.displayName || 'Super Admin', text)
+  }
+
+  const handleSendPrivate = async (text: string, cashierUid: string) => {
+    if (!adminUser) return
+    const target = cashierList.find((c) => c.uid === cashierUid)
+    await sendPrivateMessage({
+      senderUid: adminUser.uid,
+      senderName: adminUser.displayName || 'Super Admin',
+      senderRole: 'super_admin',
+      cashierUid,
+      cashierName: target?.name || cashierUid,
+      text
+    })
   }
 
   return (
@@ -246,9 +293,14 @@ export default function AdminCajerosManagementPage() {
             </button>
 
             <button
-              onClick={() => setActiveView('communications')}
+              onClick={() => {
+                setActiveView('communications')
+                if (selectedChatCashierUid) {
+                  markPrivateChatAsReadByAdmin(selectedChatCashierUid)
+                }
+              }}
               className={clsx(
-                'px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer',
+                'relative px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer',
                 activeView === 'communications'
                   ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 shadow-md font-black'
                   : 'text-slate-400 hover:text-white'
@@ -256,11 +308,15 @@ export default function AdminCajerosManagementPage() {
             >
               <MessageSquare className="size-3.5" />
               <span>Comunicaciones Staff</span>
-              {staffChat.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-mono">
-                  {staffChat.length}
+              {totalUnreadByAdmin > 0 ? (
+                <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.6)]">
+                  {totalUnreadByAdmin}
                 </span>
-              )}
+              ) : broadcastMessages.length > 0 ? (
+                <span className="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-mono">
+                  {broadcastMessages.length}
+                </span>
+              ) : null}
             </button>
           </div>
 
@@ -484,8 +540,17 @@ export default function AdminCajerosManagementPage() {
             <div className="w-full">
               <CashierDualChatPanel
                 cashiers={cashierList}
-                messages={staffChat}
-                onSendMessage={handleSendStaffMessage}
+                broadcastMessages={broadcastMessages}
+                privateMessages={privateMessages}
+                selectedCashierUid={selectedChatCashierUid}
+                onSelectCashier={(uid) => {
+                  setSelectedChatCashierUid(uid)
+                  markPrivateChatAsReadByAdmin(uid)
+                }}
+                onSendBroadcast={handleSendBroadcast}
+                onSendPrivate={handleSendPrivate}
+                unreadByAdminTotal={totalUnreadByAdmin}
+                unreadByCashierMap={unreadByCashierMap}
               />
             </div>
           </div>

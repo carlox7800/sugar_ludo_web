@@ -24,9 +24,10 @@ export const DEFAULT_ECONOMY_MATRIX: Record<number, EconomyMatrixEntry> = {
   6: { entry: 300, pot: 1800, prizes: [600, 450, 250, 100] },
 }
 
-// In-Memory RAM Cache en el cliente de juego ($0.00 Firestore)
 let liveEconomyMatrix: Record<number, EconomyMatrixEntry> = { ...DEFAULT_ECONOMY_MATRIX }
 let liveCoinPackages: any[] | null = null
+let liveSeasonRanking: any = null
+let liveTournaments: any[] | null = null
 const liveItemPrices = new Map<string, number>()
 let liveFees = { normalFee: 5.0, vipFee: 10.0 }
 let isInitialized = false
@@ -103,6 +104,14 @@ function applyEconomyConfig(config: any) {
     })
   }
 
+  if (config.seasonRanking) {
+    liveSeasonRanking = config.seasonRanking
+  }
+
+  if (Array.isArray(config.tournaments)) {
+    liveTournaments = config.tournaments
+  }
+
   if (typeof config.normalFee === 'number') liveFees.normalFee = config.normalFee
   if (typeof config.vipFee === 'number') liveFees.vipFee = config.vipFee
 
@@ -128,6 +137,16 @@ export function getLiveItemPrice(itemId: string, defaultPrice: number): number {
 export function getLiveWithdrawalFees() {
   initEconomyService()
   return liveFees
+}
+
+export function getLiveSeasonRanking(): any {
+  initEconomyService()
+  return liveSeasonRanking
+}
+
+export function getLiveTournaments(): any[] | null {
+  initEconomyService()
+  return liveTournaments
 }
 
 export function subscribeToEconomyUpdates(cb: () => void): () => void {

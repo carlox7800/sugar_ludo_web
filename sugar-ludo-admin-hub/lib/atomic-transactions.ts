@@ -335,6 +335,64 @@ export async function resolveDisputeCaseAtomics(params: {
         })
         transaction.update(orderRef, { status: 'cancelled', completedAt: now })
       }
+    } else {
+      // Fallback: Buscar directamente en cashier_orders si disputeId corresponde a orderId
+      const orderRef = adminDb.collection('cashier_orders').doc(disputeId)
+      const orderSnap = await transaction.get(orderRef)
+      if (orderSnap.exists) {
+        const orderData = orderSnap.data() || {}
+        const playerRef = adminDb.collection('users').doc(orderData.playerUid || orderData.userId || 'usr_player')
+        const cashierRef = adminDb.collection('cashier_profiles').doc(orderData.cashierUid || 'csh_001')
+        const [playerSnap, cashierSnap] = await Promise.all([
+          transaction.get(playerRef),
+          transaction.get(cashierRef)
+        ])
+        const amountCoins = Number(orderData.amountSugarCoins || 0)
+
+        if (verdict === 'favor_player') {
+          if (playerSnap.exists) {
+            const currentCoins = Number(playerSnap.data()?.coins || 0)
+            transaction.update(playerRef, { coins: currentCoins + amountCoins })
+          }
+          if (cashierSnap.exists) {
+            const currentFloat = Number(cashierSnap.data()?.floatBalanceCoins || 0)
+            transaction.update(cashierRef, { floatBalanceCoins: Math.max(0, currentFloat - amountCoins) })
+          }
+          transaction.update(orderRef, {
+            status: 'completed',
+            disputeStatus: 'resolved_player',
+            resolvedBy: adminName,
+            resolvedAt: now
+          })
+        } else {
+          if (cashierSnap.exists) {
+            const currentFloat = Number(cashierSnap.data()?.floatBalanceCoins || 0)
+            transaction.update(cashierRef, { floatBalanceCoins: currentFloat + amountCoins })
+          }
+          transaction.update(orderRef, {
+            status: 'cancelled',
+            disputeStatus: 'resolved_cashier',
+            resolvedBy: adminName,
+            resolvedAt: now
+          })
+        }
+
+        // Crear registro en dispute_cases para auditoría histórica
+        transaction.set(disputeRef, {
+          id: disputeId,
+          orderId: disputeId,
+          playerUid: orderData.playerUid || orderData.userId,
+          playerName: orderData.playerName || orderData.userName || 'Jugador',
+          cashierUid: orderData.cashierUid || 'csh_001',
+          cashierName: orderData.cashierName || 'Cajero Oficial',
+          amountSugarCoins: amountCoins,
+          status: verdict === 'favor_player' ? 'resolved_player' : 'resolved_cashier',
+          resolvedBy: adminName,
+          resolvedByUid: adminUid,
+          resolvedAt: now,
+          resolutionNotes: resolutionNotes || `Dictamen ejecutado a favor de: ${verdict}`
+        }, { merge: true })
+      }
     }
 
     return {
@@ -430,8 +488,12 @@ export async function completeWithdrawalOrder(params: {
       cashierFloatsUSD: admin.firestore.FieldValue.increment(-netPayoutUSD),
       cashierFloatsCoins: admin.firestore.FieldValue.increment(-netPayoutCoins),
       houseNetProfitsUSD: admin.firestore.FieldValue.increment(withdrawalFeeUSD),
-      houseNetProfitsCoins: admin.firestore.FieldValue.increment(Math.round(withdrawalFeeUSD * 100)),
+      houseNetProfitsCoins: admin.firestore.FieldValue.increment(feeCoins),
       'profitsBreakdown.withdrawalFeesUSD': admin.firestore.FieldValue.increment(withdrawalFeeUSD),
+      'profitsBreakdown.normalWithdrawalFeesUSD': admin.firestore.FieldValue.increment(isVip ? 0 : withdrawalFeeUSD),
+      'profitsBreakdown.vipWithdrawalFeesUSD': admin.firestore.FieldValue.increment(isVip ? withdrawalFeeUSD : 0),
+      'profitsBreakdown.normalWithdrawalFeesCoins': admin.firestore.FieldValue.increment(isVip ? 0 : feeCoins),
+      'profitsBreakdown.vipWithdrawalFeesCoins': admin.firestore.FieldValue.increment(isVip ? feeCoins : 0),
       lastAuditedAt: now
     }, { merge: true })
 

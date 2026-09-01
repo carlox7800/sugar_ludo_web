@@ -11,7 +11,7 @@ import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../../../lib/cashier-logger'
 import { db } from '../../../../lib/firebase'
 import { doc, onSnapshot, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, Eye, Clock, CheckCircle2, AlertTriangle, AlertCircle, Wallet, Send, Check, Copy, RefreshCw, Crown } from 'lucide-react'
+import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, ShieldAlert, Eye, Clock, CheckCircle2, AlertTriangle, AlertCircle, Wallet, Send, Check, Copy, RefreshCw, Crown } from 'lucide-react'
 import { clsx } from 'clsx'
 import { OrdersCache } from '../../../../lib/orders-cache'
 import { useAdminAuth } from '../../../../lib/admin-auth-context'
@@ -69,6 +69,60 @@ export default function OrderDetailPage() {
   const [isDirectValidationModalOpen, setIsDirectValidationModalOpen] = useState(false)
   const [directTxId, setDirectTxId] = useState('')
   const [copiedHash, setCopiedHash] = useState(false)
+  const [disputeReason, setDisputeReason] = useState('')
+  const [isEscalating, setIsEscalating] = useState(false)
+
+  const handleEscalateToDispute = async () => {
+    if (!order || !disputeReason.trim()) return
+    setIsEscalating(true)
+    const now = Date.now()
+    const reason = disputeReason.trim()
+
+    try {
+      // 1. Actualizar orden en Firestore
+      const orderRef = doc(db, 'cashier_orders', order.id)
+      await updateDoc(orderRef, {
+        status: 'disputed',
+        disputeReason: reason,
+        disputedAt: now,
+        disputedBy: currentCashierSession?.name || 'Cajero'
+      })
+
+      // 2. Crear caso de disputa en dispute_cases
+      const disputeRef = doc(db, 'dispute_cases', order.id)
+      await setDoc(disputeRef, {
+        id: order.id,
+        orderId: order.id,
+        orderType: order.type,
+        playerUid: order.playerUid || (order as any).userId || 'usr_player',
+        playerName: order.playerName || (order as any).userName || 'Jugador Sugar',
+        cashierUid: currentCashierSession?.uid || 'csh_001',
+        cashierName: currentCashierSession?.name || 'Cajero Oficial',
+        amountSugarCoins: order.amountSugarCoins,
+        amountFiat: order.amountFiat,
+        currency: order.currency,
+        reason,
+        receiptUrl: order.receiptUrl || '',
+        status: 'open',
+        createdAt: now
+      }, { merge: true })
+
+      // 3. Notificar en chat de orden
+      await handleSendMessage(`⚠️ [ORDEN ESCALADA A DISPUTA]: ${reason}. El caso ha sido remitido al Super Admin para arbitraje final.`)
+
+      setOrder((prev) => (prev ? { ...prev, status: 'disputed' } : null))
+      setIsDisputeOpen(false)
+      setDisputeReason('')
+      setNotification('¡Orden escalada a Disputa oficial ante la Administración!')
+      setTimeout(() => setNotification(null), 4000)
+    } catch (e: any) {
+      console.error('[CashierDispute] Error escalando:', e)
+      setNotification(`Error al escalar: ${e.message}`)
+      setTimeout(() => setNotification(null), 4000)
+    } finally {
+      setIsEscalating(false)
+    }
+  }
 
   // Baseline instant fallback to guarantee immediate UI rendering (<50ms)
   useEffect(() => {
@@ -182,6 +236,7 @@ export default function OrderDetailPage() {
   const isDeposit = order.type === 'deposit'
   const isPaid = order.status === 'paid'
   const isCompleted = order.status === 'completed'
+  const isCancelled = order.status === 'cancelled'
   const isWithdraw = order.type === 'withdraw'
 
   // Saldo flotante real de trabajo del cajero activo
@@ -634,10 +689,10 @@ Conserva este mensaje como comprobante formal de la transacción.`
           </div>
         </div>
 
-        {/* Action Buttons for Validation / Release */}
-        {isDeposit && !isCompleted && (
-          <div className="flex items-center gap-2">
-            {isPaid ? (
+        {/* Action Buttons for Validation / Release & Dispute Escalation */}
+        <div className="flex items-center gap-2">
+          {isDeposit && !isCompleted && !isCancelled && order.status !== 'disputed' && (
+            isPaid ? (
               <button
                 onClick={() => {
                   cashierLogger.click(`Botón Validar y Liberar Saldo (Depósito Pagado)`)
@@ -660,10 +715,44 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 <AlertTriangle className="size-4" />
                 <span>Validar con Hash / TxID</span>
               </button>
-            )}
-          </div>
-        )}
+            )
+          )}
+
+          {!isCompleted && !isCancelled && order.status !== 'disputed' && (
+            <button
+              onClick={() => setIsDisputeOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
+              title="Escalar esta orden a Disputa Oficial ante el Super Admin"
+            >
+              <ShieldAlert className="size-4 text-rose-400" />
+              <span className="hidden sm:inline">Escalar a Disputa</span>
+            </button>
+          )}
+        </div>
       </header>
+
+      {/* Dispute Banner if order is already in dispute */}
+      {order.status === 'disputed' && (
+        <div className="max-w-7xl mx-auto w-full px-6 pt-4">
+          <div className="p-4 rounded-3xl bg-rose-950/85 border border-rose-500 text-rose-200 shadow-[0_0_30px_rgba(244,63,94,0.3)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs font-mono animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/50">
+                <ShieldAlert className="size-6 text-rose-400" />
+              </div>
+              <div>
+                <span className="font-black text-white uppercase block text-sm">CASO EN DISPUTA Y ARBITRAJE OFICIAL</span>
+                <p className="text-[11px] text-rose-200/90">
+                  Motivo: <strong>{(order as any).disputeReason || 'Revisión solicitada por inconsistencia en comprobante o pago'}</strong>.
+                  La orden está en revisión de la Administración.
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1.5 rounded-xl bg-rose-500 text-slate-950 font-black text-xs uppercase tracking-wider">
+              En Arbitraje
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* SLA Countdown & Urgency Banner for Withdrawals */}
       {slaInfo && !isCompleted && (
@@ -1127,6 +1216,79 @@ Conserva este mensaje como comprobante formal de la transacción.`
                   </>
                 ) : (
                   <span>Confirmar Pago y Notificar</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Escalate to Dispute Modal */}
+      {isDisputeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md bg-slate-900 border border-rose-500/50 rounded-3xl p-6 space-y-4 shadow-[0_0_30px_rgba(244,63,94,0.3)]">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-2.5 rounded-2xl bg-rose-500/20 border border-rose-500/40">
+                <ShieldAlert className="size-6 text-rose-400 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-white text-base">Escalar Orden a Disputa Oficial</h3>
+                <p className="text-xs text-slate-400 font-mono">Remitir caso al Super Admin para arbitraje</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300">Motivo de la Disputa:</label>
+              <div className="flex flex-wrap gap-1.5 pb-1">
+                {['Comprobante inconsistente', 'TxID no verificado', 'Datos de billetera erróneos', 'Sospecha de duplicidad'].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setDisputeReason(preset)}
+                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition-all border border-white/5 cursor-pointer"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={disputeReason}
+                onChange={(e) => setDisputeReason(e.target.value)}
+                placeholder="Describe detalladamente la irregularidad o inconsistencia detectada..."
+                rows={3}
+                className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-400"
+              />
+            </div>
+
+            <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-200/90 leading-relaxed font-mono">
+              ⚠️ Al escalar, la orden pasará a estado <strong>DISPUTED</strong> y quedará congelada en custodia hasta que el Super Admin dicte la resolución final.
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDisputeOpen(false)
+                  setDisputeReason('')
+                }}
+                disabled={isEscalating}
+                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleEscalateToDispute}
+                disabled={!disputeReason.trim() || isEscalating}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-400 disabled:opacity-40 text-slate-950 font-black text-xs transition-all cursor-pointer shadow-[0_0_15px_rgba(244,63,94,0.4)] flex items-center justify-center gap-1.5"
+              >
+                {isEscalating ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin" />
+                    <span>Escalando...</span>
+                  </>
+                ) : (
+                  <span>Confirmar y Escalar</span>
                 )}
               </button>
             </div>

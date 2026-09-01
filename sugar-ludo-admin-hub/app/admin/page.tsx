@@ -10,8 +10,9 @@ import { AccordionBlock } from '../../components/ui/AccordionBlock'
 import { TreasuryVault, HouseProfitBreakdown } from '../../types/treasury'
 import { DetailedTelemetry } from '../../types/admin-expanded'
 import { EconomicHardResetModal, EconomicResetOptions } from '../../components/admin/EconomicHardResetModal'
+import { subscribeToAllPrivateChatsMeta } from '../../lib/staff-chat-service'
 import { db } from '../../lib/firebase'
-import { doc, onSnapshot, setDoc, collection, getDocs, query, limit, writeBatch } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc, collection, getDocs, query, limit, writeBatch, getCountFromServer } from 'firebase/firestore'
 import {
   Activity,
   ShieldAlert,
@@ -81,6 +82,16 @@ export default function AdminDashboardPage() {
   const [telemetry, setTelemetry] = useState<DetailedTelemetry>(INITIAL_REAL_TELEMETRY)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [serverPingMs, setServerPingMs] = useState(0)
+  const [unreadStaffMessagesCount, setUnreadStaffMessagesCount] = useState(0)
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const unsubChat = subscribeToAllPrivateChatsMeta((metas) => {
+      const totalUnread = Object.values(metas).reduce((acc, m) => acc + (m.unreadByAdmin || 0), 0)
+      setUnreadStaffMessagesCount(totalUnread)
+    })
+    return () => unsubChat()
+  }, [isAuthenticated])
 
   // Suscripción en tiempo real a 1 solo documento global_ledger (Spark Plan Costo $0.00)
   useEffect(() => {
@@ -117,14 +128,29 @@ export default function AdminDashboardPage() {
           })
 
           if (data.profitsBreakdown) {
+            const normalUSD = data.profitsBreakdown.normalWithdrawalFeesUSD !== undefined
+              ? Number(data.profitsBreakdown.normalWithdrawalFeesUSD)
+              : Number(data.profitsBreakdown.withdrawalFeesUSD || 0)
+            const vipUSD = Number(data.profitsBreakdown.vipWithdrawalFeesUSD || 0)
+            const tournamentUSD = Number(data.profitsBreakdown.tournamentMarginUSD || 0)
+            const cashierOpsUSD = Number(data.profitsBreakdown.cashierOperationsUSD || 0)
+            const rakeUSD = Number(data.profitsBreakdown.tableRakeUSD || 0)
+            const storeUSD = Number(data.profitsBreakdown.storeSalesUSD || 0)
+
             setProfits((prev) => ({
               ...prev,
-              tableRakeUSD: data.profitsBreakdown.tableRakeUSD || 0,
-              tableRakeCoins: Math.round((data.profitsBreakdown.tableRakeUSD || 0) * 100),
-              storeSalesUSD: data.profitsBreakdown.storeSalesUSD || 0,
-              storeSalesCoins: Math.round((data.profitsBreakdown.storeSalesUSD || 0) * 100),
-              normalWithdrawalFeesUSD: data.profitsBreakdown.withdrawalFeesUSD || 0,
-              normalWithdrawalFeesCoins: Math.round((data.profitsBreakdown.withdrawalFeesUSD || 0) * 100),
+              tableRakeUSD: rakeUSD,
+              tableRakeCoins: Math.round(rakeUSD * 100),
+              storeSalesUSD: storeUSD,
+              storeSalesCoins: Math.round(storeUSD * 100),
+              tournamentMarginUSD: tournamentUSD,
+              tournamentMarginCoins: Math.round(tournamentUSD * 100),
+              cashierOperationsUSD: cashierOpsUSD,
+              cashierOperationsCoins: Math.round(cashierOpsUSD * 100),
+              normalWithdrawalFeesUSD: normalUSD,
+              normalWithdrawalFeesCoins: Math.round(normalUSD * 100),
+              vipWithdrawalFeesUSD: vipUSD,
+              vipWithdrawalFeesCoins: Math.round(vipUSD * 100),
               totalProfitUSD: houseNetProfitsUSD,
               totalProfitCoins: houseNetProfitsCoins
             }))
@@ -154,8 +180,37 @@ export default function AdminDashboardPage() {
       })
     } catch {}
 
+    let unsubTelemetry: (() => void) | null = null
+    try {
+      const telRef = doc(db, 'system_treasury', 'live_telemetry')
+      unsubTelemetry = onSnapshot(telRef, (tSnap) => {
+        if (tSnap.exists()) {
+          const tData = tSnap.data()
+          const pLobby = Math.max(0, Number(tData.playersInLobby || 0))
+          const pAI = Math.max(0, Number(tData.playersInAITraining || 0))
+          const pOnline = Math.max(0, Number(tData.playersInOnlineTraining || 0))
+          const pComp = Math.max(0, Number(tData.playersInCompetitive || 0))
+          const totalOnline = pLobby + pAI + pOnline + pComp
+          const rooms = Math.max(0, Number(tData.activeMatchRooms || Math.ceil((pOnline + pComp) / 2)))
+
+          setTelemetry((prev) => ({
+            ...prev,
+            playersInLobby: pLobby,
+            playersInAITraining: pAI,
+            playersInOnlineTraining: pOnline,
+            playersInCompetitive: pComp,
+            totalOnlinePlayers: totalOnline,
+            activeMatchRooms: rooms,
+            serverStatus: 'online',
+            updatedAt: tData.updatedAt || Date.now()
+          }))
+        }
+      })
+    } catch {}
+
     return () => {
       if (unsubLedger) unsubLedger()
+      if (unsubTelemetry) unsubTelemetry()
     }
   }, [isAuthenticated, cashierList])
 
@@ -164,7 +219,20 @@ export default function AdminDashboardPage() {
     setIsRefreshing(true)
     const startTime = Date.now()
     try {
-      // 1. Telemetría real del servidor
+      // 1. Conteo real de usuarios registrados en Firestore (Spark $0.00)
+      try {
+        const userCountSnap = await getCountFromServer(collection(db, 'users'))
+        const realCount = userCountSnap.data().count
+        setTelemetry((prev) => ({
+          ...prev,
+          totalRegisteredUsers: realCount,
+          totalDownloadsCount: Math.max(realCount, prev.totalDownloadsCount || realCount)
+        }))
+      } catch (err) {
+        console.warn('[AdminTelemetry] Error leyendo conteo de usuarios:', err)
+      }
+
+      // 2. Ping de latencia y estado
       const res = await fetch('/api/telemetry')
       const ping = Date.now() - startTime
       setServerPingMs(ping)
@@ -172,7 +240,12 @@ export default function AdminDashboardPage() {
       if (res.ok) {
         const data = await res.json()
         if (data.telemetry) {
-          setTelemetry(data.telemetry)
+          setTelemetry((prev) => ({
+            ...prev,
+            serverLatencyMs: ping,
+            totalRegisteredUsers: prev.totalRegisteredUsers || data.telemetry.totalRegisteredUsers,
+            totalDownloadsCount: Math.max(prev.totalRegisteredUsers || 0, data.telemetry.totalDownloadsCount || 0)
+          }))
         }
       }
 
@@ -585,10 +658,15 @@ export default function AdminDashboardPage() {
           {/* 2. Gestión Cajeros */}
           <Link
             href="/admin/cajeros"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all"
+            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all"
           >
             <Users className="size-3.5" />
             <span>Gestión Cajeros</span>
+            {unreadStaffMessagesCount > 0 && (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.6)]">
+                {unreadStaffMessagesCount}
+              </span>
+            )}
           </Link>
 
           {/* 3. Disputas */}

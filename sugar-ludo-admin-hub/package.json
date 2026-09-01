@@ -1,6 +1,6 @@
 {
   "name": "sugar-ludo-admin-hub",
-  "version": "8.7.0",
+  "version": "8.8.0",
   "private": true,
   "description": "Plataforma Web Maestra y Sistema de Cajeros Descentralizados para Sugar Ludo",
   "scripts": {

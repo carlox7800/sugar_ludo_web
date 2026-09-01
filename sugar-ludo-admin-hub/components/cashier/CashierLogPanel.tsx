@@ -43,7 +43,7 @@ export function CashierLogPanel() {
     })
     cashierLogger.action('Verificación de Integridad de Logs', {
       sistema: 'Sugar Ludo Admin Hub',
-      version: '8.7.0'
+      version: '8.8.0'
     })
   }
 

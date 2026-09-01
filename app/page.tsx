@@ -42,6 +42,7 @@ import {
   respondToRealtimeDuelInvite,
   clearIncomingDuelInvite
 } from '@/lib/friends-service'
+import { initPresenceTracker, updatePlayerTelemetryState, mapScreenToTelemetryState } from '@/lib/presence-service'
 
 export type Screen =
   | 'landing'
@@ -83,12 +84,17 @@ function PageContent() {
       } else {
         document.documentElement.classList.remove('theme-sugar')
       }
+      initPresenceTracker('landing')
     }
   }, [])
   
   // Decide initial screen based on PWA environment and Auth
   const [screen, setScreen] = useState<Screen>('landing')
   const screenRef = useRef<Screen>('landing')
+  const [config, setConfig] = useState<GameConfig | null>(null)
+  const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
+  const [onlineGameOrigin, setOnlineGameOrigin] = useState<Screen>('lobby')
+
   const setScreenAndRef = (s: Screen) => {
     globalLogger.nav(screenRef.current, s)
     if (s !== 'online-game' && s !== 'online-training' && (screenRef.current === 'online-game' || screenRef.current === 'online-training')) {
@@ -96,10 +102,8 @@ function PageContent() {
     }
     screenRef.current = s
     setScreen(s)
+    updatePlayerTelemetryState(mapScreenToTelemetryState(s, onlineGameOrigin))
   }
-  const [config, setConfig] = useState<GameConfig | null>(null)
-  const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
-  const [onlineGameOrigin, setOnlineGameOrigin] = useState<Screen>('lobby')
   
   // UI States
   const [isProfileOpen, setIsProfileOpen] = useState(false)

@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
-import { MOCK_DISPUTE_CASES as MOCK_DISPUTES } from '../../../lib/mock-treasury'
+import { db } from '../../../lib/firebase'
+import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { DisputeCase } from '../../../types/treasury'
 import {
   ArrowLeft,
@@ -17,7 +18,8 @@ import {
   ExternalLink,
   ShieldCheck,
   User,
-  LogOut
+  LogOut,
+  RefreshCw
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -25,14 +27,54 @@ export default function DisputasAdminPage() {
   const router = useRouter()
   const { adminUser, isAuthenticated, isLoading, logout } = useAdminAuth()
 
-  const [disputes, setDisputes] = useState<DisputeCase[]>(MOCK_DISPUTES)
+  const [disputes, setDisputes] = useState<DisputeCase[]>([])
   const [notification, setNotification] = useState<string | null>(null)
+  const [resolvingId, setResolvingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isLoading && (!isAuthenticated || !adminUser)) {
       router.push('/')
     }
   }, [isLoading, isAuthenticated, adminUser, router])
+
+  // Suscripción en tiempo real a casos de disputa en Firestore
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    try {
+      const q = query(collection(db, 'dispute_cases'), limit(50))
+      const unsub = onSnapshot(q, (snap) => {
+        const liveDisputes: DisputeCase[] = snap.docs.map((d) => {
+          const data = d.data()
+          return {
+            id: d.id,
+            orderId: data.orderId || d.id,
+            type: (data.orderType || data.type || 'deposit') as 'deposit' | 'withdraw',
+            playerUid: data.playerUid || 'usr_player',
+            playerName: data.playerName || 'Jugador Sugar',
+            cashierUid: data.cashierUid || 'csh_001',
+            cashierName: data.cashierName || 'Cajero Oficial',
+            amountFiat: Number(data.amountFiat || (Number(data.amountSugarCoins || 0) / 100)),
+            currency: data.currency || 'USDT',
+            amountSugarCoins: Number(data.amountSugarCoins || 0),
+            reason: data.reason || 'Revisión solicitada por inconsistencia',
+            openedBy: (data.openedBy || 'cashier') as 'player' | 'cashier',
+            openedAt: Number(data.createdAt || data.openedAt || Date.now()),
+            evidenceReceiptUrl: data.receiptUrl || data.evidenceReceiptUrl,
+            status: (data.status || 'open') as any,
+            resolvedBy: data.resolvedBy,
+            resolvedAt: data.resolvedAt,
+            resolutionNotes: data.resolutionNotes
+          }
+        })
+        setDisputes(liveDisputes)
+      }, (err) => {
+        console.warn('[Disputas] Error en listener de dispute_cases:', err)
+      })
+
+      return () => unsub()
+    } catch {}
+  }, [isAuthenticated])
 
   const handleLogout = () => {
     logout()
@@ -48,73 +90,67 @@ export default function DisputasAdminPage() {
   }
 
   const handleResolvePlayer = async (disputeId: string) => {
-    if (!adminUser) return
-    setDisputes((prev) =>
-      prev.map((d) =>
-        d.id === disputeId
-          ? {
-              ...d,
-              status: 'resolved_player',
-              resolvedBy: adminUser.displayName,
-              resolvedAt: Date.now(),
-              resolutionNotes: 'Dictamen favorable para el jugador. Fondos acreditados.'
-            }
-          : d
-      )
-    )
-    setNotification('Dictamen ejecutado: Saldo acreditado al jugador atómicamente.')
+    if (!adminUser || resolvingId) return
+    setResolvingId(disputeId)
 
     try {
-      await fetch('/api/disputes/resolve', {
+      const res = await fetch('/api/disputes/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           disputeId,
           verdict: 'favor_player',
           adminUid: adminUser.uid,
-          adminName: adminUser.displayName
+          adminName: adminUser.displayName || 'Super Admin',
+          resolutionNotes: 'Dictamen favorable emitido por el Super Admin. Fondos acreditados al jugador.'
         })
       })
-    } catch (e) {
-      console.warn('[Disputas] API sync error:', e)
-    }
 
-    setTimeout(() => setNotification(null), 4000)
+      if (res.ok) {
+        setNotification('✅ Dictamen ejecutado: Saldo acreditado al jugador atómicamente.')
+      } else {
+        const data = await res.json()
+        setNotification(`❌ Error: ${data.error || 'No se pudo procesar dictamen'}`)
+      }
+    } catch (e: any) {
+      console.warn('[Disputas] API sync error:', e)
+      setNotification(`❌ Error de conexión: ${e.message}`)
+    } finally {
+      setResolvingId(null)
+      setTimeout(() => setNotification(null), 4000)
+    }
   }
 
   const handleResolveCashier = async (disputeId: string) => {
-    if (!adminUser) return
-    setDisputes((prev) =>
-      prev.map((d) =>
-        d.id === disputeId
-          ? {
-              ...d,
-              status: 'resolved_cashier',
-              resolvedBy: adminUser.displayName,
-              resolvedAt: Date.now(),
-              resolutionNotes: 'Dictamen a favor del cajero. Fondos desbloqueados de garantía.'
-            }
-          : d
-      )
-    )
-    setNotification('Dictamen ejecutado: Orden cancelada y saldo de garantía liberado al cajero.')
+    if (!adminUser || resolvingId) return
+    setResolvingId(disputeId)
 
     try {
-      await fetch('/api/disputes/resolve', {
+      const res = await fetch('/api/disputes/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           disputeId,
           verdict: 'favor_cashier',
           adminUid: adminUser.uid,
-          adminName: adminUser.displayName
+          adminName: adminUser.displayName || 'Super Admin',
+          resolutionNotes: 'Dictamen favorable emitido por el Super Admin para el cajero. Fondos de garantía desbloqueados.'
         })
       })
-    } catch (e) {
-      console.warn('[Disputas] API sync error:', e)
-    }
 
-    setTimeout(() => setNotification(null), 4000)
+      if (res.ok) {
+        setNotification('✅ Dictamen ejecutado: Orden cancelada y saldo liberado al cajero.')
+      } else {
+        const data = await res.json()
+        setNotification(`❌ Error: ${data.error || 'No se pudo procesar dictamen'}`)
+      }
+    } catch (e: any) {
+      console.warn('[Disputas] API sync error:', e)
+      setNotification(`❌ Error de conexión: ${e.message}`)
+    } finally {
+      setResolvingId(null)
+      setTimeout(() => setNotification(null), 4000)
+    }
   }
 
   return (
@@ -262,16 +298,20 @@ export default function DisputasAdminPage() {
                     ) : (
                       <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
                         <button
+                          disabled={resolvingId === caseItem.id}
                           onClick={() => handleResolveCashier(caseItem.id)}
-                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                         >
-                          Dictaminar a Favor del Cajero
+                          {resolvingId === caseItem.id ? <RefreshCw className="size-3 animate-spin" /> : null}
+                          <span>Dictaminar a Favor del Cajero</span>
                         </button>
                         <button
+                          disabled={resolvingId === caseItem.id}
                           onClick={() => handleResolvePlayer(caseItem.id)}
-                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-slate-950 text-xs font-black transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] cursor-pointer"
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 disabled:opacity-50 text-slate-950 text-xs font-black transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] cursor-pointer flex items-center gap-1.5"
                         >
-                          Acreditar al Jugador (Dictamen Favorable)
+                          {resolvingId === caseItem.id ? <RefreshCw className="size-3 animate-spin" /> : null}
+                          <span>Acreditar al Jugador (Dictamen Favorable)</span>
                         </button>
                       </div>
                     )}

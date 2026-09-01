@@ -158,9 +158,9 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
           <div className="p-4 rounded-2xl bg-cyan-500/5 border border-cyan-500/20 space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-cyan-300 uppercase font-bold">Fee Retiro Normal (5%)</span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">72h</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold">hasta 48h</span>
             </div>
-            <p className="text-base font-black text-cyan-300 font-mono">${profits.normalWithdrawalFeesUSD.toLocaleString()}</p>
+            <p className="text-base font-black text-cyan-300 font-mono">${profits.normalWithdrawalFeesUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             <p className="text-[10px] text-cyan-400/80 font-mono">+{profits.normalWithdrawalFeesCoins.toLocaleString()} SC</p>
           </div>
 
@@ -168,9 +168,9 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
           <div className="p-4 rounded-2xl bg-pink-500/5 border border-pink-500/20 space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-pink-300 uppercase font-bold">Fee Retiro VIP (10%)</span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded bg-pink-500/20 text-pink-300 font-mono">24h</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-300 font-mono font-bold">hasta 12h</span>
             </div>
-            <p className="text-base font-black text-pink-300 font-mono">${profits.vipWithdrawalFeesUSD.toLocaleString()}</p>
+            <p className="text-base font-black text-pink-300 font-mono">${profits.vipWithdrawalFeesUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             <p className="text-[10px] text-pink-400/80 font-mono">+{profits.vipWithdrawalFeesCoins.toLocaleString()} SC</p>
           </div>
 

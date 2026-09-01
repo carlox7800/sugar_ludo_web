@@ -36,6 +36,7 @@ import {
   fetchActiveTournaments, 
   registerUserInTournament 
 } from '@/lib/tournaments-service'
+import { getLiveSeasonRanking, subscribeToEconomyUpdates } from '@/lib/economy-service'
 
 function renderAvatar(avatar?: string, className = "size-full object-cover rounded-full") {
   if (!avatar) return '🎲'
@@ -61,6 +62,14 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
   const [resetTimes, setResetTimes] = useState(getMissionResetTimes())
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null)
+  const [seasonRankingConfig, setSeasonRankingConfig] = useState<any>(getLiveSeasonRanking())
+
+  useEffect(() => {
+    const unsub = subscribeToEconomyUpdates(() => {
+      setSeasonRankingConfig(getLiveSeasonRanking())
+    })
+    return () => unsub()
+  }, [])
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -425,6 +434,34 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
       {/* TAB 3: CLASIFICACIÓN (LEADERBOARD) */}
       {activeTab === 'leaderboard' && (
         <div className="flex flex-col gap-6 animate-in fade-in">
+          {/* Banner Oficial de Temporada Configurada */}
+          {seasonRankingConfig && (
+            <div className="glass p-4 sm:p-5 rounded-3xl border border-[var(--candy-gold)]/40 bg-[linear-gradient(135deg,rgba(245,158,11,0.18),rgba(147,51,234,0.12))] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-amber-500/25 text-amber-300 border border-amber-500/40 shrink-0">
+                  <Crown className="size-6 text-amber-400 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="font-display text-sm sm:text-base font-black text-white flex items-center gap-2">
+                    <span>{seasonRankingConfig.seasonName || 'Temporada Oficial Sugar Ludo'}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      En Curso
+                    </span>
+                  </h4>
+                  <p className="text-slate-300 text-[11px] font-mono mt-0.5">
+                    Período: {seasonRankingConfig.startDate || 'Inicio de mes'} &bull; Fin: {seasonRankingConfig.endDate || 'Fin de mes'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3.5 py-2 rounded-2xl bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-black text-xs flex items-center gap-1.5 shadow-sm">
+                  <Trophy className="size-4 text-amber-400" />
+                  <span>Pozo: {(seasonRankingConfig.prizePoolSC || 50000).toLocaleString()} SC</span>
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Tarjeta de Posición del Jugador */}
           {(() => {
             const myUser = leaderboard.find(u => u.isCurrentUser) || {

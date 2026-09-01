@@ -1,6 +1,7 @@
 import { db } from './firebase'
 import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, increment } from 'firebase/firestore'
 import { recordWalletTransaction } from './wallet-service'
+import { getLiveTournaments } from './economy-service'
 
 export interface Tournament {
   id: string
@@ -83,6 +84,28 @@ export async function fetchActiveTournaments(): Promise<Tournament[]> {
   } catch (error) {
     console.warn('Error fetching tournaments from Firestore, using default catalog:', error)
   }
+
+  // Verificar si hay torneos configurados en la economía en vivo
+  try {
+    const liveTours = getLiveTournaments()
+    if (liveTours && liveTours.length > 0) {
+      return liveTours.map((t: any, idx: number) => ({
+        id: t.id || `tour_cfg_${idx}`,
+        title: t.title || t.name || 'Torneo Oficial',
+        subtitle: t.subtitle || 'Torneo configurado por Administración',
+        badge: t.badge || 'Inscripción Abierta',
+        potSC: Number(t.potSC || t.prizePoolSC || 50000),
+        entryFeeSC: Number(t.entryFeeSC || 250),
+        endDate: t.endDate || 'Próximamente',
+        playersRegistered: Number(t.playersRegistered || 0),
+        maxPlayers: Number(t.maxPlayers || 128),
+        bannerGradient: t.bannerGradient || 'linear-gradient(135deg, oklch(0.7 0.27 350 / 0.4), oklch(0.14 0.04 45 / 0.8))',
+        accentColor: t.accentColor || 'var(--candy-magenta)',
+        rules: t.rules || 'Reglas oficiales de torneo Sugar Ludo',
+        isActive: t.isActive !== false
+      }))
+    }
+  } catch {}
 
   return DEFAULT_TOURNAMENTS
 }
