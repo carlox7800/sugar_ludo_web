@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import React, { useState } from 'react'
 import {
@@ -22,6 +22,7 @@ export interface EconomicResetOptions {
   scope: ResetScope
   purgeOrdersHistory: boolean
   purgeShiftLedger: boolean
+  resetTelemetryMetrics: boolean
 }
 
 interface EconomicHardResetModalProps {
@@ -47,6 +48,7 @@ export function EconomicHardResetModal({
   const [confirmInput, setConfirmInput] = useState('')
   const [purgeOrdersHistory, setPurgeOrdersHistory] = useState(true)
   const [purgeShiftLedger, setPurgeShiftLedger] = useState(true)
+  const [resetTelemetryMetrics, setResetTelemetryMetrics] = useState(true)
 
   if (!isOpen) return null
 
@@ -57,7 +59,8 @@ export function EconomicHardResetModal({
     await onExecuteReset({
       scope: selectedScope,
       purgeOrdersHistory: selectedScope === 'total_hard_reset' ? purgeOrdersHistory : false,
-      purgeShiftLedger: selectedScope === 'total_hard_reset' || selectedScope === 'cashiers_only' ? purgeShiftLedger : false
+      purgeShiftLedger: selectedScope === 'total_hard_reset' || selectedScope === 'cashiers_only' ? purgeShiftLedger : false,
+      resetTelemetryMetrics
     })
     setConfirmInput('')
     onClose()
@@ -224,6 +227,17 @@ export function EconomicHardResetModal({
                   />
                   <span className="text-slate-300 font-mono text-[11px]">
                     Limpiar registros del libro de turnos y arqueos (<code className="text-cyan-300">cashier_shifts_ledger</code>)
+                  </span>
+                </label>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={resetTelemetryMetrics}
+                    onChange={(e) => setResetTelemetryMetrics(e.target.checked)}
+                    className="size-4 rounded accent-cyan-500 cursor-pointer"
+                  />
+                  <span className="text-slate-300 font-mono text-[11px]">
+                    Reiniciar contadores de telemetría y métricas en vivo (<code className="text-cyan-300">system_treasury/live_telemetry</code>)
                   </span>
                 </label>
               </div>

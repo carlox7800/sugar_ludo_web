@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { MessageSquare, X, Send, ShieldCheck, UserCheck } from 'lucide-react'
+import { MessageSquare, X, Send, ShieldCheck, UserCheck, RefreshCw, AlertCircle } from 'lucide-react'
 import { StaffChatMessage } from '../../types/admin-expanded'
 import {
   subscribeToCashierPrivateMessages,
@@ -45,13 +45,15 @@ export function CashierAdminChatModal({ isOpen, onClose, cashierUid, cashierName
 
   if (!isOpen) return null
 
+  const [sendError, setSendError] = useState<string | null>(null)
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!inputText.trim() || isSending) return
 
     const textToSend = inputText.trim()
-    setInputText('')
     setIsSending(true)
+    setSendError(null)
 
     try {
       await sendPrivateMessage({
@@ -62,8 +64,11 @@ export function CashierAdminChatModal({ isOpen, onClose, cashierUid, cashierName
         cashierName: cashierName || 'Cajero Oficial',
         text: textToSend
       })
-    } catch (err) {
+      setInputText('')
+    } catch (err: any) {
       console.error('[CashierChatModal] Error al enviar mensaje:', err)
+      setSendError(`Error al enviar mensaje: ${err.message || 'Sin permisos en Firebase'}`)
+      setTimeout(() => setSendError(null), 6000)
     } finally {
       setIsSending(false)
     }
@@ -138,21 +143,30 @@ export function CashierAdminChatModal({ isOpen, onClose, cashierUid, cashierName
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Error Alert */}
+        {sendError && (
+          <div className="px-3 py-1.5 bg-rose-500/20 border-t border-rose-500/30 text-rose-300 text-[11px] font-mono flex items-center gap-1.5">
+            <AlertCircle className="size-3.5 shrink-0 text-rose-400" />
+            <span className="truncate">{sendError}</span>
+          </div>
+        )}
+
         {/* Input */}
         <form onSubmit={handleSend} className="p-3 bg-slate-950/90 border-t border-white/10 flex items-center gap-2">
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
+            disabled={isSending}
             placeholder="Escribir mensaje en vivo al Super Admin..."
-            className="flex-1 bg-slate-800 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 font-sans"
+            className="flex-1 bg-slate-800 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 font-sans disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!inputText.trim() || isSending}
-            className="p-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold transition-all cursor-pointer shadow-md"
+            className="p-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold transition-all cursor-pointer shadow-md flex items-center justify-center min-w-[36px]"
           >
-            <Send className="size-4" />
+            {isSending ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}
           </button>
         </form>
       </div>

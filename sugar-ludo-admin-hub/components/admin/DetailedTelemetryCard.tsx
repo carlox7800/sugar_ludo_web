@@ -2,13 +2,14 @@
 
 import React from 'react'
 import { DetailedTelemetry } from '../../types/admin-expanded'
-import { Download, Users, Bot, Globe, Trophy, Compass, Wifi } from 'lucide-react'
+import { Download, Users, Bot, Globe, Trophy, Compass, Wifi, RotateCcw } from 'lucide-react'
 
 interface DetailedTelemetryCardProps {
   telemetry: DetailedTelemetry
+  onResetTelemetry?: () => void
 }
 
-export function DetailedTelemetryCard({ telemetry }: DetailedTelemetryCardProps) {
+export function DetailedTelemetryCard({ telemetry, onResetTelemetry }: DetailedTelemetryCardProps) {
   const total = telemetry.totalOnlinePlayers || 1
   const lobbyPct = Math.round((telemetry.playersInLobby / total) * 100)
   const aiPct = Math.round((telemetry.playersInAITraining / total) * 100)
@@ -31,7 +32,7 @@ export function DetailedTelemetryCard({ telemetry }: DetailedTelemetryCardProps)
           </div>
         </div>
 
-        <div className="flex items-center gap-4 bg-slate-950/80 px-4 py-2 rounded-2xl border border-white/5 text-xs">
+        <div className="flex flex-wrap items-center gap-3 bg-slate-950/80 px-4 py-2 rounded-2xl border border-white/5 text-xs">
           <div>
             <span className="text-[10px] text-slate-400 uppercase font-bold block">Usuarios Registrados</span>
             <span className="font-mono font-bold text-white text-sm">{telemetry.totalRegisteredUsers.toLocaleString()}</span>
@@ -41,6 +42,20 @@ export function DetailedTelemetryCard({ telemetry }: DetailedTelemetryCardProps)
             <Wifi className="size-4" />
             <span>{telemetry.serverLatencyMs} ms</span>
           </div>
+          {onResetTelemetry && (
+            <>
+              <div className="h-6 w-px bg-white/10" />
+              <button
+                type="button"
+                onClick={onResetTelemetry}
+                className="px-2.5 py-1 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[11px] font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Restablecer contadores de presencia a 0 durante pruebas de QA"
+              >
+                <RotateCcw className="size-3" />
+                <span>Resetear Telemetría</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

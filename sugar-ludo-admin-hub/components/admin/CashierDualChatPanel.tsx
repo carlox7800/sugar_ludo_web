@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { StaffChatMessage, CashierManagementProfile } from '../../types/admin-expanded'
-import { MessageSquare, Send, ShieldCheck, UserCheck, Radio, Lock, Users, Bell } from 'lucide-react'
+import { MessageSquare, Send, ShieldCheck, UserCheck, Radio, Lock, Users, Bell, RefreshCw, AlertCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 
 interface CashierDualChatPanelProps {
@@ -11,8 +11,8 @@ interface CashierDualChatPanelProps {
   privateMessages: StaffChatMessage[]
   selectedCashierUid: string
   onSelectCashier: (uid: string) => void
-  onSendBroadcast: (text: string) => void
-  onSendPrivate: (text: string, cashierUid: string) => void
+  onSendBroadcast: (text: string) => Promise<void> | void
+  onSendPrivate: (text: string, cashierUid: string) => Promise<void> | void
   unreadByAdminTotal?: number
   unreadByCashierMap?: Record<string, number>
 }
@@ -30,6 +30,8 @@ export function CashierDualChatPanel({
 }: CashierDualChatPanelProps) {
   const [chatMode, setChatMode] = useState<'broadcast' | 'private'>('broadcast')
   const [inputText, setInputText] = useState('')
+  const [isSending, setIsSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const activeMessages = chatMode === 'broadcast' ? broadcastMessages : privateMessages
@@ -38,19 +40,32 @@ export function CashierDualChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [activeMessages, chatMode, selectedCashierUid])
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!inputText.trim()) return
+    const text = inputText.trim()
+    if (!text || isSending) return
 
-    if (chatMode === 'broadcast') {
-      onSendBroadcast(inputText.trim())
-    } else {
-      if (!selectedCashierUid && cashiers.length > 0) {
-        onSelectCashier(cashiers[0].uid)
+    setIsSending(true)
+    setSendError(null)
+
+    try {
+      if (chatMode === 'broadcast') {
+        await onSendBroadcast(text)
+      } else {
+        const targetUid = selectedCashierUid || (cashiers.length > 0 ? cashiers[0].uid : '')
+        if (!selectedCashierUid && cashiers.length > 0) {
+          onSelectCashier(cashiers[0].uid)
+        }
+        await onSendPrivate(text, targetUid)
       }
-      onSendPrivate(inputText.trim(), selectedCashierUid || cashiers[0]?.uid)
+      setInputText('')
+    } catch (err: any) {
+      console.error('[CashierDualChatPanel] Error enviando:', err)
+      setSendError(`Error al enviar mensaje: ${err.message || 'Sin permisos en Firebase'}`)
+      setTimeout(() => setSendError(null), 6000)
+    } finally {
+      setIsSending(false)
     }
-    setInputText('')
   }
 
   const selectedCashier = cashiers.find((c) => c.uid === selectedCashierUid) || cashiers[0]
@@ -201,21 +216,30 @@ export function CashierDualChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Error Alert */}
+      {sendError && (
+        <div className="px-3 py-1.5 bg-rose-500/20 border-t border-rose-500/30 text-rose-300 text-[11px] font-mono flex items-center gap-1.5">
+          <AlertCircle className="size-3.5 shrink-0 text-rose-400" />
+          <span className="truncate">{sendError}</span>
+        </div>
+      )}
+
       {/* Input */}
       <form onSubmit={handleSend} className="p-3 bg-slate-950/90 border-t border-white/10 flex items-center gap-2">
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
+          disabled={isSending}
           placeholder={chatMode === 'broadcast' ? 'Enviar comunicado oficial a todos los cajeros...' : `Mensaje privado a ${selectedCashier?.name || 'Cajero'}...`}
-          className="flex-1 bg-slate-800 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"
+          className="flex-1 bg-slate-800 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 disabled:opacity-50"
         />
         <button
           type="submit"
-          disabled={!inputText.trim()}
-          className="p-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold transition-all cursor-pointer shadow-md"
+          disabled={!inputText.trim() || isSending}
+          className="p-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold transition-all cursor-pointer shadow-md flex items-center justify-center min-w-[36px]"
         >
-          <Send className="size-4" />
+          {isSending ? <RefreshCw className="size-4 animate-spin" /> : <Send className="size-4" />}
         </button>
       </form>
     </div>

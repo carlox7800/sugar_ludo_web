@@ -74,6 +74,8 @@ export interface SeasonRankingConfig {
   seasonName: string              // 'Temporada 1 - Galáctica'
   durationDays: number            // 7 días por ciclo semanal
   timeRemainingFormatted: string  // '3d 14h restantes'
+  seasonStartedAt?: number        // timestamp unix ms
+  endTimestamp?: number           // timestamp unix ms
   isActive: boolean
   
   // Recompensas para los 3 primeros lugares del ranking global

@@ -63,13 +63,43 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null)
   const [seasonRankingConfig, setSeasonRankingConfig] = useState<any>(getLiveSeasonRanking())
+  const [liveSeasonCountdown, setLiveSeasonCountdown] = useState('')
 
   useEffect(() => {
     const unsub = subscribeToEconomyUpdates(() => {
       setSeasonRankingConfig(getLiveSeasonRanking())
+      fetchActiveTournaments().then(setTournaments).catch(() => {})
     })
     return () => unsub()
   }, [])
+
+  useEffect(() => {
+    const updateSeasonCountdown = () => {
+      const now = Date.now()
+      let remainingMs = 0
+      const end = seasonRankingConfig?.endTimestamp
+      if (end && end > now) {
+        remainingMs = end - now
+      } else {
+        const nowDate = new Date()
+        const dayOfWeek = nowDate.getUTCDay()
+        const daysUntilSunday = (7 - dayOfWeek) % 7 || 7
+        const nextSundayUTC = new Date(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), nowDate.getUTCDate() + daysUntilSunday, 0, 0, 0))
+        remainingMs = Math.max(0, nextSundayUTC.getTime() - now)
+      }
+
+      const d = Math.floor(remainingMs / 86400000)
+      const h = Math.floor((remainingMs % 86400000) / 3600000)
+      const m = Math.floor((remainingMs % 3600000) / 60000)
+      const s = Math.floor((remainingMs % 60000) / 1000)
+
+      setLiveSeasonCountdown(d > 0 ? `${d}d ${h}h ${m}m restantes` : `${h}h ${m}m ${s}s restantes`)
+    }
+
+    updateSeasonCountdown()
+    const timer = setInterval(updateSeasonCountdown, 1000)
+    return () => clearInterval(timer)
+  }, [seasonRankingConfig?.endTimestamp])
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -180,8 +210,12 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
           <div className="flex items-center gap-2 rounded-2xl border border-[var(--candy-orange)]/40 bg-[oklch(0_0_0/0.4)] px-3 py-1.5 shadow-inner">
             <Clock className="size-4 text-[var(--candy-orange)] animate-pulse" />
             <div className="flex flex-col">
-              <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Temporada 1</span>
-              <span className="font-display text-xs font-black text-foreground">{resetTimes.weeklyFormatted}</span>
+              <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">
+                {seasonRankingConfig?.seasonName || `Temporada ${seasonRankingConfig?.seasonNumber || 1}`}
+              </span>
+              <span className="font-display text-xs font-black text-foreground">
+                {liveSeasonCountdown || resetTimes.weeklyFormatted}
+              </span>
             </div>
           </div>
         </div>
@@ -407,6 +441,13 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
                           {tour.playersRegistered} / {tour.maxPlayers} Jugadores
                         </span>
                       </div>
+
+                      {/* Premios de Podio en Tarjeta */}
+                      <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px] font-mono font-bold">
+                        <span className="text-amber-300 flex items-center gap-1">🥇 1°: {Math.round((tour.potSC * (tour.firstPlacePct || 50)) / 100).toLocaleString()} SC</span>
+                        <span className="text-slate-300 flex items-center gap-1">🥈 2°: {Math.round((tour.potSC * (tour.secondPlacePct || 30)) / 100).toLocaleString()} SC</span>
+                        <span className="text-amber-500 flex items-center gap-1">🥉 3°: {Math.round((tour.potSC * (tour.thirdPlacePct || 20)) / 100).toLocaleString()} SC</span>
+                      </div>
                     </div>
                   </div>
 
@@ -449,7 +490,7 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
                     </span>
                   </h4>
                   <p className="text-slate-300 text-[11px] font-mono mt-0.5">
-                    Período: {seasonRankingConfig.startDate || 'Inicio de mes'} &bull; Fin: {seasonRankingConfig.endDate || 'Fin de mes'}
+                    {seasonRankingConfig.seasonName || `Temporada ${seasonRankingConfig.seasonNumber || 1}`} &bull; {liveSeasonCountdown || resetTimes.weeklyFormatted}
                   </p>
                 </div>
               </div>
@@ -706,17 +747,53 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
               {selectedTournament.subtitle}
             </p>
 
-            <div className="flex flex-col gap-2 bg-black/30 rounded-2xl p-4 border border-white/10 text-xs text-left">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Reglas:</span>
-                <span className="font-bold text-white">{selectedTournament.rules}</span>
+            <div className="flex flex-col gap-2.5 bg-black/40 rounded-2xl p-4 border border-white/10 text-xs text-left">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Pozo Total:</span>
+                <span className="font-display font-black text-amber-300 text-sm flex items-center gap-1">
+                  {selectedTournament.potSC.toLocaleString()} <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" /> (${(selectedTournament.potSC / 100).toFixed(2)} USDT)
+                </span>
               </div>
-              <div className="flex justify-between">
+
+              <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Costo de Entrada:</span>
-                <span className="font-bold text-[var(--candy-gold)]">{selectedTournament.entryFeeSC} Sugar Coins</span>
+                <span className="font-bold text-white">{selectedTournament.entryFeeSC} SC (${(selectedTournament.entryFeeSC / 100).toFixed(2)} USDT)</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Tu Saldo:</span>
+
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Cupos de Jugadores:</span>
+                <span className="font-bold text-emerald-400">{selectedTournament.playersRegistered} / {selectedTournament.maxPlayers} Inscritos</span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Duración / Estado:</span>
+                <span className="font-bold text-cyan-300">{selectedTournament.endDate}</span>
+              </div>
+
+              {/* Premios del Podio */}
+              <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-1 mt-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Premios del Podio</span>
+                <div className="grid grid-cols-3 gap-1.5 text-center font-mono">
+                  <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px]">
+                    <span className="block font-bold">🥇 1° ({selectedTournament.firstPlacePct || 50}%)</span>
+                    <span className="font-black text-white">{Math.round(selectedTournament.potSC * (selectedTournament.firstPlacePct || 50) / 100).toLocaleString()} SC</span>
+                    <span className="text-[9px] text-slate-400 block">${(Math.round(selectedTournament.potSC * (selectedTournament.firstPlacePct || 50) / 100) / 100).toFixed(2)}</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-slate-400/10 border border-slate-400/20 text-slate-300 text-[10px]">
+                    <span className="block font-bold">🥈 2° ({selectedTournament.secondPlacePct || 30}%)</span>
+                    <span className="font-black text-white">{Math.round(selectedTournament.potSC * (selectedTournament.secondPlacePct || 30) / 100).toLocaleString()} SC</span>
+                    <span className="text-[9px] text-slate-400 block">${(Math.round(selectedTournament.potSC * (selectedTournament.secondPlacePct || 30) / 100) / 100).toFixed(2)}</span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-amber-700/10 border border-amber-700/20 text-amber-500 text-[10px]">
+                    <span className="block font-bold">🥉 3° ({selectedTournament.thirdPlacePct || 20}%)</span>
+                    <span className="font-black text-white">{Math.round(selectedTournament.potSC * (selectedTournament.thirdPlacePct || 20) / 100).toLocaleString()} SC</span>
+                    <span className="text-[9px] text-slate-400 block">${(Math.round(selectedTournament.potSC * (selectedTournament.thirdPlacePct || 20) / 100) / 100).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-1 border-t border-white/10">
+                <span className="text-muted-foreground">Tu Saldo Disponible:</span>
                 <span className="font-bold text-emerald-400">{coins} SC</span>
               </div>
             </div>

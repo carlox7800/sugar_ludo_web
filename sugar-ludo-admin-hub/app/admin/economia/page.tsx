@@ -130,28 +130,46 @@ export default function EconomiaAdminPage() {
 
   const handleUpdateTournament = (
     id: string,
-    newPotSC: number,
-    newEntrySC: number,
-    newDuration: string,
-    firstPct: number,
-    secondPct: number,
-    thirdPct: number
+    updates: Partial<RealGameTournamentConfig>
   ) => {
     setTournaments((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? {
-              ...t,
-              potSC: newPotSC,
-              entryFeeSC: newEntrySC,
-              endDate: newDuration,
-              firstPlacePct: firstPct,
-              secondPlacePct: secondPct,
-              thirdPlacePct: thirdPct
-            }
-          : t
-      )
+      prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
     )
+  }
+
+  const handleRestartSeasonCycle = async () => {
+    const nextSeasonNum = (seasonRanking.seasonNumber || 1) + 1
+    const durationDays = seasonRanking.durationDays || 7
+    const now = Date.now()
+    const endTimestamp = now + durationDays * 86400000
+
+    const updatedSeason: SeasonRankingConfig = {
+      ...seasonRanking,
+      seasonNumber: nextSeasonNum,
+      seasonName: `Temporada ${nextSeasonNum} - Galáctica`,
+      seasonStartedAt: now,
+      endTimestamp,
+      isActive: true
+    }
+
+    setSeasonRanking(updatedSeason)
+
+    try {
+      const docRef = doc(db, 'system_config', 'economy_settings')
+      await setDoc(docRef, { seasonRanking: updatedSeason, updatedAt: now }, { merge: true })
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const channel = new BroadcastChannel('sugar_ludo_social_channel')
+        channel.postMessage({
+          type: 'economy_settings_updated',
+          payload: { seasonRanking: updatedSeason, updatedAt: now }
+        })
+        channel.close()
+      }
+      setNotification(`¡Arrancó la Temporada ${nextSeasonNum}! Ciclo de ${durationDays} días iniciado en vivo.`)
+      setTimeout(() => setNotification(null), 4000)
+    } catch (e: any) {
+      console.error('[Economia] Error reiniciando ciclo de temporada:', e)
+    }
   }
 
   const handleUpdateSeasonRanking = (
@@ -497,6 +515,7 @@ export default function EconomiaAdminPage() {
             onUpdateTournament={handleUpdateTournament}
             seasonRanking={seasonRanking}
             onUpdateSeasonRanking={handleUpdateSeasonRanking}
+            onRestartSeasonCycle={handleRestartSeasonCycle}
           />
         </AccordionBlock>
 

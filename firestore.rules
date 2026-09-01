@@ -76,5 +76,23 @@ service cloud.firestore {
     match /dispute_cases/{disputeId} {
       allow read, write: if true;
     }
+
+    // 8. COMUNICACIONES INTERNAS DE STAFF Y CHAT DUAL CON CAJEROS
+    match /staff_broadcast_messages/{msgId} {
+      allow read, write: if true;
+    }
+
+    match /staff_private_chats/{chatId} {
+      allow read, write: if true;
+
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+
+    // 9. TORNEOS Y EVENTOS COMPETITIVOS EN VIVO
+    match /tournaments/{tournamentId} {
+      allow read, write: if true;
+    }
   }
 }

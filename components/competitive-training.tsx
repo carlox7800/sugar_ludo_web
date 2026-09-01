@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { useSocket } from '@/lib/useSocket'
 import { useAuth } from '@/lib/auth-context'
 import { GameGuideModal } from '@/components/game-guide-modal'
-import { getLiveEconomyMatrix, subscribeToEconomyUpdates } from '@/lib/economy-service'
+import { getLiveEconomyMatrix, subscribeToEconomyUpdates, DEFAULT_ECONOMY_MATRIX } from '@/lib/economy-service'
 
 const PLAYER_OPTIONS = [2, 3, 4, 5, 6]
 
@@ -208,7 +208,7 @@ export function CompetitiveTraining({
 
   const handleStartQuickMatch = async () => {
     isPrivateMatchRef.current = false
-    const entryFee = ECONOMY_MATRIX[quickPlayers].entry
+    const entryFee = (economyMatrix[quickPlayers] || DEFAULT_ECONOMY_MATRIX[quickPlayers] || ECONOMY_MATRIX[quickPlayers]).entry
     if ((user?.coins ?? 200) < entryFee) {
       setErrorMsg(`¡Saldo insuficiente! Necesitas ${entryFee} Sugar Coins para entrar a esta partida.`)
       return
@@ -250,7 +250,7 @@ export function CompetitiveTraining({
   }
 
   const handleCreateRoom = () => {
-    const eco = ECONOMY_MATRIX[createPlayers]
+    const eco = economyMatrix[createPlayers] || DEFAULT_ECONOMY_MATRIX[createPlayers] || ECONOMY_MATRIX[createPlayers]
     if (user && (user.coins ?? 0) < eco.entry) {
       setErrorMsg(`No tienes suficientes Sugar Coins. Necesitas ${eco.entry} SC.`)
       setTimeout(() => setErrorMsg(null), 3000)
@@ -294,7 +294,7 @@ export function CompetitiveTraining({
     const capacityStr = parts[1]
     
     const capacity = parseInt(capacityStr, 10) || 4 
-    const eco = ECONOMY_MATRIX[capacity] || ECONOMY_MATRIX[4]
+    const eco = economyMatrix[capacity] || DEFAULT_ECONOMY_MATRIX[capacity] || ECONOMY_MATRIX[capacity] || ECONOMY_MATRIX[4]
     const cost = eco.entry
 
     setJoinConfirmation({
@@ -351,7 +351,8 @@ export function CompetitiveTraining({
     onBack()
   }
 
-  const currentEconomy = ECONOMY_MATRIX[quickPlayers]
+  const currentEconomy = economyMatrix[quickPlayers] || DEFAULT_ECONOMY_MATRIX[quickPlayers] || ECONOMY_MATRIX[quickPlayers]
+  const currentFriendsEconomy = economyMatrix[createPlayers] || DEFAULT_ECONOMY_MATRIX[createPlayers] || ECONOMY_MATRIX[createPlayers]
 
   return (
     <section className="flex flex-col gap-3 md:gap-4 animate-slide-in">
@@ -596,21 +597,21 @@ export function CompetitiveTraining({
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 bg-[oklch(0_0_0/0.2)] border border-[var(--candy-gold)]/30 rounded-2xl p-3">
                         <div className="flex flex-col gap-1 items-center justify-center p-2 rounded-xl bg-[oklch(1_0_0/0.05)]">
                           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Entrada</span>
-                          <span className="font-display text-lg font-black text-red-400 drop-shadow-[0_0_8px_red] flex items-center gap-1">-{ECONOMY_MATRIX[createPlayers].entry} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" /></span>
+                          <span className="font-display text-lg font-black text-red-400 drop-shadow-[0_0_8px_red] flex items-center gap-1">-{currentFriendsEconomy.entry} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" /></span>
                         </div>
                         <div className="flex flex-col gap-1 items-center justify-center p-2 rounded-xl bg-[oklch(1_0_0/0.05)]">
                           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Pozo Total</span>
-                          <span className="font-display text-lg font-black text-[var(--candy-gold)] flex items-center gap-1">{ECONOMY_MATRIX[createPlayers].pot} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" /></span>
+                          <span className="font-display text-lg font-black text-[var(--candy-gold)] flex items-center gap-1">{currentFriendsEconomy.pot} <img src="/sugar-coin.png" alt="Coin" className="size-4 object-contain" /></span>
                         </div>
                         <div className="flex flex-col gap-1 items-center justify-center p-2 rounded-xl bg-[oklch(1_0_0/0.05)] col-span-2 sm:col-span-2">
                           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Premios</span>
                           <div className={cn(
                             "w-full items-center justify-center",
-                            ECONOMY_MATRIX[createPlayers].prizes.filter(prize => prize > 0).length >= 4
+                            currentFriendsEconomy.prizes.filter(prize => prize > 0).length >= 4
                               ? "grid grid-cols-2 gap-x-2 gap-y-0.5"
                               : "flex flex-wrap items-center justify-center gap-x-4 gap-y-1"
                           )}>
-                            {ECONOMY_MATRIX[createPlayers].prizes.filter(prize => prize > 0).map((prize, idx) => (
+                            {currentFriendsEconomy.prizes.filter(prize => prize > 0).map((prize, idx) => (
                               <span key={idx} className={cn("font-display text-xs sm:text-sm font-black flex items-center justify-center gap-1 whitespace-nowrap", idx === 0 ? 'text-emerald-400' : 'text-emerald-400/80')}>
                                 {idx + 1}º: +{prize} <img src="/sugar-coin.png" alt="Coin" className="size-3.5 object-contain" />
                               </span>

@@ -102,7 +102,13 @@ export async function fetchActiveTournaments(): Promise<Tournament[]> {
         bannerGradient: t.bannerGradient || 'linear-gradient(135deg, oklch(0.7 0.27 350 / 0.4), oklch(0.14 0.04 45 / 0.8))',
         accentColor: t.accentColor || 'var(--candy-magenta)',
         rules: t.rules || 'Reglas oficiales de torneo Sugar Ludo',
-        isActive: t.isActive !== false
+        isActive: t.isActive !== false,
+        firstPlacePct: Number(t.firstPlacePct || 50),
+        secondPlacePct: Number(t.secondPlacePct || 30),
+        thirdPlacePct: Number(t.thirdPlacePct || 20),
+        firstPlaceSC: Number(t.firstPlaceSC || Math.round(Number(t.potSC || t.prizePoolSC || 50000) * (Number(t.firstPlacePct || 50) / 100))),
+        secondPlaceSC: Number(t.secondPlaceSC || Math.round(Number(t.potSC || t.prizePoolSC || 50000) * (Number(t.secondPlacePct || 30) / 100))),
+        thirdPlaceSC: Number(t.thirdPlaceSC || Math.round(Number(t.potSC || t.prizePoolSC || 50000) * (Number(t.thirdPlacePct || 20) / 100)))
       }))
     }
   } catch {}

@@ -286,7 +286,7 @@ export default function AdminDashboardPage() {
 
   const handleExecuteReset = async (options: EconomicResetOptions) => {
     setIsResetting(true)
-    const { scope, purgeOrdersHistory, purgeShiftLedger } = options
+    const { scope, purgeOrdersHistory, purgeShiftLedger, resetTelemetryMetrics } = options
     const now = Date.now()
 
     try {
@@ -560,6 +560,35 @@ export default function AdminDashboardPage() {
         } catch {}
       }
 
+      // Reinicio opcional de telemetría y contadores en vivo
+      if (resetTelemetryMetrics) {
+        try {
+          const telemetryRef = doc(db, 'system_treasury', 'live_telemetry')
+          await setDoc(telemetryRef, {
+            totalPlayersOnline: 0,
+            offlineMatchesCount: 0,
+            onlineTrainingPlayersCount: 0,
+            competitivePlayersCount: 0,
+            activeRoomsCount: 0,
+            serverStatus: 'healthy',
+            updatedAt: now
+          }, { merge: true })
+
+          setTelemetry((prev) => ({
+            ...prev,
+            totalOnlinePlayers: 0,
+            playersInLobby: 0,
+            playersInAITraining: 0,
+            playersInOnlineTraining: 0,
+            playersInCompetitive: 0,
+            activeMatchRooms: 0
+          }))
+          console.log('[AdminReset] Contadores de telemetría reseteados a 0.')
+        } catch (tErr) {
+          console.error('[AdminReset] Error reseteando telemetría:', tErr)
+        }
+      }
+
       // 3. Auditoría inmutable en audit_logs
       try {
         const auditRef = doc(collection(db, 'audit_logs'))
@@ -610,6 +639,37 @@ export default function AdminDashboardPage() {
   const handleLogout = () => {
     logout()
     router.push('/')
+  }
+
+  const handleQuickResetTelemetry = async () => {
+    const now = Date.now()
+    try {
+      const telemetryRef = doc(db, 'system_treasury', 'live_telemetry')
+      await setDoc(telemetryRef, {
+        totalPlayersOnline: 0,
+        offlineMatchesCount: 0,
+        onlineTrainingPlayersCount: 0,
+        competitivePlayersCount: 0,
+        activeRoomsCount: 0,
+        serverStatus: 'healthy',
+        updatedAt: now
+      }, { merge: true })
+
+      setTelemetry((prev) => ({
+        ...prev,
+        totalOnlinePlayers: 0,
+        playersInLobby: 0,
+        playersInAITraining: 0,
+        playersInOnlineTraining: 0,
+        playersInCompetitive: 0,
+        activeMatchRooms: 0
+      }))
+
+      setNotification('Contadores de telemetría y concurrencia reseteados a 0.')
+      setTimeout(() => setNotification(null), 3500)
+    } catch (err: any) {
+      console.error('[Admin] Error reseteando telemetría rápida:', err)
+    }
   }
 
 
@@ -757,7 +817,10 @@ export default function AdminDashboardPage() {
           }
           defaultOpen={true}
         >
-          <DetailedTelemetryCard telemetry={{ ...telemetry, serverLatencyMs: serverPingMs }} />
+          <DetailedTelemetryCard 
+            telemetry={{ ...telemetry, serverLatencyMs: serverPingMs }} 
+            onResetTelemetry={handleQuickResetTelemetry}
+          />
         </AccordionBlock>
       </main>
 

@@ -15,6 +15,7 @@ import { Token, Player, PlayerColor } from '@/src/types'
 import { globalLogger } from '@/lib/logger'
 import { audio } from '@/src/audio'
 import { ECONOMY_MATRIX } from '@/components/competitive-training'
+import { getLiveEconomyMatrix } from '@/lib/economy-service'
 
 import { HexagonalLudoBoardView } from '@/src/components/HexagonalLudoBoardView'
 import { HEX_COLORS_ORDER, STAR_CELLS, HEX_COLOR_INFO, HexPlayerColor } from '@/src/HexBoardConstants'
@@ -326,7 +327,8 @@ export function OnlineGameEngine({
 
     let coinsEarned = 0
     if (isCompetitive) {
-      const prizes = ECONOMY_MATRIX[totalPlayers]?.prizes || []
+      const liveEco = getLiveEconomyMatrix()
+      const prizes = liveEco[totalPlayers]?.prizes || ECONOMY_MATRIX[totalPlayers]?.prizes || []
       coinsEarned = prizes[myRank - 1] || 0
     }
 
@@ -2078,7 +2080,8 @@ export function OnlineGameEngine({
                       getGoalStep(isHexGame)
                     );
                 const pCount = dynamicPlayers.length
-                const prizeList = ECONOMY_MATRIX[pCount]?.prizes || []
+                const liveEco = getLiveEconomyMatrix()
+                const prizeList = liveEco[pCount]?.prizes || ECONOMY_MATRIX[pCount]?.prizes || []
                 return listToDisplay.map((p, idx) => {
                   const prize = modeType === 'competitive' ? (prizeList[idx] || 0) : 0
                   return (
