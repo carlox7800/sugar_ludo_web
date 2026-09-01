@@ -71,6 +71,17 @@ export async function sendBroadcastMessage(
     message: text.trim(),
     timestamp: now
   })
+
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    try {
+      const channel = new BroadcastChannel('sugar_ludo_social_channel')
+      channel.postMessage({
+        type: 'staff_broadcast_received',
+        payload: { text, timestamp: now }
+      })
+      channel.close()
+    } catch {}
+  }
 }
 
 /**
@@ -221,6 +232,56 @@ export function subscribeToCashierChatMeta(
       }
     }, () => {
       callback(null)
+    })
+  } catch {
+    return () => {}
+  }
+}
+
+/**
+ * 4. SEGUIMIENTO DE COMUNICADOS DE DIFUSIÓN NO LEÍDOS POR CAJERO
+ */
+export function getCashierLastReadBroadcastTime(cashierUid: string): number {
+  if (typeof window === 'undefined' || !cashierUid) return 0
+  try {
+    const val = localStorage.getItem(`sugar_cashier_last_read_broadcast_${cashierUid}`)
+    return val ? parseInt(val, 10) : 0
+  } catch {
+    return 0
+  }
+}
+
+export function markBroadcastAsReadByCashier(cashierUid: string): void {
+  if (typeof window === 'undefined' || !cashierUid) return
+  try {
+    localStorage.setItem(`sugar_cashier_last_read_broadcast_${cashierUid}`, Date.now().toString())
+  } catch {}
+}
+
+export function subscribeToBroadcastUnreadCount(
+  cashierUid: string,
+  callback: (unreadCount: number) => void
+): () => void {
+  if (!cashierUid) return () => {}
+  try {
+    const q = query(
+      collection(db, 'staff_broadcast_messages'),
+      orderBy('timestamp', 'desc'),
+      limit(25)
+    )
+    return onSnapshot(q, (snap) => {
+      const currentLastRead = getCashierLastReadBroadcastTime(cashierUid)
+      let count = 0
+      snap.docs.forEach((d) => {
+        const data = d.data()
+        const ts = Number(data.timestamp || 0)
+        if (ts > currentLastRead) {
+          count++
+        }
+      })
+      callback(count)
+    }, () => {
+      callback(0)
     })
   } catch {
     return () => {}

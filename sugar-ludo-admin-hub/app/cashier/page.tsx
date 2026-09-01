@@ -15,7 +15,12 @@ import { useAdminAuth } from '../../lib/admin-auth-context'
 import { db } from '../../lib/firebase'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { OrdersCache } from '../../lib/orders-cache'
-import { subscribeToCashierChatMeta } from '../../lib/staff-chat-service'
+import {
+  subscribeToCashierChatMeta,
+  subscribeToBroadcastUnreadCount,
+  markBroadcastAsReadByCashier,
+  markPrivateChatAsReadByCashier
+} from '../../lib/staff-chat-service'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins, Calendar, LayoutList, LayoutGrid } from 'lucide-react'
 
 export default function CashierMainDeskPage() {
@@ -34,7 +39,9 @@ export default function CashierMainDeskPage() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [isMounted, setIsMounted] = useState(false)
 
-  const [unreadChatCount, setUnreadChatCount] = useState(0)
+  const [unreadPrivateCount, setUnreadPrivateCount] = useState(0)
+  const [unreadBroadcastCount, setUnreadBroadcastCount] = useState(0)
+  const unreadChatCount = unreadPrivateCount + unreadBroadcastCount
 
   useEffect(() => {
     setIsMounted(true)
@@ -174,10 +181,16 @@ export default function CashierMainDeskPage() {
 
   useEffect(() => {
     if (!currentCashier?.uid) return
-    const unsub = subscribeToCashierChatMeta(currentCashier.uid, (meta) => {
-      setUnreadChatCount(meta?.unreadByCashier || 0)
+    const unsubPrivate = subscribeToCashierChatMeta(currentCashier.uid, (meta) => {
+      setUnreadPrivateCount(meta?.unreadByCashier || 0)
     })
-    return () => unsub()
+    const unsubBroadcast = subscribeToBroadcastUnreadCount(currentCashier.uid, (bCount) => {
+      setUnreadBroadcastCount(bCount)
+    })
+    return () => {
+      unsubPrivate()
+      unsubBroadcast()
+    }
   }, [currentCashier?.uid])
 
   const fetchOrders = async (isManualRefresh = false) => {
@@ -368,12 +381,22 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsAdminChatOpen(true)}
-            className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-2xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${
+              unreadBroadcastCount > 0
+                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30'
+                : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+            }`}
           >
             <MessageSquare className="size-4" />
             <span className="hidden sm:inline">Chat con Administrador</span>
             {unreadChatCount > 0 && (
-              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.6)]">
+              <span
+                className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-mono font-black animate-pulse shadow-md ${
+                  unreadBroadcastCount > 0
+                    ? 'bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.6)]'
+                    : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.6)]'
+                }`}
+              >
                 {unreadChatCount}
               </span>
             )}
@@ -585,6 +608,7 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
         onClose={() => setIsAdminChatOpen(false)}
         cashierUid={currentCashier.uid}
         cashierName={currentCashier.name}
+        initialTab={unreadBroadcastCount > 0 ? 'broadcast' : 'private'}
       />
 
       {/* Cashier Float Movements & Shift Ledger History Modal */}
