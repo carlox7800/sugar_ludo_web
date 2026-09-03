@@ -295,68 +295,49 @@ export async function createWithdrawOrder(params: {
     })
   } catch {}
 
-  // Post directo al Hub de Cajeros (puerto 3001 en local y servidor Render oficial)
-  try {
-    const hubEndpoints = [
-      'https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders',
-      'http://localhost:3001/api/cashier/orders',
-      ...(process.env.NEXT_PUBLIC_ADMIN_HUB_URL ? [`${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/cashier/orders`] : [])
-    ]
-    hubEndpoints.forEach((url) => {
-      fetch(url, {
+  // 2. Despachar al Hub autoritativo (que ejecuta createWithdrawOrderWithEscrow en el servidor)
+  const hubEndpoints = [
+    ...(process.env.NEXT_PUBLIC_ADMIN_HUB_URL ? [`${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/cashier/orders`] : []),
+    'https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders',
+    'http://localhost:3001/api/cashier/orders'
+  ]
+
+  let serverProcessed = false
+  for (const url of hubEndpoints) {
+    try {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderData),
         mode: 'cors'
-      }).catch(() => {})
-    })
-  } catch {}
-
-  // 2. Debitar balance utilizable y registrar historial
-  try {
-    await recordWalletTransaction(playerUid, {
-      type: 'withdraw',
-      amount: -amountSugarCoins,
-      description: isVip ? 'Solicitud de Retiro VIP (Pendiente)' : 'Solicitud de Retiro (Pendiente)'
-    })
-  } catch (histErr) {
-    console.warn('[WalletService] Error debitando monedas:', histErr)
+      })
+      if (res.ok) {
+        const json = await res.json()
+        if (json.success) {
+          serverProcessed = true
+          break
+        } else {
+          throw new Error(json.error || 'Saldo insuficiente o error al procesar retiro en servidor')
+        }
+      }
+    } catch (err: any) {
+      if (err.message && err.message.toLowerCase().includes('saldo insuficiente')) {
+        throw err
+      }
+    }
   }
 
-  // 3. Persistir en Firestore (SDK + REST con timeout seguro)
-  try {
-    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
-    const firestoreRestDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders?documentId=${orderId}`
-    fetch(firestoreRestDocUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fields: {
-          id: { stringValue: orderData.id },
-          type: { stringValue: orderData.type },
-          status: { stringValue: orderData.status },
-          playerUid: { stringValue: orderData.playerUid },
-          playerId: { stringValue: orderData.playerId || playerId },
-          playerName: { stringValue: orderData.playerName },
-          amountFiat: { doubleValue: orderData.amountFiat },
-          currency: { stringValue: orderData.currency },
-          amountSugarCoins: { integerValue: String(orderData.amountSugarCoins) },
-          paymentMethod: { stringValue: orderData.paymentMethod },
-          receiptReferenceNumber: { stringValue: orderData.receiptReferenceNumber || '' },
-          createdAt: { integerValue: String(orderData.createdAt) },
-          isVip: { booleanValue: Boolean(isVip) },
-          isVipWithdraw: { booleanValue: Boolean(isVip) }
-        }
-      })
-    }).catch(() => {})
-
-    const orderRef = doc(db, 'cashier_orders', orderId)
-    await Promise.race([
-      setDoc(orderRef, orderData),
-      new Promise((resolve) => setTimeout(resolve, 2500))
-    ])
-  } catch (err: any) {
-    console.warn('[WalletService] Firestore setDoc timeout notice:', err?.message)
+  // 3. Fallback en caso de que el Hub esté fuera de línea en entorno local
+  if (!serverProcessed) {
+    try {
+      const orderRef = doc(db, 'cashier_orders', orderId)
+      await Promise.race([
+        setDoc(orderRef, orderData),
+        new Promise((resolve) => setTimeout(resolve, 2500))
+      ])
+    } catch (err: any) {
+      console.warn('[WalletService] Firestore setDoc fallback notice:', err?.message)
+    }
   }
 
   return { success: true, orderId }
@@ -393,51 +374,54 @@ export async function fetchActivePlayerOrders(playerUid: string): Promise<Player
 
 /**
  * Cancela o descarta una orden pendiente del jugador
- * - Si es retiro, reembolsa las Sugar Coins al balance del usuario.
+ * - Valida y reembolsa saldo atómicamente a través del servidor (cancelWithdrawOrderAtomics).
  * - Actualiza almacenamiento local, notifica a Firestore y al Hub.
  */
 export async function cancelPlayerOrder(playerUid: string, orderId: string): Promise<{ success: boolean; message: string }> {
   if (typeof window !== 'undefined') {
     try {
       const stored = getStoredLocalOrders()
-      const target = stored.find(o => o.id === orderId)
       const updated = stored.map(o => o.id === orderId ? { ...o, status: 'cancelled' as const } : o)
       localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(updated))
+    } catch {}
+  }
 
-      // Si es retiro pendiente, reembolsar saldo al usuario
-      if (target && target.type === 'withdraw' && target.amountSugarCoins > 0) {
-        await recordWalletTransaction(playerUid, {
-          type: 'deposit',
-          amount: target.amountSugarCoins,
-          description: 'Reembolso por Cancelación de Retiro'
-        })
+  // Notificar al Hub autoritativo para ejecutar reembolso en Escrow y cancelación atómica en el backend
+  let cancelledOnServer = false
+  const hubEndpoints = [
+    ...(process.env.NEXT_PUBLIC_ADMIN_HUB_URL ? [`${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/cashier/orders/${orderId}/action`] : []),
+    `https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders/${orderId}/action`,
+    `http://localhost:3001/api/cashier/orders/${orderId}/action`
+  ]
+
+  for (const url of hubEndpoints) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel', actorUid: playerUid, actorRole: 'player' }),
+        mode: 'cors'
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          cancelledOnServer = true
+          break
+        }
       }
     } catch {}
   }
 
-  // Notificar a Firestore
-  try {
-    const orderDocRef = doc(db, 'cashier_orders', orderId)
-    await updateDoc(orderDocRef, {
-      status: 'cancelled',
-      cancelledAt: Date.now()
-    })
-  } catch {}
-
-  // Notificar al Hub
-  try {
-    const hubEndpoints = [
-      `https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders/${orderId}/action`,
-      `http://localhost:3001/api/cashier/orders/${orderId}/action`
-    ]
-    hubEndpoints.forEach(url => {
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel', actorUid: playerUid, actorRole: 'player' })
-      }).catch(() => {})
-    })
-  } catch {}
+  // Si no se pudo contactar el Hub, actualizar estado de la orden en Firestore directamente
+  if (!cancelledOnServer) {
+    try {
+      const orderDocRef = doc(db, 'cashier_orders', orderId)
+      await updateDoc(orderDocRef, {
+        status: 'cancelled',
+        cancelledAt: Date.now()
+      })
+    } catch {}
+  }
 
   return { success: true, message: 'Solicitud cancelada con éxito' }
 }

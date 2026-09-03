@@ -49,3 +49,6 @@ sugar-ludo-logs-*.txt
 # Sistema operativo
 .DS_Store
 Thumbs.db
+
+# Graphify (análisis de arquitectura local)
+graphify-out/

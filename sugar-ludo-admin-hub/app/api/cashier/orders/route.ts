@@ -161,15 +161,24 @@ export async function GET(request: Request) {
   }
 }
 
+import { createWithdrawOrderWithEscrow } from '@/lib/atomic-transactions'
+
 export async function POST(request: Request) {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  }
+
   try {
     const body = await request.json()
     if (!body || !body.id) {
-      return NextResponse.json({ success: false, error: 'Orden inválida' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'Orden inválida' }, { status: 400, headers: corsHeaders })
     }
 
     const rawPlayerUid = body.playerUid || ''
     const rawPlayerId = body.playerId || (rawPlayerUid ? `SL-${rawPlayerUid.substring(0, 6).toUpperCase()}` : '')
+    const isVip = Boolean(body.isVip || body.isVipWithdraw || body.paymentMethod === 'usdt_trc20_vip' || body.paymentMethod === 'usdt_bep20')
 
     const orderData: CashierOrder = {
       id: body.id,
@@ -182,17 +191,51 @@ export async function POST(request: Request) {
       currency: body.currency || 'USDT',
       exchangeRate: Number(body.exchangeRate || 100),
       amountSugarCoins: Number(body.amountSugarCoins || 0),
-      cashierCommissionCoins: Number(body.cashierCommissionCoins || 0),
+      cashierCommissionCoins: Number(body.cashierCommissionCoins || (orderData_type => orderData_type === 'withdraw' ? Math.round(Number(body.amountSugarCoins || 0) * (isVip ? 0.04 : 0.02)) : Math.round(Number(body.amountSugarCoins || 0) * 0.02))(body.type)),
       paymentMethod: body.paymentMethod || 'usdt_trc20',
       receiptReferenceNumber: body.receiptReferenceNumber || '',
       createdAt: body.createdAt || Date.now(),
-      expiresAt: body.expiresAt || (Date.now() + 1800000)
+      expiresAt: body.expiresAt || (Date.now() + 1800000),
+      isVip,
+      isVipWithdraw: isVip
     }
 
-    // 1. Guardar permanentemente en disco
+    // 1. Si es RETIRO, ejecutar validación y bloqueo atómico en Escrow en el backend
+    if (orderData.type === 'withdraw' && adminDb && adminDb.collection) {
+      try {
+        const withdrawRes = await createWithdrawOrderWithEscrow({
+          orderId: orderData.id,
+          playerUid: orderData.playerUid,
+          playerId: orderData.playerId,
+          playerName: orderData.playerName,
+          amountSugarCoins: orderData.amountSugarCoins,
+          amountFiat: orderData.amountFiat,
+          currency: orderData.currency,
+          paymentMethod: orderData.paymentMethod,
+          playerPaymentAccount: orderData.receiptReferenceNumber || '',
+          isVip
+        })
+        orderData.id = withdrawRes.orderId
+        orderData.isEscrowLocked = true
+        orderData.escrowLockedAt = Date.now()
+        saveDiskOrder(orderData)
+
+        return NextResponse.json(
+          { success: true, order: orderData, orderId: orderData.id },
+          { headers: corsHeaders }
+        )
+      } catch (withdrawErr: any) {
+        console.error('[CashierOrdersAPI] Error atómico creando retiro:', withdrawErr)
+        return NextResponse.json(
+          { success: false, error: withdrawErr.message || 'Error al validar saldo para retiro' },
+          { status: 400, headers: corsHeaders }
+        )
+      }
+    }
+
+    // 2. Si es DEPÓSITO o modo fallback, guardar en disco y Firestore
     saveDiskOrder(orderData)
 
-    // 2. Intentar guardar en Firestore con adminDb si está disponible
     if (adminDb && adminDb.collection) {
       try {
         await adminDb.collection('cashier_orders').doc(orderData.id).set(orderData)
@@ -230,13 +273,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       { success: true, order: orderData },
-      {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-        }
-      }
+      { headers: corsHeaders }
     )
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })

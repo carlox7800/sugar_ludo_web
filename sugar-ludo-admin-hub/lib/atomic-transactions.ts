@@ -222,8 +222,11 @@ export async function createWithdrawOrderWithEscrow(params: {
   currency: string
   paymentMethod: any
   playerPaymentAccount: any
+  orderId?: string
+  playerId?: string
+  isVip?: boolean
 }): Promise<{ success: boolean; orderId: string }> {
-  const { playerUid, playerName, amountSugarCoins, amountFiat, currency, paymentMethod, playerPaymentAccount } = params
+  const { playerUid, playerName, amountSugarCoins, amountFiat, currency, paymentMethod, playerPaymentAccount, orderId, playerId, isVip } = params
 
   return await (adminDb as any).runTransaction(async (transaction: any) => {
     const playerRef = adminDb.collection('users').doc(playerUid)
@@ -233,42 +236,168 @@ export async function createWithdrawOrderWithEscrow(params: {
 
     const currentCoins = Number(playerSnap.data()?.coins || 0)
     if (currentCoins < amountSugarCoins) {
-      throw new Error('Saldo insuficiente para realizar el retiro')
+      throw new Error(`Saldo insuficiente para realizar el retiro (Disponible: ${currentCoins} SC, Requerido: ${amountSugarCoins} SC)`)
     }
 
     const now = Date.now()
     const newCoins = currentCoins - amountSugarCoins
+    const finalOrderId = orderId || adminDb.collection('cashier_orders').doc().id
 
-    // 1. Congelar saldo del jugador (Escrow)
+    // Historial del usuario
+    const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
+    const withdrawTxEntry = {
+      id: `tx_wit_${now}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'withdraw',
+      amount: -amountSugarCoins,
+      description: isVip ? `Solicitud de Retiro VIP (#${finalOrderId.slice(0, 8)})` : `Solicitud de Retiro (#${finalOrderId.slice(0, 8)})`,
+      timestamp: now,
+      dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    }
+    const updatedHistory = [withdrawTxEntry, ...existingHistory].slice(0, 50)
+
+    // 1. Congelar saldo del jugador (Escrow) de forma atómica en el backend
     transaction.update(playerRef, {
       coins: newCoins,
-      escrowLockedCoins: admin.firestore.FieldValue.increment(amountSugarCoins)
+      escrowLockedCoins: admin.firestore.FieldValue.increment(amountSugarCoins),
+      walletHistory: updatedHistory,
+      lastActiveAt: now
     })
 
     // 2. Crear orden en estado pending
-    const orderRef = adminDb.collection('cashier_orders').doc()
+    const orderRef = adminDb.collection('cashier_orders').doc(finalOrderId)
     const newOrder: CashierOrder = {
-      id: orderRef.id,
+      id: finalOrderId,
       type: 'withdraw',
       status: 'pending',
       playerUid,
+      playerId: playerId || (playerUid ? `SL-${playerUid.substring(0, 6).toUpperCase()}` : undefined),
       playerName,
       amountFiat,
       currency,
       exchangeRate: amountSugarCoins / (amountFiat || 1),
       amountSugarCoins,
-      cashierCommissionCoins: Math.round(amountSugarCoins * 0.03),
+      cashierCommissionCoins: Math.round(amountSugarCoins * (isVip ? 0.04 : 0.02)),
       paymentMethod,
       playerPaymentAccount,
+      receiptReferenceNumber: String(playerPaymentAccount || ''),
       isEscrowLocked: true,
       escrowLockedAt: now,
       createdAt: now,
-      expiresAt: now + (30 * 60 * 1000) // 30 minutos
+      expiresAt: now + (48 * 3600 * 1000), // SLA de retiro
+      isVip: Boolean(isVip),
+      isVipWithdraw: Boolean(isVip)
     }
 
     transaction.set(orderRef, newOrder)
 
-    return { success: true, orderId: orderRef.id }
+    // 3. Auditoría de creación de orden con saldo congelado
+    const auditRef = adminDb.collection('audit_logs').doc()
+    transaction.set(auditRef, {
+      id: auditRef.id,
+      action: 'WITHDRAWAL_REQUESTED_ESCROW',
+      actorUid: playerUid,
+      actorRole: 'player',
+      targetUid: playerUid,
+      targetOrderId: finalOrderId,
+      amountCoins: amountSugarCoins,
+      amountFiat,
+      currency,
+      previousBalance: currentCoins,
+      newBalance: newCoins,
+      escrowLockedDelta: amountSugarCoins,
+      isVip: Boolean(isVip),
+      timestamp: now
+    })
+
+    return { success: true, orderId: finalOrderId }
+  })
+}
+
+/**
+ * 2.1. CANCELACIÓN ATÓMICA DE RETIRO (Jugador o Sistema cancela -> Devolución de Escrow a Saldo)
+ */
+export async function cancelWithdrawOrderAtomics(params: {
+  orderId: string
+  actorUid: string
+  actorRole: string
+}): Promise<{ success: boolean; message: string }> {
+  const { orderId, actorUid, actorRole } = params
+
+  return await (adminDb as any).runTransaction(async (transaction: any) => {
+    const orderRef = adminDb.collection('cashier_orders').doc(orderId)
+    const orderSnap = await transaction.get(orderRef)
+
+    if (!orderSnap.exists) {
+      throw new Error('La orden no existe')
+    }
+
+    const order = orderSnap.data() as CashierOrder
+    if (order.status === 'completed' || order.status === 'cancelled') {
+      return { success: true, message: `La orden ya se encuentra en estado '${order.status}'.` }
+    }
+
+    if (actorRole === 'player' && order.playerUid !== actorUid) {
+      throw new Error('No tienes permiso para cancelar esta orden ajena')
+    }
+
+    const now = Date.now()
+    const amountCoins = Number(order.amountSugarCoins || 0)
+
+    // Reembolso del Escrow hacia saldo disponible del jugador
+    if (order.type === 'withdraw' && amountCoins > 0) {
+      const playerRef = adminDb.collection('users').doc(order.playerUid)
+      const playerSnap = await transaction.get(playerRef)
+
+      if (playerSnap.exists) {
+        const currentCoins = Number(playerSnap.data()?.coins || 0)
+        const currentEscrow = Number(playerSnap.data()?.escrowLockedCoins || 0)
+        const newEscrow = Math.max(0, currentEscrow - amountCoins)
+        const newCoins = currentCoins + amountCoins
+
+        const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
+        const refundTxEntry = {
+          id: `tx_ref_${now}_${Math.random().toString(36).slice(2, 6)}`,
+          type: 'deposit',
+          amount: amountCoins,
+          description: `Reembolso por Cancelación de Retiro (#${order.id.slice(0, 8)})`,
+          timestamp: now,
+          dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        }
+        const updatedHistory = [refundTxEntry, ...existingHistory].slice(0, 50)
+
+        transaction.update(playerRef, {
+          coins: newCoins,
+          escrowLockedCoins: newEscrow,
+          walletHistory: updatedHistory,
+          lastActiveAt: now
+        })
+      }
+    }
+
+    // Actualizar estado de la orden a cancelled
+    transaction.update(orderRef, {
+      status: 'cancelled',
+      cancelledAt: now,
+      isEscrowLocked: false,
+      cancelledByUid: actorUid,
+      cancelledByRole: actorRole
+    })
+
+    // Registro inmutable de auditoría
+    const auditRef = adminDb.collection('audit_logs').doc()
+    transaction.set(auditRef, {
+      id: auditRef.id,
+      action: 'ORDER_CANCELLED_ATOMIC',
+      actorUid,
+      actorRole,
+      targetUid: order.playerUid,
+      targetOrderId: orderId,
+      amountCoins,
+      orderType: order.type,
+      timestamp: now
+    })
+
+    return { success: true, message: 'Orden cancelada con éxito y saldo desbloqueado.' }
   })
 }
 

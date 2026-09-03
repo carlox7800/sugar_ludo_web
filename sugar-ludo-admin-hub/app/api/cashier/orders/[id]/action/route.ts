@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { approveDepositOrder, completeWithdrawalOrder, rechargeCashierFloatAtomics } from '@/lib/atomic-transactions'
+import { approveDepositOrder, completeWithdrawalOrder, rechargeCashierFloatAtomics, cancelWithdrawOrderAtomics } from '@/lib/atomic-transactions'
 import fs from 'fs'
 import path from 'path'
 import { CashierOrder } from '@/types/cashier'
@@ -23,6 +23,16 @@ function updateDiskOrderStatus(orderId: string, status: string, refNum?: string)
   } catch {}
 }
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders })
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -43,10 +53,10 @@ export async function POST(
           actorUid: actorUid || 'csh_carlosandroid_001',
           actorRole: actorRole || 'cashier'
         })
-        return NextResponse.json({ success: true, message: result.message })
+        return NextResponse.json({ success: true, message: result.message }, { headers: corsHeaders })
       } catch (err: any) {
         console.error('[ActionAPI] approveDepositOrder error:', err)
-        return NextResponse.json({ success: true, message: 'Orden validada y completada con éxito' })
+        return NextResponse.json({ success: false, error: err.message || 'Error al validar depósito' }, { status: 400, headers: corsHeaders })
       }
     }
 
@@ -60,10 +70,25 @@ export async function POST(
           actorRole: actorRole || 'cashier'
         })
         updateDiskOrderStatus(orderId, 'completed', finalRef)
-        return NextResponse.json({ success: true, message: result.message })
+        return NextResponse.json({ success: true, message: result.message }, { headers: corsHeaders })
       } catch (err: any) {
         console.error('[ActionAPI] completeWithdrawalOrder error:', err)
-        return NextResponse.json({ success: false, error: err.message || 'Error al liquidar el retiro' }, { status: 400 })
+        return NextResponse.json({ success: false, error: err.message || 'Error al liquidar el retiro' }, { status: 400, headers: corsHeaders })
+      }
+    }
+
+    if (action === 'cancel') {
+      try {
+        const result = await cancelWithdrawOrderAtomics({
+          orderId,
+          actorUid: actorUid || 'usr_unknown',
+          actorRole: actorRole || 'player'
+        })
+        updateDiskOrderStatus(orderId, 'cancelled')
+        return NextResponse.json({ success: true, message: result.message }, { headers: corsHeaders })
+      } catch (err: any) {
+        console.error('[ActionAPI] cancel order error:', err)
+        return NextResponse.json({ success: false, error: err.message || 'Error al cancelar la orden' }, { status: 400, headers: corsHeaders })
       }
     }
 
@@ -77,15 +102,15 @@ export async function POST(
           adminUid: adminUid || actorUid || 'adm_super_001',
           adminName: adminName || 'Super Admin'
         })
-        return NextResponse.json({ success: true, message: result.message })
+        return NextResponse.json({ success: true, message: result.message }, { headers: corsHeaders })
       } catch (err: any) {
         console.error('[ActionAPI] recharge_float error:', err)
-        return NextResponse.json({ success: true, message: 'Recarga acreditada con éxito' })
+        return NextResponse.json({ success: false, error: err.message || 'Error en recarga de saldo flotante' }, { status: 400, headers: corsHeaders })
       }
     }
 
-    return NextResponse.json({ success: false, error: 'Acción no soportada' }, { status: 400 })
+    return NextResponse.json({ success: false, error: 'Acción no soportada' }, { status: 400, headers: corsHeaders })
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
+    return NextResponse.json({ success: false, error: err.message }, { status: 500, headers: corsHeaders })
   }
 }

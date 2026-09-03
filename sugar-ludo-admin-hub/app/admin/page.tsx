@@ -290,7 +290,31 @@ export default function AdminDashboardPage() {
     const now = Date.now()
 
     try {
-      // 1. Snapshot previo para auditoría
+      // 1. Ejecutar reseteo autoritativo en el backend (Super Admin API con Admin SDK)
+      try {
+        const res = await fetch('/api/admin/treasury/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scope,
+            purgeOrdersHistory,
+            purgeShiftLedger,
+            resetTelemetryMetrics,
+            adminUid: adminUser?.uid || 'adm_super_carlos_001',
+            adminName: adminUser?.displayName || 'Super Admin'
+          })
+        })
+        const resData = await res.json()
+        if (!resData.success) {
+          console.warn('[AdminReset] Server API notice, falling back to local batch:', resData.error)
+        } else {
+          console.log('[AdminReset] Server API ejecutó con éxito:', resData.message)
+        }
+      } catch (apiErr) {
+        console.warn('[AdminReset] No se pudo contactar endpoint API, ejecutando local:', apiErr)
+      }
+
+      // 2. Snapshot previo para auditoría y actualización reactiva local
       const previousSnapshot = {
         ...vault,
         date: now,
