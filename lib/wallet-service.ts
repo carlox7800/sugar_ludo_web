@@ -186,13 +186,20 @@ export async function createDepositOrder(params: {
     })
   } catch {}
 
-  // Post directo al Hub de Cajeros (puerto 3001 en local y servidor Render oficial)
+  // Post directo al Hub de Cajeros (en local puerto 3001, en producción solo el servidor Render oficial)
   try {
-    const hubEndpoints = [
+    const isLocalDev = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.startsWith('192.168.')
+    )
+
+    const hubEndpoints: string[] = [
       'https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders',
-      'http://localhost:3001/api/cashier/orders',
+      ...(isLocalDev ? ['http://localhost:3001/api/cashier/orders'] : []),
       ...(process.env.NEXT_PUBLIC_ADMIN_HUB_URL ? [`${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/cashier/orders`] : [])
     ]
+
     hubEndpoints.forEach((url) => {
       fetch(url, {
         method: 'POST',
@@ -214,34 +221,11 @@ export async function createDepositOrder(params: {
     console.warn('[WalletService] Error registrando historial:', histErr)
   }
 
-  // 3. Persistir en Firestore (SDK + REST con timeout seguro para no bloquear la UI)
+  // 3. Persistir en Firestore de forma idempotente con setDoc (SDK oficial, sin colisiones 409 REST)
   try {
-    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
-    const firestoreRestDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders?documentId=${orderId}`
-    fetch(firestoreRestDocUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fields: {
-          id: { stringValue: orderData.id },
-          type: { stringValue: orderData.type },
-          status: { stringValue: orderData.status },
-          playerUid: { stringValue: orderData.playerUid },
-          playerId: { stringValue: orderData.playerId || playerId },
-          playerName: { stringValue: orderData.playerName },
-          amountFiat: { doubleValue: orderData.amountFiat },
-          currency: { stringValue: orderData.currency },
-          amountSugarCoins: { integerValue: String(orderData.amountSugarCoins) },
-          paymentMethod: { stringValue: orderData.paymentMethod },
-          receiptReferenceNumber: { stringValue: orderData.receiptReferenceNumber || '' },
-          createdAt: { integerValue: String(orderData.createdAt) }
-        }
-      })
-    }).catch(() => {})
-
     const orderRef = doc(db, 'cashier_orders', orderId)
     await Promise.race([
-      setDoc(orderRef, orderData),
+      setDoc(orderRef, orderData, { merge: true }),
       new Promise((resolve) => setTimeout(resolve, 2500))
     ])
   } catch (err: any) {
@@ -296,10 +280,16 @@ export async function createWithdrawOrder(params: {
   } catch {}
 
   // 2. Despachar al Hub autoritativo (que ejecuta createWithdrawOrderWithEscrow en el servidor)
-  const hubEndpoints = [
+  const isLocalDev = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.startsWith('192.168.')
+  )
+
+  const hubEndpoints: string[] = [
     ...(process.env.NEXT_PUBLIC_ADMIN_HUB_URL ? [`${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/cashier/orders`] : []),
     'https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders',
-    'http://localhost:3001/api/cashier/orders'
+    ...(isLocalDev ? ['http://localhost:3001/api/cashier/orders'] : [])
   ]
 
   let serverProcessed = false
