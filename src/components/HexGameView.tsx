@@ -452,6 +452,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
         }
       }
 
+      isAnimatingMoveRef.current = false;
+
       setGameState((prev) => {
         let newPlayers = [...prev.players];
         let newWinner = prev.winner;
@@ -517,8 +519,6 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
             globalLogger.log('GAME-FLOW', `🏁 ¡La partida ha terminado!`);
           }
         }
-
-        isAnimatingMoveRef.current = false;
 
         return {
           ...prev,
@@ -765,7 +765,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
   // Human Token Click
   const handleTokenClick = (tokenId: number) => {
     setIsHumanAutoplay(false); // Wake up human player
-    if (activePlayer.type !== 'human' || gameState.isAnimating || gameState.isRolling || !gameState.hasRolled || isAnimatingMoveRef.current) return;
+    if (activePlayer?.type !== 'human' || gameState.isAnimating || gameState.isRolling || !gameState.hasRolled || isAnimatingMoveRef.current) return;
 
     if (playableTokenIds.includes(tokenId)) {
       const token = gameState.tokens.find((t) => t.playerId === activePlayer.id && t.id === tokenId);

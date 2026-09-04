@@ -414,110 +414,6 @@ const HexBoardStaticSVG = React.memo(({ rotationOffset, boardSkinId }: { rotatio
   );
 });
 
-interface HexTokenItemProps {
-  token: HexToken;
-  pos: { x: number; y: number };
-  isPlayable: boolean;
-  isHumanPlayer: boolean;
-  tokenTheme: ReturnType<typeof getTokenTheme>;
-  rotationOffset: number;
-  onTokenClick: (tokenId: number) => void;
-}
-
-const HexTokenItem = React.memo<HexTokenItemProps>(({
-  token,
-  pos,
-  isPlayable,
-  isHumanPlayer,
-  tokenTheme,
-  rotationOffset,
-  onTokenClick,
-}) => {
-  const tokenInfo = HEX_COLOR_INFO[token.color];
-  const isBase = token.step <= 0;
-
-  // Pure GPU Hardware Translation using percentage of 48px token size on 722x688 viewBox board
-  const tx = (((pos.x - 139) / 48) * 100) - 50;
-  const ty = (((pos.y - 156) / 48) * 100) - 50;
-
-  return (
-    <div
-      className={`absolute top-0 left-0 ${isPlayable ? 'cursor-pointer pointer-events-auto' : 'pointer-events-none'}`}
-      style={{
-        width: `${(48 / 722) * 100}%`,
-        height: `${(48 / 688) * 100}%`,
-        transform: `translate3d(${tx}%, ${ty}%, 0)`,
-        transition: 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        willChange: isPlayable ? 'transform' : 'auto',
-        zIndex: isPlayable ? 30 : 10,
-      }}
-      onClick={() => isPlayable && onTokenClick(token.id)}
-    >
-      <div className={`w-full h-full flex items-center justify-center ${isPlayable && isHumanPlayer ? 'breathing-token-hex' : ''}`}>
-        <svg 
-          viewBox="-24 -24 48 48" 
-          className="w-full h-full overflow-visible cursor-pointer"
-          style={{ transform: `rotate(${-(rotationOffset || 0)}deg)` }}
-        >
-          <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
-            {tokenTheme.style === 'gem' ? (
-              <>
-                <polygon points="0,-18 16,-6 12,16 -12,16 -16,-6" fill={tokenInfo.hexCode} stroke="#ffffff" strokeWidth="2" />
-                <polygon points="0,-18 16,-6 0,0 -16,-6" fill="rgba(255,255,255,0.4)" stroke="#ffffff" strokeWidth="1" />
-                <circle cx={-5} cy={-8} r={1.5} fill="#ffffff" />
-              </>
-            ) : tokenTheme.style === 'candy' ? (
-              <>
-                <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="#ffffff" strokeWidth="2.5" />
-                <circle cx={0} cy={0} r={12} fill="none" stroke="#fff0f5" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.9" />
-                <circle cx={-6} cy={-6} r={2.5} fill="#ffffff" opacity="0.8" />
-              </>
-            ) : tokenTheme.style === 'gold' ? (
-              <>
-                <circle cx={0} cy={0} r={16} fill="#eab308" stroke="#fef08a" strokeWidth="2.5" />
-                <circle cx={0} cy={0} r={11} fill={tokenInfo.hexCode} stroke="#ca8a04" strokeWidth="1.5" />
-                <circle cx={-5} cy={-5} r={2} fill="#ffffff" opacity="0.8" />
-              </>
-            ) : (
-              <>
-                <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
-                <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" />
-                <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
-                <circle cx={0} cy={0} r={5} fill={tokenInfo.hexCode} />
-                <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
-              </>
-            )}
-          </g>
-
-          {/* Token Number */}
-          <text
-            x={0}
-            y={0.5}
-            fill="#FFFFFF"
-            fontSize={isBase ? "9" : "10"}
-            fontWeight="bold"
-            textAnchor="middle"
-            dominantBaseline="middle"
-            opacity="0.95"
-          >
-            {token.id + 1}
-          </text>
-        </svg>
-      </div>
-    </div>
-  );
-}, (prev, next) => {
-  return (
-    prev.token.step === next.token.step &&
-    prev.pos.x === next.pos.x &&
-    prev.pos.y === next.pos.y &&
-    prev.isPlayable === next.isPlayable &&
-    prev.isHumanPlayer === next.isHumanPlayer &&
-    prev.rotationOffset === next.rotationOffset &&
-    prev.tokenTheme.style === next.tokenTheme.style
-  );
-});
-
 const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = ({
   tokens,
   players,
@@ -555,7 +451,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
   }, [tokens]);
 
   return (
-    <div className="relative w-full mx-auto select-none flex items-center justify-center p-0 rounded-2xl shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
+    <div className="relative w-full mx-auto select-none flex items-center justify-center p-0">
       <svg
         viewBox="139 156 722 688"
         className="w-full h-auto block"
@@ -566,23 +462,85 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
       </svg>
 
       {/* --- HTML GPU OVERLAY (Fichas Hexágono Aceleradas por GPU a 60 FPS) --- */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none overflow-visible">
         {tokens.map((token) => {
           const pos = getTokenCoordinates(token, cellTokensMap);
+          const hexGlobalId = token.playerId * 3 + token.id;
           const globalId = token.playerId * 4 + token.id;
-          const isPlayable = (playableTokenIds.includes(token.id) || playableTokenIds.includes(globalId)) && activePlayer?.color === token.color;
+          const isPlayable = (playableTokenIds.includes(token.id) || playableTokenIds.includes(hexGlobalId) || playableTokenIds.includes(globalId)) && activePlayer?.color === token.color;
+          const tokenInfo = HEX_COLOR_INFO[token.color];
+          const isBase = token.step <= 0;
+
+          // Pure GPU Hardware Translation using percentage of 48px token size on 722x688 viewBox board
+          const tx = (((pos.x - 139) / 48) * 100) - 50;
+          const ty = (((pos.y - 156) / 48) * 100) - 50;
 
           return (
-            <HexTokenItem
+            <div
               key={`hex-token-${token.color}-${token.id}`}
-              token={token}
-              pos={pos}
-              isPlayable={isPlayable}
-              isHumanPlayer={activePlayer?.type === 'human'}
-              tokenTheme={tokenTheme}
-              rotationOffset={rotationOffset || 0}
-              onTokenClick={onTokenClick}
-            />
+              className={`absolute top-0 left-0 ${isPlayable ? 'cursor-pointer pointer-events-auto' : 'pointer-events-none'}`}
+              style={{
+                width: `${(48 / 722) * 100}%`,
+                height: `${(48 / 688) * 100}%`,
+                transform: `translate3d(${tx}%, ${ty}%, 0)`,
+                transition: 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                willChange: 'transform',
+                zIndex: isPlayable ? 30 : 10,
+              }}
+              onClick={() => isPlayable && onTokenClick(token.id)}
+            >
+              <div className={`w-full h-full flex items-center justify-center ${isPlayable && activePlayer?.type === 'human' ? 'breathing-token-hex' : ''}`}>
+                <svg 
+                  viewBox="-24 -24 48 48" 
+                  className="w-full h-full overflow-visible cursor-pointer"
+                  style={{ transform: `rotate(${-(rotationOffset || 0)}deg)` }}
+                >
+                  <g transform={`scale(${isBase ? 0.75 : 0.85})`}>
+                    {tokenTheme.style === 'gem' ? (
+                      <>
+                        <polygon points="0,-18 16,-6 12,16 -12,16 -16,-6" fill={tokenInfo.hexCode} stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0px 2px 3px rgba(0,0,0,0.5))" />
+                        <polygon points="0,-18 16,-6 0,0 -16,-6" fill="rgba(255,255,255,0.4)" stroke="#ffffff" strokeWidth="1" />
+                        <circle cx={-5} cy={-8} r={1.5} fill="#ffffff" />
+                      </>
+                    ) : tokenTheme.style === 'candy' ? (
+                      <>
+                        <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="#ffffff" strokeWidth="2.5" filter="drop-shadow(0px 2px 4px rgba(0,0,0,0.4))" />
+                        <circle cx={0} cy={0} r={12} fill="none" stroke="#fff0f5" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.9" />
+                        <circle cx={-6} cy={-6} r={2.5} fill="#ffffff" opacity="0.8" />
+                      </>
+                    ) : tokenTheme.style === 'gold' ? (
+                      <>
+                        <circle cx={0} cy={0} r={16} fill="#eab308" stroke="#fef08a" strokeWidth="2.5" filter="drop-shadow(0px 2px 4px rgba(0,0,0,0.5))" />
+                        <circle cx={0} cy={0} r={11} fill={tokenInfo.hexCode} stroke="#ca8a04" strokeWidth="1.5" />
+                        <circle cx={-5} cy={-5} r={2} fill="#ffffff" opacity="0.8" />
+                      </>
+                    ) : (
+                      <>
+                        <circle cx={1.5} cy={2.5} r={16} fill="rgba(0,0,0,0.35)" />
+                        <circle cx={0} cy={0} r={16} fill={tokenInfo.hexCode} stroke="var(--color-border)" strokeWidth="2" />
+                        <circle cx={0} cy={0} r={10} fill="var(--bg-panel)" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" />
+                        <circle cx={0} cy={0} r={5} fill={tokenInfo.hexCode} />
+                        <circle cx={-5} cy={-5} r={2.5} fill="rgba(255, 255, 255, 0.8)" />
+                      </>
+                    )}
+                  </g>
+
+                  {/* Token Number */}
+                  <text
+                    x={0}
+                    y={0.5}
+                    fill="#FFFFFF"
+                    fontSize={isBase ? "9" : "10"}
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    opacity="0.95"
+                  >
+                    {token.id + 1}
+                  </text>
+                </svg>
+              </div>
+            </div>
           );
         })}
         {/* --- OVERLAY DE EXPLOSIÓN SUPREMA (Fuegos Artificiales GPU HTML) --- */}
@@ -652,27 +610,5 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
   );
 };
 
-export const HexagonalLudoBoardView = React.memo(HexagonalLudoBoardViewComponent, (prevProps, nextProps) => {
-  if (prevProps.appTheme !== nextProps.appTheme) return false;
-  if (prevProps.currentTurnIndex !== nextProps.currentTurnIndex) return false;
-  if (prevProps.humanPlayerId !== nextProps.humanPlayerId) return false;
-  if (prevProps.isAnimating !== nextProps.isAnimating) return false;
-  if (prevProps.isRolling !== nextProps.isRolling) return false;
-  
-  // Comparar tokens rápidamente
-  if (prevProps.tokens.length !== nextProps.tokens.length) return false;
-  for (let i = 0; i < prevProps.tokens.length; i++) {
-    const pt = prevProps.tokens[i];
-    const nt = nextProps.tokens[i];
-    if (pt.step !== nt.step || pt.color !== nt.color || pt.playerId !== nt.playerId) return false;
-  }
-  
-  if (prevProps.playableTokenIds.join(',') !== nextProps.playableTokenIds.join(',')) return false;
-  
-  const prevExp = prevProps.explosionData ? `${prevProps.explosionData.cellIndex}-${prevProps.explosionData.color}` : '';
-  const nextExp = nextProps.explosionData ? `${nextProps.explosionData.cellIndex}-${nextProps.explosionData.color}` : '';
-  if (prevExp !== nextExp) return false;
-  
-  return true;
-});
+export const HexagonalLudoBoardView = React.memo(HexagonalLudoBoardViewComponent);
 
