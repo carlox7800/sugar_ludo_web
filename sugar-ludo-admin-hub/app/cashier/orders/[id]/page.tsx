@@ -63,7 +63,21 @@ export default function OrderDetailPage() {
   const [isReceiptOpen, setIsReceiptOpen] = useState(false)
   const [activeReceiptUrl, setActiveReceiptUrl] = useState<string | undefined>(undefined)
   const [isDisputeOpen, setIsDisputeOpen] = useState(false)
-  const [notification, setNotification] = useState<string | null>(null)
+  const [notification, setNotificationState] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+
+  const setNotification = (val: string | { message: string; type: 'success' | 'error' | 'info' } | null) => {
+    if (!val) {
+      setNotificationState(null)
+      return
+    }
+    if (typeof val === 'string') {
+      const isErr = val.toLowerCase().includes('error') || val.toLowerCase().includes('fallo') || val.toLowerCase().includes('denegad') || val.toLowerCase().includes('insuficiente')
+      setNotificationState({ message: val, type: isErr ? 'error' : 'success' })
+    } else {
+      setNotificationState(val)
+    }
+    setTimeout(() => setNotificationState(null), 4500)
+  }
   const [payoutTxId, setPayoutTxId] = useState('')
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false)
   const [isDirectValidationModalOpen, setIsDirectValidationModalOpen] = useState(false)
@@ -397,21 +411,19 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
 ¡Gracias por jugar en Sugar Ludo! Ya puedes disfrutar de tus partidas y salas de juego.`
 
       await handleSendMessage(depositNoticeText)
+
+      setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalRef } : null))
+      setIsDirectValidationModalOpen(false)
+      setNotification(`¡Depósito #${order.id.slice(0, 10)} validado y liberado con éxito (+${depositCoins} SC acreditados al jugador)!`)
     } catch (e: any) {
       cashierLogger.error(`Error durante la validación del depósito #${order.id.slice(0, 8)}`, {
         code: e?.code,
         message: e?.message
       })
       setNotification(`Error al validar depósito: ${e?.message || 'Fallo de conexión'}`)
-      return
     } finally {
       setIsValidating(false)
     }
-
-    setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalRef } : null))
-    setIsDirectValidationModalOpen(false)
-    setNotification(`¡Depósito #${order.id.slice(0, 10)} validado y liberado con éxito (+${depositCoins} SC acreditados al jugador)!`)
-    setTimeout(() => setNotification(null), 4000)
   }
 
   const [isValidatingPayout, setIsValidatingPayout] = useState(false)
@@ -742,9 +754,19 @@ Conserva este mensaje como comprobante formal de la transacción.`
 
       {/* Notification Toast */}
       {notification && (
-        <div className="fixed top-20 right-6 z-50 p-4 rounded-2xl bg-emerald-500 text-slate-950 font-bold text-xs shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-300">
-          <CheckCircle2 className="size-5" />
-          <span>{notification}</span>
+        <div className={`fixed top-20 right-6 z-50 p-4 rounded-2xl font-bold text-xs shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-300 ${
+          notification.type === 'error'
+            ? 'bg-rose-500 text-white shadow-rose-500/25'
+            : notification.type === 'info'
+            ? 'bg-cyan-500 text-slate-950 shadow-cyan-500/25'
+            : 'bg-emerald-500 text-slate-950 shadow-emerald-500/25'
+        }`}>
+          {notification.type === 'error' ? (
+            <AlertCircle className="size-5 text-white" />
+          ) : (
+            <CheckCircle2 className="size-5 text-slate-950" />
+          )}
+          <span>{notification.message}</span>
         </div>
       )}
 

@@ -26,14 +26,19 @@ try {
  * Nunca expone claves privadas al navegador ni a los clientes móviles.
  */
 
-if (!admin.apps.length) {
+export const hasAdminCredentials = Boolean(
+  process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+  (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY)
+)
+
+if (!admin.apps?.length) {
   try {
     // Opción 1: Archivo o JSON completo en variable de entorno
     if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'sugar-ludo-web.appspot.com'
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'sweety-ludo-87343.firebasestorage.app'
       })
     } 
     // Opción 2: Variables individuales inyectadas por Render / Vercel
@@ -44,23 +49,29 @@ if (!admin.apps.length) {
           clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
           privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
         }),
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'sugar-ludo-web.appspot.com'
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'sweety-ludo-87343.firebasestorage.app'
       })
     } 
-    // Opción 3: Entorno de desarrollo local / Google Application Default Credentials
+    // Opción 3: Entorno sin credenciales explícitas (desarrollo o Render sin clave de servicio)
     else {
-      admin.initializeApp({
-        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sugar-ludo-web'
-      })
-      console.warn('[FirebaseAdmin] Inicializado con credenciales predeterminadas/desarrollo.')
+      // Si no hay credenciales, no inicializar para evitar que intente consultar ADC en Render
+      console.warn('[FirebaseAdmin] No se detectaron credenciales de cuenta de servicio. Activando motor híbrido de respaldo.')
     }
   } catch (error) {
     console.error('[FirebaseAdmin] Error inicializando Firebase Admin SDK:', error)
   }
 }
 
-export const adminDb = admin.firestore()
-export const adminAuth = admin.auth()
-export const adminStorage = admin.storage()
+let rawAdminDb: any = null
+try {
+  if (hasAdminCredentials && admin.apps?.length) {
+    rawAdminDb = admin.firestore()
+  }
+} catch {}
+
+export const adminDb = rawAdminDb
+export const adminAuth = admin.auth ? admin.auth() : {}
+export const adminStorage = admin.storage ? admin.storage() : {}
 
 export { admin }
+
