@@ -9,6 +9,8 @@ export interface CashierLogEntry {
   details?: any
 }
 
+import { APP_VERSION_TAG, APP_VERSION } from './version'
+
 const MAX_LOGS = 250
 const STORAGE_KEY = 'sugar_cashier_diag_logs'
 
@@ -42,7 +44,9 @@ class CashierLogger {
       }
     } catch {}
     this.isInitialized = true
-    this.info('Sesión de diagnóstico iniciada', {
+    this.info(`Sesión de diagnóstico iniciada [${APP_VERSION_TAG}]`, {
+      version: APP_VERSION,
+      versionTag: APP_VERSION_TAG,
       url: typeof window !== 'undefined' ? window.location.href : '',
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : ''
     })

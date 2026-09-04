@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../lib/admin-auth-context'
+import { APP_VERSION_TAG } from '../../lib/version'
 import { TreasuryBreakdownCard } from '../../components/admin/TreasuryBreakdownCard'
 import { DetailedTelemetryCard } from '../../components/admin/DetailedTelemetryCard'
 import { AccordionBlock } from '../../components/ui/AccordionBlock'
@@ -718,9 +719,14 @@ export default function AdminDashboardPage() {
             <Activity className="size-5" />
           </div>
           <div>
-            <h1 className="font-black text-base text-white tracking-wide">
-              DASHBOARD MAESTRO SUPER ADMIN
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-black text-base text-white tracking-wide">
+                DASHBOARD MAESTRO SUPER ADMIN
+              </h1>
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono font-black">
+                {APP_VERSION_TAG}
+              </span>
+            </div>
             <p className="text-[11px] text-slate-400 font-mono">
               admin.sugarludo.com &bull; Bóveda Real, Pasivo de Jugadores y Ganancias de la Casa
             </p>

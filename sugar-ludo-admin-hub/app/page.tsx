@@ -84,6 +84,9 @@ export default function HubLandingPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">
+            {APP_VERSION_TAG}
+          </span>
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
             Servidor Online

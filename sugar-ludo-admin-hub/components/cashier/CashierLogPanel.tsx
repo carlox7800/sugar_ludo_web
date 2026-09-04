@@ -90,6 +90,9 @@ export function CashierLogPanel() {
       >
         <Terminal className="size-4 text-cyan-400 animate-pulse" />
         <span>📋 Consola Logs</span>
+        <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">
+          {APP_VERSION_TAG}
+        </span>
         <span className="px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px]">
           {logs.length}
         </span>

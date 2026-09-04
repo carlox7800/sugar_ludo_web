@@ -21,6 +21,7 @@ import {
   markBroadcastAsReadByCashier,
   markPrivateChatAsReadByCashier
 } from '../../lib/staff-chat-service'
+import { APP_VERSION_TAG } from '../../lib/version'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins, Calendar, LayoutList, LayoutGrid } from 'lucide-react'
 
 export default function CashierMainDeskPage() {
@@ -369,7 +370,10 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
           </div>
           <div>
             <h1 className="font-black text-base text-white tracking-wide flex items-center gap-2">
-              BANDEJA DE ÓRDENES P2P
+              <span>BANDEJA DE ÓRDENES P2P</span>
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono font-black">
+                {APP_VERSION_TAG}
+              </span>
             </h1>
             <p className="text-[11px] text-slate-400 font-mono">
               cajeros.sugarludo.com &bull; Turno: <strong className="text-cyan-300" suppressHydrationWarning>{currentCashier.name}</strong>

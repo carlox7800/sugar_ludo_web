@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import { Trophy, Users, ShieldCheck, Monitor, Smartphone, Sparkles, Globe } from 'lucide-react'
+import { APP_VERSION } from '@/lib/constants'
 
 interface LandingPageProps {
   onContinueInBrowser?: () => void
@@ -148,7 +149,7 @@ export function LandingPage({ onContinueInBrowser }: LandingPageProps = {}) {
       {/* Footer */}
       <footer className="w-full p-6 text-center border-t border-border/20 z-10">
         <p className="text-xs text-muted-foreground font-semibold">
-          © {new Date().getFullYear()} Sugar Ludo — Aplicación Oficial PWA.
+          © {new Date().getFullYear()} Sugar Ludo <span className="text-[var(--candy-cyan)] font-mono font-bold">v{APP_VERSION.replace(/^v/, '')}</span> — Aplicación Oficial PWA.
         </p>
       </footer>
     </div>

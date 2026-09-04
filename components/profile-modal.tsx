@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil, Check, Wallet } from 'lucide-react'
+import { X, Crown, Sparkles, Trophy, Flame, Swords, ShieldAlert, History, Package, Award, Pencil, Check, Wallet, Info } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { AvatarSelectorModal, PRESET_AVATARS } from './avatar-selector-modal'
 import { HistoryModal } from './history-modal'
 import { fetchUserInventory, CUSTOMIZATION_ITEMS, UserInventory } from '@/lib/store-service'
+import { APP_VERSION } from '@/lib/constants'
 
 interface ProfileModalProps {
   isOpen: boolean
@@ -362,6 +363,12 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   Ver Todo
                 </span>
               </button>
+            </div>
+
+            {/* Version Badge Footer */}
+            <div className="flex items-center justify-center gap-1.5 pt-2 text-[11px] font-semibold text-muted-foreground">
+              <Info className="size-3.5 text-[var(--candy-cyan)]" />
+              <span>Sugar Ludo <strong className="text-foreground">{APP_VERSION}</strong> &bull; Edición Oficial</span>
             </div>
           </div>
         </div>
