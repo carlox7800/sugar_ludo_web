@@ -482,7 +482,7 @@ const HexagonalLudoBoardViewComponent: React.FC<HexagonalLudoBoardViewProps> = (
                 width: `${(48 / 722) * 100}%`,
                 height: `${(48 / 688) * 100}%`,
                 transform: `translate3d(${tx}%, ${ty}%, 0)`,
-                transition: 'transform 0.13s cubic-bezier(0.2, 0.8, 0.3, 1)',
+                transition: 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                 willChange: 'transform',
                 zIndex: isPlayable ? 30 : 10,
               }}

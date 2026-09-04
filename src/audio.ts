@@ -18,39 +18,6 @@ class LudoAudio {
   private sfxVolume: number = 1.0;
   private isMuted: boolean = false;
   private turnAlertInterval: number | null = null;
-  private stepBuffer: AudioBuffer | null = null;
-
-  private createStepBuffer(ctx: AudioContext): AudioBuffer {
-    const sampleRate = ctx.sampleRate;
-    const duration = 0.12; // 120ms
-    const frameCount = Math.floor(sampleRate * duration);
-    const buffer = ctx.createBuffer(1, frameCount, sampleRate);
-    const data = buffer.getChannelData(0);
-
-    // Synthesize the step sound:
-    // Click: 750Hz + 1150Hz decaying in 15ms
-    // Woody body: 190Hz triangle + 340Hz sine decaying in 120ms
-    for (let i = 0; i < frameCount; i++) {
-      const t = i / sampleRate;
-      
-      // Click component (exponential decay tau ~ 0.003s)
-      const clickEnv = Math.exp(-t / 0.0035);
-      const clickWave = 0.5 * (Math.sin(2 * Math.PI * 750 * t) + Math.sin(2 * Math.PI * 1150 * t));
-      
-      // Body component (decay tau ~ 0.03s)
-      const bodyEnv = Math.exp(-t / 0.028);
-      // Triangle wave approximation for 190Hz:
-      const triPhase = (190 * t) % 1;
-      const triWave = 2 * Math.abs(2 * triPhase - 1) - 1;
-      const sineWave = Math.sin(2 * Math.PI * 340 * t);
-      const bodyWave = 0.6 * triWave + 0.4 * sineWave;
-
-      // Master sum scaled nicely without clipping
-      data[i] = (clickEnv * clickWave * 0.45 + bodyEnv * bodyWave * 0.55) * 0.8;
-    }
-
-    return buffer;
-  }
 
   private init() {
     if (!this.ctx && typeof window !== 'undefined') {
@@ -264,30 +231,71 @@ class LudoAudio {
 
   /**
    * Sound 2: Step Sound (Paso de Fichas)
-   * Pre-rendered zero-allocation buffer (Instant sample-accurate playback, zero thread jitter)
+   * High freq contact click (750Hz, 1150Hz, exponential decay 15ms)
+   * + Low frequency woodblock body resonance (190Hz, 340Hz, decay 120ms).
    */
   public playStep() {
     this.init();
-    if (!this.ctx || !this.sfxMasterGain) return;
+    if (!this.ctx) return;
 
-    try {
-      if (!this.stepBuffer) {
-        this.stepBuffer = this.createStepBuffer(this.ctx);
-      }
+    // Look-ahead buffer to avoid main thread render jitter
+    const t = this.ctx.currentTime + 0.015;
 
-      const source = this.ctx.createBufferSource();
-      source.buffer = this.stepBuffer;
+    // Contact Click Nodes
+    const clickOsc1 = this.ctx.createOscillator();
+    const clickOsc2 = this.ctx.createOscillator();
+    const clickGain = this.ctx.createGain();
 
-      const stepGain = this.ctx.createGain();
-      stepGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+    clickOsc1.type = 'sine';
+    clickOsc1.frequency.setValueAtTime(750, t);
+    clickOsc2.type = 'sine';
+    clickOsc2.frequency.setValueAtTime(1150, t);
 
-      source.connect(stepGain);
-      stepGain.connect(this.sfxMasterGain);
+    clickOsc1.connect(clickGain);
+    clickOsc2.connect(clickGain);
 
-      source.start(this.ctx.currentTime);
-    } catch (e) {
-      // Audio context might be restricted or closing
-    }
+    // Body Resonance Nodes
+    const bodyOsc1 = this.ctx.createOscillator();
+    const bodyOsc2 = this.ctx.createOscillator();
+    const bodyGain = this.ctx.createGain();
+
+    bodyOsc1.type = 'triangle';
+    bodyOsc1.frequency.setValueAtTime(190, t);
+    bodyOsc2.type = 'sine';
+    bodyOsc2.frequency.setValueAtTime(340, t);
+
+    bodyOsc1.connect(bodyGain);
+    bodyOsc2.connect(bodyGain);
+
+    // Mixer
+    const masterGain = this.ctx.createGain();
+    clickGain.connect(masterGain);
+    bodyGain.connect(masterGain);
+    if (this.sfxMasterGain) masterGain.connect(this.sfxMasterGain);
+
+    // Click envelope: extremely fast decay
+    clickGain.gain.setValueAtTime(0, t);
+    clickGain.gain.linearRampToValueAtTime(0.25, t + 0.001);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.015);
+
+    // Body envelope: medium woody decay
+    bodyGain.gain.setValueAtTime(0, t);
+    bodyGain.gain.linearRampToValueAtTime(0.35, t + 0.003);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+    // Master volume
+    masterGain.gain.setValueAtTime(0.4, t);
+
+    // Start & Stop
+    clickOsc1.start(t);
+    clickOsc2.start(t);
+    bodyOsc1.start(t);
+    bodyOsc2.start(t);
+
+    clickOsc1.stop(t + 0.15);
+    clickOsc2.stop(t + 0.15);
+    bodyOsc1.stop(t + 0.15);
+    bodyOsc2.stop(t + 0.15);
   }
 
   /**
