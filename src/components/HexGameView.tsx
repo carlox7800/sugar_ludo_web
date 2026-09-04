@@ -314,6 +314,9 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     const stepsToTake = newStep - oldStep;
     let currentStepAnim = oldStep;
 
+    // Dynamic cadence: snappy for normal moves (170ms), accelerated for long runs (>4 steps, 130ms)
+    const stepDelay = stepsToTake > 5 ? 130 : 160;
+
     const animateNextStep = () => {
       if (winnerRef.current !== null) {
         isAnimatingMoveRef.current = false;
@@ -335,12 +338,12 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
       });
 
       if (currentStepAnim < newStep) {
-        setTimeout(animateNextStep, 250); // 250ms per step (allows 220ms CSS transition to finish)
+        setTimeout(animateNextStep, stepDelay);
       } else {
-        // Finished moving, do captures and rules
+        // Finished moving, do captures and rules after final step settles
         setTimeout(() => {
           finalizeMove(newStep);
-        }, 250);
+        }, Math.max(stepDelay, 160));
       }
     };
 
