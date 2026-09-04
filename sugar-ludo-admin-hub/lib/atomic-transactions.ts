@@ -372,6 +372,42 @@ export async function cancelWithdrawOrderAtomics(params: {
           lastActiveAt: now
         })
       }
+    } else if (order.type === 'deposit') {
+      // Actualizar historial del usuario para reflejar que la solicitud de depósito fue cancelada
+      const playerRef = adminDb.collection('users').doc(order.playerUid)
+      const playerSnap = await transaction.get(playerRef)
+
+      if (playerSnap.exists) {
+        const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
+        let marked = false
+        const updatedHistory = existingHistory.map((tx: any) => {
+          if (!marked && tx.description && tx.description.includes('(Pendiente)')) {
+            marked = true
+            return {
+              ...tx,
+              description: tx.description.replace('(Pendiente)', '(Cancelada)'),
+              amount: 0
+            }
+          }
+          return tx
+        })
+
+        if (!marked) {
+          updatedHistory.unshift({
+            id: `tx_cnl_${now}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'deposit',
+            amount: 0,
+            description: `Solicitud de Depósito (Cancelada)`,
+            timestamp: now,
+            dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+          })
+        }
+
+        transaction.update(playerRef, {
+          walletHistory: updatedHistory.slice(0, 50),
+          lastActiveAt: now
+        })
+      }
     }
 
     // Actualizar estado de la orden a cancelled

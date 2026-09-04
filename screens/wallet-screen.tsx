@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle, X, Trash2, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle, X, Trash2, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
 import { ProfileModal } from '@/components/profile-modal'
@@ -29,6 +29,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([])
   const [activeOrders, setActiveOrders] = useState<PlayerP2POrder[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null)
   
   const refreshData = () => {
     if (user?.uid) {
@@ -250,18 +251,43 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
   }
 
   const handleCancelOrder = async (orderId: string) => {
-    if (!user?.uid) return
+    if (!user?.uid || cancellingOrderId) return
+    setCancellingOrderId(orderId)
     globalLogger.wallet(`Cancelando solicitud de orden: #${orderId}`)
+    
+    // Remoción optimista de la orden activa y actualización inmediata en el historial visual
+    setActiveOrders((prev) => prev.filter((o) => o.id !== orderId))
+    setTransactions((prev) => {
+      let updated = false
+      return prev.map((tx) => {
+        if (!updated && tx.description && tx.description.includes('(Pendiente)')) {
+          updated = true
+          return {
+            ...tx,
+            description: tx.description.replace('(Pendiente)', '(Cancelada)'),
+            amount: 0
+          }
+        }
+        return tx
+      })
+    })
+
     try {
       const res = await cancelPlayerOrder(user.uid, orderId)
       if (res.success) {
         globalLogger.wallet(`Orden cancelada con éxito: #${orderId}`)
         showNotification('Solicitud cancelada con éxito', 'info')
         refreshData()
+      } else {
+        showNotification(res.message || 'Error al cancelar la solicitud', 'error')
+        refreshData()
       }
     } catch (err: any) {
       globalLogger.error(`Excepción al cancelar orden: #${orderId}`, { message: err?.message })
       showNotification('Error al cancelar la solicitud', 'error')
+      refreshData()
+    } finally {
+      setCancellingOrderId(null)
     }
   }
 
@@ -591,12 +617,26 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                       </span>
                       <button
                         type="button"
+                        disabled={cancellingOrderId === ord.id}
                         onClick={() => handleCancelOrder(ord.id)}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[10px] font-bold transition-all cursor-pointer"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
+                          cancellingOrderId === ord.id
+                            ? 'bg-rose-500/10 text-rose-300/60 border-rose-500/20 cursor-not-allowed opacity-75'
+                            : 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/30 active:scale-95'
+                        }`}
                         title="Cancelar solicitud"
                       >
-                        <Trash2 className="size-3" />
-                        <span>Cancelar</span>
+                        {cancellingOrderId === ord.id ? (
+                          <>
+                            <Loader2 className="size-3 animate-spin text-rose-300" />
+                            <span>Cancelando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="size-3" />
+                            <span>Cancelar</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -644,24 +684,47 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 }
 
 function TransactionItem({ type, title, date, amount, usdtEquivalent, color }: { type: 'deposit' | 'withdrawal', title: string, date: string, amount: string, usdtEquivalent: string, color: string }) {
+  const isCancelled = title.toLowerCase().includes('cancelad')
+  const displayColor = isCancelled ? 'var(--muted-foreground)' : color
+
   return (
-    <div className="glass flex shrink-0 items-center justify-between rounded-2xl p-4 transition-colors hover:bg-[oklch(1_0_0/0.03)] border border-border/50">
+    <div className={`glass flex shrink-0 items-center justify-between rounded-2xl p-4 transition-colors hover:bg-[oklch(1_0_0/0.03)] border ${
+      isCancelled ? 'border-rose-500/20 bg-rose-500/5' : 'border-border/50'
+    }`}>
       <div className="flex items-center gap-4">
         <div 
           className="flex size-10 items-center justify-center rounded-xl"
-          style={{ backgroundColor: `${color}22`, color: color }}
+          style={{ 
+            backgroundColor: isCancelled ? 'rgba(244, 63, 94, 0.15)' : `${color}22`, 
+            color: isCancelled ? '#f43f5e' : color 
+          }}
         >
-          {type === 'deposit' ? <ArrowDownLeft className="size-5" /> : <ArrowUpRight className="size-5" />}
+          {isCancelled ? (
+            <XCircle className="size-5 text-rose-400" />
+          ) : (
+            type === 'deposit' ? <ArrowDownLeft className="size-5" /> : <ArrowUpRight className="size-5" />
+          )}
         </div>
         <div className="flex flex-col">
-          <span className="font-display text-sm font-bold">{title}</span>
+          <div className="flex items-center gap-2">
+            <span className={`font-display text-sm font-bold ${isCancelled ? 'text-muted-foreground line-through decoration-rose-500/50' : 'text-foreground'}`}>
+              {title}
+            </span>
+            {isCancelled && (
+              <span className="px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-300 font-extrabold text-[9px] uppercase tracking-wider">
+                Cancelada
+              </span>
+            )}
+          </div>
           <span className="text-[11px] text-muted-foreground">{date}</span>
         </div>
       </div>
       <div className="flex flex-col items-end">
-        <span className="font-display text-base font-extrabold" style={{ color }}>{amount} Sugar Coins</span>
+        <span className="font-display text-base font-extrabold" style={{ color: displayColor }}>
+          {isCancelled ? '0 SC' : `${amount} Sugar Coins`}
+        </span>
         <span className="text-[11px] font-semibold tracking-wide text-muted-foreground">
-          ({usdtEquivalent} USDT)
+          {isCancelled ? '(Anulada)' : `(${usdtEquivalent} USDT)`}
         </span>
       </div>
     </div>

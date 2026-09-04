@@ -154,8 +154,16 @@ export default function CashierOrdersPage() {
     // 3. SSE Stream
     let sseSource: EventSource | null = null
     try {
+      const isLocalDev = typeof window !== 'undefined' && (
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
+      )
+      const sseBaseUrl = isLocalDev 
+        ? 'http://localhost:3000' 
+        : (process.env.NEXT_PUBLIC_GAME_WEB_URL || 'https://sugar-ludo-web.onrender.com')
+
       if (typeof EventSource !== 'undefined') {
-        sseSource = new EventSource('http://localhost:3000/api/social/stream?uid=cashier_orders_list')
+        sseSource = new EventSource(`${sseBaseUrl}/api/social/stream?uid=cashier_orders_list`)
         sseSource.onmessage = (event) => {
           try {
             const evData = JSON.parse(event.data)

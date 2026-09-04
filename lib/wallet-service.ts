@@ -378,20 +378,30 @@ export async function cancelPlayerOrder(playerUid: string, orderId: string): Pro
 
   // Notificar al Hub autoritativo para ejecutar reembolso en Escrow y cancelación atómica en el backend
   let cancelledOnServer = false
-  const hubEndpoints = [
+  const isLocalDev = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.startsWith('192.168.')
+  )
+
+  const hubEndpoints: string[] = [
     ...(process.env.NEXT_PUBLIC_ADMIN_HUB_URL ? [`${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/cashier/orders/${orderId}/action`] : []),
     `https://sugar-ludo-admin-hub.onrender.com/api/cashier/orders/${orderId}/action`,
-    `http://localhost:3001/api/cashier/orders/${orderId}/action`
+    ...(isLocalDev ? [`http://localhost:3001/api/cashier/orders/${orderId}/action`] : [])
   ]
 
   for (const url of hubEndpoints) {
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 3500)
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'cancel', actorUid: playerUid, actorRole: 'player' }),
-        mode: 'cors'
+        mode: 'cors',
+        signal: controller.signal
       })
+      clearTimeout(timeoutId)
       if (res.ok) {
         const data = await res.json()
         if (data.success) {
@@ -402,15 +412,47 @@ export async function cancelPlayerOrder(playerUid: string, orderId: string): Pro
     } catch {}
   }
 
-  // Si no se pudo contactar el Hub, actualizar estado de la orden en Firestore directamente
-  if (!cancelledOnServer) {
-    try {
-      const orderDocRef = doc(db, 'cashier_orders', orderId)
-      await updateDoc(orderDocRef, {
-        status: 'cancelled',
-        cancelledAt: Date.now()
+  // Actualizar estado de la orden en Firestore directamente si no respondió el Hub
+  try {
+    const orderDocRef = doc(db, 'cashier_orders', orderId)
+    await updateDoc(orderDocRef, {
+      status: 'cancelled',
+      cancelledAt: Date.now()
+    })
+  } catch {}
+
+  // Actualizar historial del usuario para reflejar que la orden fue cancelada
+  try {
+    const userRef = doc(db, 'users', playerUid)
+    const userSnap = await getDoc(userRef)
+    if (userSnap.exists()) {
+      const userData = userSnap.data()
+      const history: WalletTransaction[] = userData.walletHistory || []
+      let modified = false
+      const updatedHistory = history.map((tx) => {
+        if (!modified && tx.description && tx.description.includes('(Pendiente)')) {
+          modified = true
+          return {
+            ...tx,
+            description: tx.description.replace('(Pendiente)', '(Cancelada)'),
+            amount: 0
+          }
+        }
+        return tx
       })
-    } catch {}
+
+      if (modified) {
+        await updateDoc(userRef, { walletHistory: updatedHistory })
+      } else {
+        await recordWalletTransaction(playerUid, {
+          type: 'deposit',
+          amount: 0,
+          description: 'Solicitud Cancelada'
+        }, true)
+      }
+    }
+  } catch (histErr) {
+    console.warn('[WalletService] Error actualizando historial cancelado:', histErr)
   }
 
   return { success: true, message: 'Solicitud cancelada con éxito' }

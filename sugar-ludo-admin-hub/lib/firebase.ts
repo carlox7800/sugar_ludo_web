@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { getFirestore, initializeFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
@@ -11,9 +11,10 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:1034741558395:android:ab5a3dd7b87eb9f8bd46de',
 }
 
-// Initialize Firebase Client
+// Initialize Firebase
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)
 const auth = getAuth(app)
-const db = initializeFirestore(app, { experimentalForceLongPolling: true })
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true })
+const googleProvider = new GoogleAuthProvider()
 
-export { app, auth, db }
+export { app, auth, db, googleProvider }
