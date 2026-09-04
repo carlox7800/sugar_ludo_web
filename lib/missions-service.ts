@@ -1,5 +1,5 @@
 import { db } from './firebase'
-import { collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc, updateDoc, query, orderBy, limit } from 'firebase/firestore'
 import { recordWalletTransaction } from './wallet-service'
 
 export interface Mission {
@@ -214,7 +214,14 @@ export async function getLeaderboardData(currentUser?: any): Promise<{ leaderboa
 
   try {
     const usersRef = collection(db, 'users')
-    const snap = await getDocs(usersRef)
+    let snap
+    try {
+      const q = query(usersRef, orderBy('rankPoints', 'desc'), limit(50))
+      snap = await getDocs(q)
+    } catch {
+      const qFallback = query(usersRef, limit(50))
+      snap = await getDocs(qFallback)
+    }
     
     if (!snap.empty) {
       snap.forEach((docSnap) => {

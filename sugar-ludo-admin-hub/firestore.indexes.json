@@ -1,0 +1,107 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "cashier_orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "cashierUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cashier_orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cashier_orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "playerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "friend_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "targetUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "friend_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "senderUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "rankPoints",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "totalGames",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cashier_shifts_ledger",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "cashierUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "openedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

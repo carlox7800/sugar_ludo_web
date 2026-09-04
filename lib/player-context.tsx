@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore'
+import { doc, updateDoc } from 'firebase/firestore'
 import { db } from './firebase'
 import { useAuth } from './auth-context'
 
@@ -28,28 +28,19 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (user && user.uid && !user.isDev) {
-      // Real user logged in via Firebase: subscribe to Firestore user document
-      const userRef = doc(db, 'users', user.uid)
-      const unsubscribe = onSnapshot(
-        userRef, 
-        (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data()
-            if (typeof data.coins === 'number') {
-              setCoinsState(data.coins)
-              if (typeof window !== 'undefined') {
-                localStorage.setItem('sugar_player_coins', data.coins.toString())
-              }
-            }
-            if (typeof data.diamonds === 'number') setGemsState(data.diamonds)
-            if (typeof data.level === 'number') setLevel(data.level)
-            if (typeof data.xp === 'number') setXp(data.xp)
-          }
-        },
-        (error) => {
-          console.warn('Firestore player snapshot error (handled):', error.message)
+      if (typeof user.coins === 'number') {
+        setCoinsState(user.coins)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('sugar_player_coins', user.coins.toString())
         }
-      )
+      }
+      if (typeof user.gems === 'number') {
+        setGemsState(user.gems)
+      } else if (typeof user.diamonds === 'number') {
+        setGemsState(user.diamonds)
+      }
+      if (typeof user.level === 'number') setLevel(user.level)
+      if (typeof user.xp === 'number') setXp(user.xp)
 
       // Escuchar evento instantáneo de reseteo económico vía BroadcastChannel
       let channel: BroadcastChannel | null = null
@@ -68,7 +59,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       } catch {}
 
       return () => {
-        unsubscribe()
         if (channel) channel.close()
       }
     } else {

@@ -1,5 +1,5 @@
 import { db } from './firebase'
-import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, increment } from 'firebase/firestore'
+import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, increment, query, where, limit } from 'firebase/firestore'
 import { recordWalletTransaction } from './wallet-service'
 import { getLiveTournaments } from './economy-service'
 
@@ -55,7 +55,14 @@ export const DEFAULT_TOURNAMENTS: Tournament[] = [
 export async function fetchActiveTournaments(): Promise<Tournament[]> {
   try {
     const tourCol = collection(db, 'tournaments')
-    const snap = await getDocs(tourCol)
+    let snap
+    try {
+      const q = query(tourCol, where('isActive', '==', true), limit(20))
+      snap = await getDocs(q)
+    } catch {
+      const qFallback = query(tourCol, limit(20))
+      snap = await getDocs(qFallback)
+    }
     
     if (!snap.empty) {
       const list: Tournament[] = []

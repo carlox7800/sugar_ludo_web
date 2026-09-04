@@ -1,5 +1,3 @@
-import { db } from './firebase'
-import { doc, setDoc, increment } from 'firebase/firestore'
 
 export type TelemetryPlayerState = 
   | 'playersInLobby'
@@ -26,29 +24,25 @@ export function mapScreenToTelemetryState(screen: string, onlineOrigin?: string)
   return 'playersInLobby'
 }
 
+// Desactivado hacia Firestore para cumplir estrictamente la cuota Spark $0/mes.
+// El estado se mantiene en memoria y se propaga vía BroadcastChannel.
 export async function updatePlayerTelemetryState(newState: TelemetryPlayerState) {
   if (typeof window === 'undefined') return
   if (currentState === newState) return
 
-  const oldState = currentState
   currentState = newState
 
   try {
-    const docRef = doc(db, 'system_treasury', 'live_telemetry')
-    const updatePayload: Record<string, any> = {
-      updatedAt: Date.now(),
-      serverStatus: 'online'
+    if ('BroadcastChannel' in window) {
+      const channel = new BroadcastChannel('sugar_ludo_social_channel')
+      channel.postMessage({
+        type: 'telemetry_state_changed',
+        state: newState,
+        timestamp: Date.now()
+      })
+      channel.close()
     }
-
-    if (oldState) {
-      updatePayload[oldState] = increment(-1)
-    }
-    updatePayload[newState] = increment(1)
-
-    await setDoc(docRef, updatePayload, { merge: true })
-  } catch (err) {
-    console.warn('[Presence] Error actualizando telemetría en Firestore:', err)
-  }
+  } catch {}
 }
 
 export function initPresenceTracker(initialScreen: string = 'lobby', onlineOrigin?: string) {
@@ -57,18 +51,4 @@ export function initPresenceTracker(initialScreen: string = 'lobby', onlineOrigi
 
   const initialState = mapScreenToTelemetryState(initialScreen, onlineOrigin)
   updatePlayerTelemetryState(initialState)
-
-  const handleUnload = () => {
-    if (currentState) {
-      try {
-        const docRef = doc(db, 'system_treasury', 'live_telemetry')
-        setDoc(docRef, {
-          [currentState]: increment(-1),
-          updatedAt: Date.now()
-        }, { merge: true }).catch(() => {})
-      } catch {}
-    }
-  }
-
-  window.addEventListener('beforeunload', handleUnload)
 }

@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../lib/admin-auth-context'
+import { APP_VERSION_TAG } from '../lib/version'
 import {
   Shield,
   CreditCard,
@@ -236,7 +237,7 @@ export default function HubLandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-white/10 p-6 text-center text-xs text-slate-500">
-        Sugar Ludo Decentralized Cashier Hub &bull; Protocolo Seguro de Liquidación Financiera &bull; v8.8.0
+        Sugar Ludo Decentralized Cashier Hub &bull; Protocolo Seguro de Liquidación Financiera &bull; {APP_VERSION_TAG}
       </footer>
     </div>
   )

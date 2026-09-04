@@ -12,8 +12,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { db } from '@/lib/firebase'
-import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'
-import { getUnreadMailCount } from '@/lib/mail-service'
+import { onSnapshot, collection, query, where, limit } from 'firebase/firestore'
 import { subscribeToFriendRequests, subscribeToIncomingDuelInvites } from '@/lib/friends-service'
 
 type NavItem = {
@@ -39,114 +38,138 @@ interface SidebarProps {
   onNavigate?: (screen: string) => void
 }
 
+// Estado compartido (singleton) para evitar duplicación de listeners entre Sidebar y MobileNav (Spark $0/mes)
+let sharedRefCount = 0
+let sharedUnsubOrders: (() => void) | null = null
+let sharedUnsubFriends: (() => void) | null = null
+let sharedUnsubChallenges: (() => void) | null = null
+let visibilityCleanup: (() => void) | null = null
+const sharedListeners = new Set<(badges: { unreadSupportCount: number; friendsBadgeCount: number }) => void>()
+let sharedState = { unreadSupportCount: 0, friendsBadgeCount: 0 }
+
+function notifySharedBadges() {
+  sharedListeners.forEach((fn) => fn({ ...sharedState }))
+}
+
+function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedState) => void) {
+  sharedListeners.add(callback)
+  callback({ ...sharedState })
+  sharedRefCount++
+
+  if (sharedRefCount === 1 && user?.uid && !user.uid.startsWith('dev_')) {
+    let pendingReqs = 0
+    let pendingChallenges = 0
+
+    const setupOrdersListener = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (sharedUnsubOrders) return
+
+      const qOrders = query(
+        collection(db, 'cashier_orders'),
+        where('playerUid', '==', user.uid),
+        limit(20)
+      )
+
+      sharedUnsubOrders = onSnapshot(qOrders, (snap) => {
+        let supportUnread = 0
+        snap.forEach((d) => {
+          const ord = d.data() as any
+          const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
+          if (msgs.length > 0) {
+            const lastMsg = msgs[msgs.length - 1]
+            if (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') return
+            if (ord.hasUnreadCashierMessage === false) return
+            const playerReadAt = Number(ord.playerReadAt || 0)
+            const msgTimestamp = Number(lastMsg.timestamp || 0)
+            if (playerReadAt < msgTimestamp) {
+              supportUnread++
+            }
+          }
+        })
+        sharedState.unreadSupportCount = supportUnread
+        notifySharedBadges()
+      }, () => {})
+    }
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (sharedUnsubOrders) {
+          sharedUnsubOrders()
+          sharedUnsubOrders = null
+        }
+      } else {
+        setupOrdersListener()
+      }
+    }
+
+    setupOrdersListener()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
+      visibilityCleanup = () => document.removeEventListener('visibilitychange', handleVisibility)
+    }
+
+    sharedUnsubFriends = subscribeToFriendRequests(user.uid, (received) => {
+      pendingReqs = received.length
+      sharedState.friendsBadgeCount = pendingReqs + pendingChallenges
+      notifySharedBadges()
+    })
+
+    sharedUnsubChallenges = subscribeToIncomingDuelInvites(user.uid, (challenge) => {
+      pendingChallenges = challenge ? 1 : 0
+      sharedState.friendsBadgeCount = pendingReqs + pendingChallenges
+      notifySharedBadges()
+    })
+  }
+
+  return () => {
+    sharedListeners.delete(callback)
+    sharedRefCount--
+    if (sharedRefCount <= 0) {
+      sharedRefCount = 0
+      if (sharedUnsubOrders) {
+        sharedUnsubOrders()
+        sharedUnsubOrders = null
+      }
+      if (sharedUnsubFriends) {
+        sharedUnsubFriends()
+        sharedUnsubFriends = null
+      }
+      if (sharedUnsubChallenges) {
+        sharedUnsubChallenges()
+        sharedUnsubChallenges = null
+      }
+      if (visibilityCleanup) {
+        visibilityCleanup()
+        visibilityCleanup = null
+      }
+    }
+  }
+}
+
+function useNavigationBadges(user: any) {
+  const [badges, setBadges] = useState(sharedState)
+
+  const unreadInboxCount = React.useMemo(() => {
+    if (!user || !Array.isArray(user.inbox)) return 0
+    return user.inbox.filter((m: any) => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
+  }, [user?.inbox])
+
+  useEffect(() => {
+    if (!user?.uid || user.uid.startsWith('dev_')) return
+    return subscribeToSharedBadges(user, setBadges)
+  }, [user?.uid])
+
+  return {
+    unreadInboxCount,
+    unreadSupportCount: badges.unreadSupportCount,
+    friendsBadgeCount: badges.friendsBadgeCount
+  }
+}
+
 /* ---------- Desktop: fixed left sidebar ---------- */
 export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
   const { user } = useAuth()
-  const [unreadInboxCount, setUnreadInboxCount] = useState<number>(0)
-  const [unreadSupportCount, setUnreadSupportCount] = useState<number>(0)
-  const [friendsBadgeCount, setFriendsBadgeCount] = useState<number>(0)
-
-  useEffect(() => {
-    const updateCount = () => {
-      getUnreadMailCount(user?.uid).then(setUnreadInboxCount).catch(() => {})
-    }
-    updateCount()
-
-    // 1. Escuchar el buzón del usuario en tiempo real desde Firestore ($0 Spark Plan)
-    let unsubMail: (() => void) | null = null
-    let currentInboxOrderIds = new Set<string>()
-
-    if (user?.uid && !user.uid.startsWith('dev_')) {
-      try {
-        const userRef = doc(db, 'users', user.uid)
-        unsubMail = onSnapshot(userRef, (snap) => {
-          if (snap.exists()) {
-            const data = snap.data()
-            if (Array.isArray(data.inbox)) {
-              const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
-              setUnreadInboxCount(unread)
-              currentInboxOrderIds = new Set(
-                data.inbox
-                  .map((m: any) => m.orderId || (typeof m.id === 'string' && m.id.startsWith('mail_sup_') ? m.id.replace('mail_sup_', '') : typeof m.id === 'string' && m.id.startsWith('mail_ord_sup_') ? m.id.replace('mail_ord_sup_', '') : null))
-                  .filter(Boolean)
-              )
-            }
-          }
-        }, () => {})
-      } catch {}
-    }
-
-    // 2. Escuchar mensajes no leídos de cajeros en cashier_orders en tiempo real
-    let unsubOrders: (() => void) | null = null
-    if (user?.uid && !user.uid.startsWith('dev_')) {
-      try {
-        const qOrders = query(
-          collection(db, 'cashier_orders'),
-          where('playerUid', '==', user.uid)
-        )
-        unsubOrders = onSnapshot(qOrders, (snap) => {
-          let supportUnread = 0
-          snap.forEach((d) => {
-            const orderId = d.id
-            if (currentInboxOrderIds.has(orderId)) {
-              return
-            }
-
-            const ord = d.data() as any
-            const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
-            if (msgs.length > 0) {
-              const lastMsg = msgs[msgs.length - 1]
-              if (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') {
-                return
-              }
-              if (ord.hasUnreadCashierMessage === false) {
-                return
-              }
-              const playerReadAt = Number(ord.playerReadAt || 0)
-              const msgTimestamp = Number(lastMsg.timestamp || 0)
-              const isRead = playerReadAt >= msgTimestamp
-              if (!isRead) {
-                supportUnread++
-              }
-            }
-          })
-          setUnreadSupportCount(supportUnread)
-        }, () => {})
-      } catch {}
-    }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('sugar_inbox_updated', updateCount)
-    }
-
-    // Subscribe to Friend Requests & Challenges (WebSocket)
-    let unsubFriends = () => {}
-    let unsubChallenges = () => {}
-    if (user?.uid) {
-      let pendingReqs = 0
-      let pendingChallenges = 0
-
-      unsubFriends = subscribeToFriendRequests(user.uid, (received) => {
-        pendingReqs = received.length
-        setFriendsBadgeCount(pendingReqs + pendingChallenges)
-      })
-
-      unsubChallenges = subscribeToIncomingDuelInvites(user.uid, (challenge) => {
-        pendingChallenges = challenge ? 1 : 0
-        setFriendsBadgeCount(pendingReqs + pendingChallenges)
-      })
-    }
-
-    return () => {
-      if (unsubMail) unsubMail()
-      if (unsubOrders) unsubOrders()
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('sugar_inbox_updated', updateCount)
-      }
-      unsubFriends()
-      unsubChallenges()
-    }
-  }, [user?.uid])
+  const { unreadInboxCount, unreadSupportCount, friendsBadgeCount } = useNavigationBadges(user)
 
   const totalUnreadMail = unreadInboxCount + unreadSupportCount
 
@@ -240,110 +263,7 @@ function NavButton({ item, isActive, onClick }: { item: NavItem; isActive: boole
 /* ---------- Mobile: fixed bottom navigation bar ---------- */
 export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
   const { user } = useAuth()
-  const [unreadInboxCount, setUnreadInboxCount] = useState<number>(0)
-  const [unreadSupportCount, setUnreadSupportCount] = useState<number>(0)
-  const [friendsBadgeCount, setFriendsBadgeCount] = useState<number>(0)
-
-  useEffect(() => {
-    const updateCount = () => {
-      getUnreadMailCount(user?.uid).then(setUnreadInboxCount).catch(() => {})
-    }
-    updateCount()
-
-    // 1. Escuchar el buzón del usuario en tiempo real desde Firestore ($0 Spark Plan)
-    let unsubMail: (() => void) | null = null
-    let currentInboxOrderIds = new Set<string>()
-
-    if (user?.uid && !user.uid.startsWith('dev_')) {
-      try {
-        const userRef = doc(db, 'users', user.uid)
-        unsubMail = onSnapshot(userRef, (snap) => {
-          if (snap.exists()) {
-            const data = snap.data()
-            if (Array.isArray(data.inbox)) {
-              const unread = data.inbox.filter((m: any) => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
-              setUnreadInboxCount(unread)
-              currentInboxOrderIds = new Set(
-                data.inbox
-                  .map((m: any) => m.orderId || (typeof m.id === 'string' && m.id.startsWith('mail_sup_') ? m.id.replace('mail_sup_', '') : typeof m.id === 'string' && m.id.startsWith('mail_ord_sup_') ? m.id.replace('mail_ord_sup_', '') : null))
-                  .filter(Boolean)
-              )
-            }
-          }
-        }, () => {})
-      } catch {}
-    }
-
-    // 2. Escuchar mensajes no leídos de cajeros en cashier_orders en tiempo real
-    let unsubOrders: (() => void) | null = null
-    if (user?.uid && !user.uid.startsWith('dev_')) {
-      try {
-        const qOrders = query(
-          collection(db, 'cashier_orders'),
-          where('playerUid', '==', user.uid)
-        )
-        unsubOrders = onSnapshot(qOrders, (snap) => {
-          let supportUnread = 0
-          snap.forEach((d) => {
-            const orderId = d.id
-            if (currentInboxOrderIds.has(orderId)) {
-              return
-            }
-
-            const ord = d.data() as any
-            const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
-            if (msgs.length > 0) {
-              const lastMsg = msgs[msgs.length - 1]
-              if (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') {
-                return
-              }
-              if (ord.hasUnreadCashierMessage === false) {
-                return
-              }
-              const playerReadAt = Number(ord.playerReadAt || 0)
-              const msgTimestamp = Number(lastMsg.timestamp || 0)
-              const isRead = playerReadAt >= msgTimestamp
-              if (!isRead) {
-                supportUnread++
-              }
-            }
-          })
-          setUnreadSupportCount(supportUnread)
-        }, () => {})
-      } catch {}
-    }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('sugar_inbox_updated', updateCount)
-    }
-
-    let unsubFriends = () => {}
-    let unsubChallenges = () => {}
-    if (user?.uid) {
-      let pendingReqs = 0
-      let pendingChallenges = 0
-
-      unsubFriends = subscribeToFriendRequests(user.uid, (received) => {
-        pendingReqs = received.length
-        setFriendsBadgeCount(pendingReqs + pendingChallenges)
-      })
-
-      unsubChallenges = subscribeToIncomingDuelInvites(user.uid, (challenge) => {
-        pendingChallenges = challenge ? 1 : 0
-        setFriendsBadgeCount(pendingReqs + pendingChallenges)
-      })
-    }
-
-    return () => {
-      if (unsubMail) unsubMail()
-      if (unsubOrders) unsubOrders()
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('sugar_inbox_updated', updateCount)
-      }
-      unsubFriends()
-      unsubChallenges()
-    }
-  }, [user?.uid])
+  const { unreadInboxCount, unreadSupportCount, friendsBadgeCount } = useNavigationBadges(user)
 
   const totalUnreadMail = unreadInboxCount + unreadSupportCount
 

@@ -208,8 +208,8 @@ export function subscribeToAllPrivateChatsMeta(
   callback: (metas: Record<string, PrivateChatMeta>) => void
 ): () => void {
   try {
-    const collRef = collection(db, 'staff_private_chats')
-    return onSnapshot(collRef, (snap) => {
+    const q = query(collection(db, 'staff_private_chats'), limit(50))
+    return onSnapshot(q, (snap) => {
       const map: Record<string, PrivateChatMeta> = {}
       snap.docs.forEach((d) => {
         const data = d.data()

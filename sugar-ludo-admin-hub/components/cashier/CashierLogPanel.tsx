@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { cashierLogger, CashierLogEntry, CashierLogLevel } from '../../lib/cashier-logger'
+import { APP_VERSION, APP_VERSION_TAG } from '../../lib/version'
 import { Terminal, X, Copy, Check, Trash2, ShieldAlert, Zap, Filter, Search } from 'lucide-react'
 
 export function CashierLogPanel() {
@@ -43,7 +44,7 @@ export function CashierLogPanel() {
     })
     cashierLogger.action('Verificación de Integridad de Logs', {
       sistema: 'Sugar Ludo Admin Hub',
-      version: '8.8.0'
+      version: APP_VERSION
     })
   }
 
@@ -110,7 +111,7 @@ export function CashierLogPanel() {
                 <div>
                   <h3 className="font-bold text-white tracking-wide text-xs flex items-center gap-2">
                     <span>CONSOLA DE DIAGNÓSTICO EN VIVO (ADMIN & CAJERO)</span>
-                    <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">v8.7.0</span>
+                    <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">{APP_VERSION_TAG}</span>
                   </h3>
                   <p className="text-[10px] text-slate-400">
                     Captura en tiempo real de clics, peticiones API, Firestore y errores

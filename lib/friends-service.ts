@@ -611,6 +611,7 @@ export async function sendFriendRequestToUser(
       senderLevel: Number(currentUser.level || 1),
       senderTrophies: Number(currentUser.rankPoints !== undefined ? currentUser.rankPoints : ((currentUser.totalWins || 0) * 25)),
       targetUid: targetUser.id,
+      recipientUid: targetUser.id,
       targetName: targetUser.name,
       status: 'pending',
       createdAt: new Date().toISOString()
@@ -624,7 +625,7 @@ export async function sendFriendRequestToUser(
 }
 
 /**
- * Escucha solicitudes de amistad pendientes con límite ligero.
+ * Escucha solicitudes de amistad pendientes filtradas estrictamente por usuario (Spark $0/mes).
  */
 export function subscribeToFriendRequests(
   currentUid: string,
@@ -632,40 +633,71 @@ export function subscribeToFriendRequests(
 ): () => void {
   if (!currentUid) return () => {}
 
-  const reqsCollection = collection(db, 'friend_requests')
-  const unsubscribe = onSnapshot(reqsCollection, (snapshot) => {
-    const received: FriendRequestItem[] = []
-    const sent: FriendRequestItem[] = []
+  let receivedList: FriendRequestItem[] = []
+  let sentList: FriendRequestItem[] = []
 
-    snapshot.forEach((d) => {
-      const data = d.data()
-      const item: FriendRequestItem = {
-        id: d.id,
-        senderUid: data.senderUid,
-        senderName: data.senderName || 'Jugador',
-        senderAvatar: data.senderAvatar || '🎲',
-        senderLevel: Number(data.senderLevel || 1),
-        senderTrophies: Number(data.senderTrophies || 0),
-        targetUid: data.targetUid,
-        targetName: data.targetName || 'Jugador',
-        timeAgo: 'Reciente',
-        status: data.status || 'pending',
-        createdAt: data.createdAt || ''
-      }
+  const parseItem = (d: any): FriendRequestItem => {
+    const data = d.data()
+    return {
+      id: d.id,
+      senderUid: data.senderUid,
+      senderName: data.senderName || 'Jugador',
+      senderAvatar: data.senderAvatar || '🎲',
+      senderLevel: Number(data.senderLevel || 1),
+      senderTrophies: Number(data.senderTrophies || 0),
+      targetUid: data.targetUid || data.recipientUid,
+      targetName: data.targetName || 'Jugador',
+      timeAgo: 'Reciente',
+      status: data.status || 'pending',
+      createdAt: data.createdAt || ''
+    }
+  }
 
-      if (data.targetUid === currentUid && data.status === 'pending') {
-        received.push(item)
-      } else if (data.senderUid === currentUid && data.status === 'pending') {
-        sent.push(item)
-      }
+  // 1. Solicitudes recibidas dirigidas exclusivamente a este usuario (máx 20)
+  const qReceived = query(
+    collection(db, 'friend_requests'),
+    where('targetUid', '==', currentUid),
+    where('status', '==', 'pending'),
+    limit(20)
+  )
+
+  // 2. Solicitudes enviadas exclusivamente por este usuario (máx 20)
+  const qSent = query(
+    collection(db, 'friend_requests'),
+    where('senderUid', '==', currentUid),
+    where('status', '==', 'pending'),
+    limit(20)
+  )
+
+  let unsubRec = () => {}
+  let unsubSent = () => {}
+
+  try {
+    unsubRec = onSnapshot(qReceived, (snap) => {
+      receivedList = snap.docs.map(parseItem)
+      onUpdate(receivedList, sentList)
+    }, (error) => {
+      console.warn('Friend received requests snapshot notice:', error)
     })
+  } catch (e) {
+    console.warn('Error setting up received friend requests snapshot:', e)
+  }
 
-    onUpdate(received, sent)
-  }, (error) => {
-    console.warn('Friend requests snapshot error:', error)
-  })
+  try {
+    unsubSent = onSnapshot(qSent, (snap) => {
+      sentList = snap.docs.map(parseItem)
+      onUpdate(receivedList, sentList)
+    }, (error) => {
+      console.warn('Friend sent requests snapshot notice:', error)
+    })
+  } catch (e) {
+    console.warn('Error setting up sent friend requests snapshot:', e)
+  }
 
-  return unsubscribe
+  return () => {
+    unsubRec()
+    unsubSent()
+  }
 }
 
 /**

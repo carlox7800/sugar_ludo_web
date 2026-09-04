@@ -142,129 +142,141 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
+  // 1. Sincronizar el buzón de usuario desde el contexto principal AuthContext ($0 Spark Plan)
+  useEffect(() => {
+    if (!user?.uid || user?.uid.startsWith('dev_')) return
+    if (Array.isArray(user.inbox)) {
+      const hidden = new Set(getHiddenMails())
+      setMailList((prev) => {
+        const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
+        const supportOrderIds = new Set(supportFromOrders.map(m => m.orderId).filter(Boolean))
+        const userMails = user.inbox!.filter((m: any) => 
+          !m.id.startsWith('mail_ord_sup_') && 
+          (!m.orderId || !supportOrderIds.has(m.orderId)) && 
+          !hidden.has(m.id)
+        )
+        const combined = [...supportFromOrders, ...userMails]
+        return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+      })
+      if (selectedMail && !selectedMail.orderId) {
+        const refreshed = user.inbox.find((m: any) => m.id === selectedMail.id)
+        if (refreshed) setSelectedMail(refreshed)
+      }
+    }
+  }, [user?.inbox, selectedMail?.id])
+
+  // 2. Escuchar mensajes de soporte P2P desde cashier_orders con limit(20) y pausa por visibilidad
   useEffect(() => {
     loadInbox()
     if (!user?.uid || user?.uid.startsWith('dev_')) return
 
-    // 1. Escuchar el buzón de usuario en tiempo real desde Firestore
-    let unsubUser: (() => void) | null = null
-    try {
-      const userRef = doc(db, 'users', user.uid)
-      unsubUser = onSnapshot(
-        userRef,
-        (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data()
-            if (Array.isArray(data.inbox)) {
-              const hidden = new Set(getHiddenMails())
-              setMailList((prev) => {
-                const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
-                const supportOrderIds = new Set(supportFromOrders.map(m => m.orderId).filter(Boolean))
-                // Evitar duplicados: ignorar correos de inbox que correspondan a una orden ya cargada por cashier_orders
-                const userMails = data.inbox.filter((m: any) => 
-                  !m.id.startsWith('mail_ord_sup_') && 
-                  (!m.orderId || !supportOrderIds.has(m.orderId)) && 
-                  !hidden.has(m.id)
-                )
-                const combined = [...supportFromOrders, ...userMails]
-                return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-              })
-              if (selectedMail && !selectedMail.orderId) {
-                const refreshed = data.inbox.find((m: any) => m.id === selectedMail.id)
-                if (refreshed) setSelectedMail(refreshed)
+    let unsubOrders: (() => void) | null = null
+
+    const startOrdersListener = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (unsubOrders) return
+
+      try {
+        const qOrders = query(
+          collection(db, 'cashier_orders'),
+          where('playerUid', '==', user.uid),
+          limit(20)
+        )
+        unsubOrders = onSnapshot(
+          qOrders,
+          (snapshot) => {
+            const orderSupportMails: MailItem[] = []
+            const hidden = new Set(getHiddenMails())
+
+            snapshot.forEach((docSnap) => {
+              const ord = docSnap.data() as any
+              const orderId = docSnap.id
+              const mailKey = `mail_ord_sup_${orderId}`
+              if (hidden.has(mailKey)) return
+
+              const orderMessages = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
+
+              if (orderMessages.length > 0) {
+                const lastMsg = orderMessages[orderMessages.length - 1]
+                
+                // Deduplicar replies por id
+                const replyMap = new Map<string, SupportReply>()
+                orderMessages.forEach((m: any) => {
+                  const key = m.id || `${m.timestamp}_${m.message}`
+                  replyMap.set(key, {
+                    id: key,
+                    sender: m.senderName || (m.senderRole === 'cashier' ? 'Cajero Autorizado' : 'Jugador'),
+                    role: m.senderRole === 'cashier' ? 'cashier' : 'player',
+                    message: m.message || '',
+                    timestamp: Number(m.timestamp || 0)
+                  })
+                })
+                const replies = Array.from(replyMap.values()).sort((a, b) => a.timestamp - b.timestamp)
+
+                const playerReadAt = Number(ord.playerReadAt || 0)
+                const lastMsgTime = Number(lastMsg.timestamp || 0)
+                const isUnreadByPlayer = (lastMsg.senderRole === 'cashier' || lastMsg.senderUid !== user.uid) && 
+                  (ord.hasUnreadCashierMessage !== false) &&
+                  (playerReadAt < lastMsgTime)
+
+                orderSupportMails.push({
+                  id: mailKey,
+                  type: 'support',
+                  title: `💬 Soporte Orden #${orderId.slice(0, 8)}`,
+                  sender: ord.cashierName || 'Cajero Oficial',
+                  date: new Date(lastMsgTime || Date.now()).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+                  preview: lastMsg.message || 'Mensaje de soporte',
+                  content: lastMsg.message || '',
+                  isRead: !isUnreadByPlayer,
+                  claimed: true,
+                  timestamp: lastMsgTime,
+                  orderId,
+                  orderStatus: ord.status,
+                  replies
+                })
+              }
+            })
+
+            setMailList((prev) => {
+              const orderIdsInSupport = new Set(orderSupportMails.map(m => m.orderId).filter(Boolean))
+              const nonOrderMails = prev.filter(m => 
+                !m.id.startsWith('mail_ord_sup_') && 
+                (!m.orderId || !orderIdsInSupport.has(m.orderId)) && 
+                !hidden.has(m.id)
+              )
+              const combined = [...orderSupportMails, ...nonOrderMails]
+              return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+            })
+
+            if (selectedMail && selectedMail.orderId) {
+              const updatedSelected = orderSupportMails.find(m => m.orderId === selectedMail.orderId)
+              if (updatedSelected) {
+                setSelectedMail(updatedSelected)
               }
             }
+          },
+          (err) => {
+            console.debug('[MailScreen] Orders support snapshot notice:', err?.message)
           }
-        },
-        (err) => {
-          console.debug('[MailScreen] Inbox snapshot notice:', err?.message)
+        )
+      } catch {}
+    }
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (unsubOrders) {
+          unsubOrders()
+          unsubOrders = null
         }
-      )
-    } catch {}
+      } else {
+        startOrdersListener()
+      }
+    }
 
-    // 2. Escuchar mensajes de soporte P2P desde cashier_orders en tiempo real ($0 Spark Plan)
-    let unsubOrders: (() => void) | null = null
-    try {
-      const qOrders = query(
-        collection(db, 'cashier_orders'),
-        where('playerUid', '==', user.uid)
-      )
-      unsubOrders = onSnapshot(
-        qOrders,
-        (snapshot) => {
-          const orderSupportMails: MailItem[] = []
-          const hidden = new Set(getHiddenMails())
-
-          snapshot.forEach((docSnap) => {
-            const ord = docSnap.data() as any
-            const orderId = docSnap.id
-            const mailKey = `mail_ord_sup_${orderId}`
-            if (hidden.has(mailKey)) return
-
-            const orderMessages = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
-
-            if (orderMessages.length > 0) {
-              const lastMsg = orderMessages[orderMessages.length - 1]
-              
-              // Deduplicar replies por id
-              const replyMap = new Map<string, SupportReply>()
-              orderMessages.forEach((m: any) => {
-                const key = m.id || `${m.timestamp}_${m.message}`
-                replyMap.set(key, {
-                  id: key,
-                  sender: m.senderName || (m.senderRole === 'cashier' ? 'Cajero Autorizado' : 'Jugador'),
-                  senderRole: (m.senderRole || (m.senderUid === user.uid ? 'player' : 'cashier')) as any,
-                  message: m.message,
-                  timestamp: m.timestamp || Date.now(),
-                  attachmentUrl: m.attachmentUrl
-                })
-              })
-
-              const replies = Array.from(replyMap.values())
-              const isOrderRead = (ord.hasUnreadCashierMessage === false) || (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') || (ord.playerReadAt ? ord.playerReadAt >= (lastMsg.timestamp || 0) : false)
-
-              orderSupportMails.push({
-                id: mailKey,
-                title: `Soporte de Orden #${orderId.slice(0, 8)} (${ord.type === 'withdraw' ? 'Retiro' : 'Depósito'})`,
-                sender: lastMsg.senderName || 'Cajero Autorizado',
-                date: 'Hoy',
-                category: 'support',
-                isRead: isOrderRead,
-                content: lastMsg.message,
-                badge: ord.status === 'completed' ? 'Completado' : 'Soporte P2P',
-                orderId: orderId,
-                status: ord.status === 'completed' ? 'resolved' : 'pending',
-                cashierReadAt: Number(ord.cashierReadAt || 0),
-                playerReadAt: Number(ord.playerReadAt || 0),
-                timestamp: lastMsg.timestamp || Date.now(),
-                replies
-              })
-            }
-          })
-
-          setMailList((prev) => {
-            const orderIdsInSupport = new Set(orderSupportMails.map(m => m.orderId).filter(Boolean))
-            const nonOrderMails = prev.filter(m => 
-              !m.id.startsWith('mail_ord_sup_') && 
-              (!m.orderId || !orderIdsInSupport.has(m.orderId)) && 
-              !hidden.has(m.id)
-            )
-            const combined = [...orderSupportMails, ...nonOrderMails]
-            return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-          })
-
-          if (selectedMail && selectedMail.orderId) {
-            const updatedSelected = orderSupportMails.find(m => m.orderId === selectedMail.orderId)
-            if (updatedSelected) {
-              setSelectedMail(updatedSelected)
-            }
-          }
-        },
-        (err) => {
-          console.debug('[MailScreen] Orders support snapshot notice:', err?.message)
-        }
-      )
-    } catch {}
+    startOrdersListener()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
+    }
 
     const handleLocalUpdate = () => {
       loadInbox()
@@ -274,8 +286,10 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
 
     return () => {
-      if (unsubUser) unsubUser()
       if (unsubOrders) unsubOrders()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
       if (typeof window !== 'undefined') {
         window.removeEventListener('sugar_inbox_updated', handleLocalUpdate)
       }

@@ -19,8 +19,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
-import { db } from '@/lib/firebase'
-import { doc, onSnapshot } from 'firebase/firestore'
+import { subscribeToEconomyUpdates, getRawEconomyConfig } from '@/lib/economy-service'
 import { 
   COIN_PACKAGES, 
   CUSTOMIZATION_ITEMS, 
@@ -118,15 +117,15 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
       }
     }
 
-    // 1. Snapshot Firestore
-    let unsub = () => {}
-    try {
-      unsub = onSnapshot(doc(db, 'system_config', 'economy_settings'), (snap) => {
-        if (snap.exists()) {
-          applyConfig(snap.data())
-        }
-      })
-    } catch {}
+    // 1. Sincronizar desde economy-service (0 lecturas duplicadas, Spark $0/mes)
+    const initialConfig = getRawEconomyConfig()
+    if (initialConfig) {
+      applyConfig(initialConfig)
+    }
+    const unsub = subscribeToEconomyUpdates(() => {
+      const cfg = getRawEconomyConfig()
+      if (cfg) applyConfig(cfg)
+    })
 
     // 2. BroadcastChannel para reactividad local instantánea (0 ms)
     let channel: BroadcastChannel | null = null

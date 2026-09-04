@@ -32,17 +32,19 @@ const liveItemPrices = new Map<string, number>()
 let liveFees = { normalFee: 5.0, vipFee: 10.0 }
 let isInitialized = false
 
+let lastConfig: any = null
 const listeners = new Set<() => void>()
+let unsubEconomyFirestore: (() => void) | null = null
 
-export function initEconomyService() {
-  if (typeof window === 'undefined' || isInitialized) return
-  isInitialized = true
+function startEconomyListener() {
+  if (typeof document !== 'undefined' && document.hidden) return
+  if (unsubEconomyFirestore) return
 
-  // 1. Escuchar en TIEMPO REAL desde Firebase Firestore (system_config/economy_settings)
   try {
-    onSnapshot(doc(db, 'system_config', 'economy_settings'), (snap) => {
+    unsubEconomyFirestore = onSnapshot(doc(db, 'system_config', 'economy_settings'), (snap) => {
       if (snap.exists()) {
         const config = snap.data()
+        lastConfig = config
         applyEconomyConfig(config)
       }
     }, (err) => {
@@ -50,6 +52,26 @@ export function initEconomyService() {
     })
   } catch (e) {
     console.warn('[EconomyService] Error iniciando listener Firestore:', e)
+  }
+}
+
+export function initEconomyService() {
+  if (typeof window === 'undefined' || isInitialized) return
+  isInitialized = true
+
+  // 1. Escuchar en TIEMPO REAL desde Firebase Firestore con pausa por visibilidad (Spark $0/mes)
+  startEconomyListener()
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (unsubEconomyFirestore) {
+          unsubEconomyFirestore()
+          unsubEconomyFirestore = null
+        }
+      } else {
+        startEconomyListener()
+      }
+    })
   }
 
   // 2. Escuchar evento instantáneo por BroadcastChannel (0 ms)
@@ -155,4 +177,9 @@ export function subscribeToEconomyUpdates(cb: () => void): () => void {
   return () => {
     listeners.delete(cb)
   }
+}
+
+export function getRawEconomyConfig(): any {
+  initEconomyService()
+  return lastConfig
 }

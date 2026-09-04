@@ -151,19 +151,7 @@ export default function CashierOrdersPage() {
       console.warn('[CashierOrders] Listener setup error:', e)
     }
 
-    // 3. Polling activo cada 3 segundos
-    const pollInterval = setInterval(() => {
-      fetch('/api/cashier/orders')
-        .then(res => res.json())
-        .then(data => {
-          if (data.orders && Array.isArray(data.orders)) {
-            setOrders(data.orders)
-          }
-        })
-        .catch(() => {})
-    }, 3000)
-
-    // 4. SSE Stream
+    // 3. SSE Stream
     let sseSource: EventSource | null = null
     try {
       if (typeof EventSource !== 'undefined') {
@@ -187,7 +175,6 @@ export default function CashierOrdersPage() {
     return () => {
       if (channel) channel.close()
       if (unsubscribe) unsubscribe()
-      clearInterval(pollInterval)
       if (sseSource) sseSource.close()
     }
   }, [])

@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
 import { ProfileModal } from '@/components/profile-modal'
 import { db } from '@/lib/firebase'
-import { doc, onSnapshot, collection, query, where, getDoc, updateDoc } from 'firebase/firestore'
+import { doc, onSnapshot, collection, query, where, getDoc, updateDoc, limit } from 'firebase/firestore'
 import { globalLogger } from '@/lib/logger'
 import { getSugarId } from '@/lib/friends-service'
 import { copyToClipboardSilently } from '@/lib/utils'
@@ -39,119 +39,129 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
+  // 1. Sincronizar historial y balance directamente desde AuthContext ($0 Spark Plan)
+  useEffect(() => {
+    if (!user?.uid) return
+    if (user.walletHistory && Array.isArray(user.walletHistory)) {
+      setTransactions(user.walletHistory)
+    }
+    if (typeof user.coins === 'number') {
+      setCoins(user.coins)
+    }
+  }, [user?.walletHistory, user?.coins])
+
+  // 2. Escuchar órdenes activas del jugador con limit(20) y pausa por visibilidad
   useEffect(() => {
     refreshData()
     if (!user?.uid) return
 
-    // 1. Escuchar cambios de billetera / historial del usuario en tiempo real
-    let unsubUser: (() => void) | null = null
-    try {
-      const userRef = doc(db, 'users', user.uid)
-      unsubUser = onSnapshot(
-        userRef,
-        (snap) => {
-          if (snap.exists()) {
-            const data = snap.data()
-            if (data.walletHistory && Array.isArray(data.walletHistory)) {
-              setTransactions(data.walletHistory)
-            }
-            if (typeof data.coins === 'number') {
-              setCoins(data.coins)
-            }
-          }
-        },
-        (err) => {
-          console.debug('[WalletScreen] User snapshot notice:', err?.code || err?.message)
-        }
-      )
-    } catch {}
-
-    // 2. Escuchar órdenes activas y completadas del jugador en tiempo real (Cost $0 Spark Plan)
     let unsubOrders: (() => void) | null = null
-    try {
-      const q = query(
-        collection(db, 'cashier_orders'),
-        where('playerUid', '==', user.uid)
-      )
-      unsubOrders = onSnapshot(q, async (snapshot) => {
-        const liveActive: PlayerP2POrder[] = []
-        
-        for (const docSnap of snapshot.docs) {
-          const ord = docSnap.data() as PlayerP2POrder
-          const orderId = docSnap.id
+
+    const startOrdersListener = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (unsubOrders) return
+
+      try {
+        const q = query(
+          collection(db, 'cashier_orders'),
+          where('playerUid', '==', user.uid),
+          limit(20)
+        )
+        unsubOrders = onSnapshot(q, async (snapshot) => {
+          const liveActive: PlayerP2POrder[] = []
           
-          if (ord.status !== 'completed' && ord.status !== 'cancelled') {
-            liveActive.push({ ...ord, id: orderId })
-          } else if (ord.status === 'completed') {
-            // Asegurar que el almacenamiento local se actualice a completed de inmediato
-            updateLocalOrderStatus(orderId, 'completed')
+          for (const docSnap of snapshot.docs) {
+            const ord = docSnap.data() as PlayerP2POrder
+            const orderId = docSnap.id
+            
+            if (ord.status !== 'completed' && ord.status !== 'cancelled') {
+              liveActive.push({ ...ord, id: orderId })
+            } else if (ord.status === 'completed') {
+              updateLocalOrderStatus(orderId, 'completed')
 
-            if (ord.type === 'deposit') {
-              // Verificar si esta orden completada ya fue acreditada
-              const creditedKey = `sugar_credited_${orderId}`
-              const alreadyProcessed = typeof window !== 'undefined' && localStorage.getItem(creditedKey)
-              
-              if (!alreadyProcessed) {
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem(creditedKey, 'true')
-                }
+              if (ord.type === 'deposit') {
+                const creditedKey = `sugar_credited_${orderId}`
+                const alreadyProcessed = typeof window !== 'undefined' && localStorage.getItem(creditedKey)
                 
-                try {
-                  const userDocRef = doc(db, 'users', user.uid)
-                  const userSnap = await getDoc(userDocRef)
-                  if (userSnap.exists()) {
-                    const uData = userSnap.data() || {}
-                    const orderTime = Number(ord.completedAt || ord.createdAt || 0)
-                    if (uData.lastResetAt && orderTime <= uData.lastResetAt) {
-                      // Orden anterior al reseteo contable: no volver a acreditar fondos purgados
-                      continue
-                    }
-
-                    const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
-                    const newTxEntry = {
-                      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                      type: 'deposit' as const,
-                      amount: amountCoins,
-                      description: `Depósito P2P Aprobado (#${orderId.slice(0, 8)})`,
-                      timestamp: Date.now(),
-                      dateStr: new Date().toLocaleDateString('es-ES', { 
-                        day: '2-digit', 
-                        month: 'short', 
-                        year: 'numeric', 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })
-                    }
-
-                    const currentCoins = Number(uData.coins || 0)
-                    const oldHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
-                    const updatedHistory = [newTxEntry, ...oldHistory.filter((t: any) => t.id !== newTxEntry.id)].slice(0, 50)
-                    
-                    await updateDoc(userDocRef, {
-                      coins: currentCoins + amountCoins,
-                      walletHistory: updatedHistory,
-                      lastActiveAt: Date.now()
-                    })
-                    setCoins(currentCoins + amountCoins)
-                    setTransactions(updatedHistory)
-                    showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
+                if (!alreadyProcessed) {
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem(creditedKey, 'true')
                   }
-                } catch (syncErr) {
-                  console.warn('[WalletScreen] Error auto-syncing coins:', syncErr)
+                  
+                  try {
+                    const userDocRef = doc(db, 'users', user.uid)
+                    const userSnap = await getDoc(userDocRef)
+                    if (userSnap.exists()) {
+                      const uData = userSnap.data() || {}
+                      const orderTime = Number(ord.completedAt || ord.createdAt || 0)
+                      if (uData.lastResetAt && orderTime <= uData.lastResetAt) {
+                        continue
+                      }
+
+                      const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
+                      const newTxEntry = {
+                        id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                        type: 'deposit' as const,
+                        amount: amountCoins,
+                        description: `Depósito P2P Aprobado (#${orderId.slice(0, 8)})`,
+                        timestamp: Date.now(),
+                        dateStr: new Date().toLocaleDateString('es-ES', { 
+                          day: '2-digit', 
+                          month: 'short', 
+                          year: 'numeric', 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })
+                      }
+
+                      const currentCoins = Number(uData.coins || 0)
+                      const oldHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+                      const updatedHistory = [newTxEntry, ...oldHistory.filter((t: any) => t.id !== newTxEntry.id)].slice(0, 50)
+                      
+                      await updateDoc(userDocRef, {
+                        coins: currentCoins + amountCoins,
+                        walletHistory: updatedHistory,
+                        lastActiveAt: Date.now()
+                      })
+                      setCoins(currentCoins + amountCoins)
+                      setTransactions(updatedHistory)
+                      showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
+                    }
+                  } catch (syncErr) {
+                    console.warn('[WalletScreen] Error auto-syncing coins:', syncErr)
+                  }
                 }
               }
             }
           }
+          setActiveOrders(liveActive)
+        }, (err) => {
+          console.debug('[WalletScreen] Orders snapshot notice:', err?.message)
+        })
+      } catch {}
+    }
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (unsubOrders) {
+          unsubOrders()
+          unsubOrders = null
         }
-        setActiveOrders(liveActive)
-      }, (err) => {
-        console.debug('[WalletScreen] Orders snapshot notice:', err?.message)
-      })
-    } catch {}
+      } else {
+        startOrdersListener()
+      }
+    }
+
+    startOrdersListener()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
+    }
 
     return () => {
-      if (unsubUser) unsubUser()
       if (unsubOrders) unsubOrders()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
     }
   }, [user?.uid])
 

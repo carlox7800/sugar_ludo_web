@@ -32,6 +32,10 @@ export interface User {
   nicknameUpdatedAt: number | null
   walletAddress?: string | null
   coins?: number
+  diamonds?: number
+  gems?: number
+  inbox?: any[]
+  walletHistory?: any[]
   xp?: number
   level?: number
   totalWins?: number
@@ -65,50 +69,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         // User is logged in via Firebase
         const userRef = doc(db, 'users', firebaseUser.uid)
-        
-        // Listen to Firestore document for user profile changes
-        const unsubscribeSnapshot = onSnapshot(
-          userRef, 
-          (docSnap) => {
-            if (docSnap.exists()) {
-              const data = docSnap.data()
-              setUser({
-                uid: firebaseUser.uid,
-                displayName: firebaseUser.displayName,
-                email: firebaseUser.email,
-                photoURL: data.photoURL || firebaseUser.photoURL || '1',
-                nickname: data.nickname || null,
-                nicknameUpdatedAt: data.nicknameUpdatedAt || null,
-                walletAddress: data.walletAddress || data.usdtAddress || (typeof window !== 'undefined' ? localStorage.getItem('sugar_user_wallet_address') : null),
-                coins: data.coins ?? 200,
-                xp: data.xp ?? 0,
-                level: data.level ?? 1,
-                totalWins: data.totalWins ?? 0,
-                totalLosses: data.totalLosses ?? 0,
-                totalGames: data.totalGames ?? 0,
-                rankPoints: data.rankPoints ?? 0,
-                winStreak: data.winStreak ?? 0,
-                isDev: false,
-              })
-            } else {
-              // Si por alguna razón el documento no existe aún o hay un parpadeo de caché
-              setUser(prev => {
-                if (prev && prev.uid === firebaseUser.uid) {
-                  console.warn('Firestore auth snapshot: doc does not exist yet, preserving prev active user:', firebaseUser.uid)
-                  return prev
-                }
-                return null
-              })
-            }
-            setIsLoaded(true)
-          },
-          (error) => {
-            console.warn('Firestore auth snapshot error (handled):', error.message)
-            setIsLoaded(true)
-          }
-        )
+        let unsubscribeSnapshot: (() => void) | null = null
 
-        return () => unsubscribeSnapshot()
+        const startUserListener = () => {
+          if (typeof document !== 'undefined' && document.hidden) return
+          if (unsubscribeSnapshot) return
+
+          unsubscribeSnapshot = onSnapshot(
+            userRef,
+            (docSnap) => {
+              if (docSnap.exists()) {
+                const data = docSnap.data()
+                const diamondsVal = Number(data.diamonds ?? 0)
+                setUser({
+                  uid: firebaseUser.uid,
+                  displayName: firebaseUser.displayName,
+                  email: firebaseUser.email,
+                  photoURL: data.photoURL || firebaseUser.photoURL || '1',
+                  nickname: data.nickname || null,
+                  nicknameUpdatedAt: data.nicknameUpdatedAt || null,
+                  walletAddress: data.walletAddress || data.usdtAddress || (typeof window !== 'undefined' ? localStorage.getItem('sugar_user_wallet_address') : null),
+                  coins: data.coins ?? 200,
+                  diamonds: diamondsVal,
+                  gems: diamondsVal,
+                  inbox: Array.isArray(data.inbox) ? data.inbox : [],
+                  walletHistory: Array.isArray(data.walletHistory) ? data.walletHistory : [],
+                  xp: data.xp ?? 0,
+                  level: data.level ?? 1,
+                  totalWins: data.totalWins ?? 0,
+                  totalLosses: data.totalLosses ?? 0,
+                  totalGames: data.totalGames ?? 0,
+                  rankPoints: data.rankPoints ?? 0,
+                  winStreak: data.winStreak ?? 0,
+                  isDev: false,
+                })
+              } else {
+                setUser(prev => {
+                  if (prev && prev.uid === firebaseUser.uid) {
+                    return prev
+                  }
+                  return null
+                })
+              }
+              setIsLoaded(true)
+            },
+            (error) => {
+              console.warn('Firestore auth snapshot error (handled):', error.message)
+              setIsLoaded(true)
+            }
+          )
+        }
+
+        const handleVisibilityChange = () => {
+          if (document.hidden) {
+            if (unsubscribeSnapshot) {
+              unsubscribeSnapshot()
+              unsubscribeSnapshot = null
+            }
+          } else {
+            startUserListener()
+          }
+        }
+
+        startUserListener()
+        if (typeof document !== 'undefined') {
+          document.addEventListener('visibilitychange', handleVisibilityChange)
+        }
+
+        return () => {
+          if (unsubscribeSnapshot) unsubscribeSnapshot()
+          if (typeof document !== 'undefined') {
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
+          }
+        }
       } else {
         // Not logged in via Firebase Auth, check if there's a Dev user in localStorage
         const savedUser = localStorage.getItem('sugar_auth_user')
