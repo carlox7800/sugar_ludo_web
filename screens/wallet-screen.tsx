@@ -80,56 +80,15 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
               updateLocalOrderStatus(orderId, 'completed')
 
               if (ord.type === 'deposit') {
-                const creditedKey = `sugar_credited_${orderId}`
-                const alreadyProcessed = typeof window !== 'undefined' && localStorage.getItem(creditedKey)
+                const creditedKey = `sugar_notified_${orderId}`
+                const alreadyNotified = typeof window !== 'undefined' && localStorage.getItem(creditedKey)
                 
-                if (!alreadyProcessed) {
+                if (!alreadyNotified) {
                   if (typeof window !== 'undefined') {
                     localStorage.setItem(creditedKey, 'true')
                   }
-                  
-                  try {
-                    const userDocRef = doc(db, 'users', user.uid)
-                    const userSnap = await getDoc(userDocRef)
-                    if (userSnap.exists()) {
-                      const uData = userSnap.data() || {}
-                      const orderTime = Number(ord.completedAt || ord.createdAt || 0)
-                      if (uData.lastResetAt && orderTime <= uData.lastResetAt) {
-                        continue
-                      }
-
-                      const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
-                      const newTxEntry = {
-                        id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                        type: 'deposit' as const,
-                        amount: amountCoins,
-                        description: `Depósito P2P Aprobado (#${orderId.slice(0, 8)})`,
-                        timestamp: Date.now(),
-                        dateStr: new Date().toLocaleDateString('es-ES', { 
-                          day: '2-digit', 
-                          month: 'short', 
-                          year: 'numeric', 
-                          hour: '2-digit', 
-                          minute: '2-digit' 
-                        })
-                      }
-
-                      const currentCoins = Number(uData.coins || 0)
-                      const oldHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
-                      const updatedHistory = [newTxEntry, ...oldHistory.filter((t: any) => t.id !== newTxEntry.id)].slice(0, 50)
-                      
-                      await updateDoc(userDocRef, {
-                        coins: currentCoins + amountCoins,
-                        walletHistory: updatedHistory,
-                        lastActiveAt: Date.now()
-                      })
-                      setCoins(currentCoins + amountCoins)
-                      setTransactions(updatedHistory)
-                      showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
-                    }
-                  } catch (syncErr) {
-                    console.warn('[WalletScreen] Error auto-syncing coins:', syncErr)
-                  }
+                  const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
+                  showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
                 }
               }
             }

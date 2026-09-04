@@ -498,7 +498,7 @@ export async function purchaseCoinPackage(userId: string, packageId: string): Pr
     await recordWalletTransaction(userId, {
       type: 'deposit',
       amount: pkg.totalCoins,
-      description: `Compra de Tienda: ${pkg.name} ($${pkg.usdtCost} USDT)`
+      description: `Recarga de Monedas: ${pkg.name} ($${pkg.usdtCost} USDT)`
     })
   } else {
     // Local / Dev Fallback
@@ -519,11 +519,17 @@ export async function purchaseStoreItem(
   currentCoins: number, 
   deductCoinsFn?: (amount: number) => Promise<boolean>
 ): Promise<{ success: boolean; message: string }> {
+  // 1. Validar si ya posee el ítem (excepto boosters temporales acumulables)
+  const inv = await fetchUserInventory(userId)
+  if (item.category !== 'booster' && inv.ownedItems.includes(item.id)) {
+    return { success: false, message: 'Ya posees este artículo en tu inventario.' }
+  }
+
   if (currentCoins < item.priceSC) {
     return { success: false, message: 'No tienes suficientes Sugar Coins.' }
   }
 
-  // Deduct coins
+  // 2. Deduct coins (atómico o local)
   if (deductCoinsFn) {
     const ok = await deductCoinsFn(item.priceSC)
     if (!ok) return { success: false, message: 'Error al descontar Sugar Coins.' }
@@ -532,7 +538,7 @@ export async function purchaseStoreItem(
     localStorage.setItem('sugar_player_coins', Math.max(0, current - item.priceSC).toString())
   }
 
-  // Record item in inventory
+  // 3. Record item in inventory
   if (userId && !userId.startsWith('dev_')) {
     try {
       const userRef = doc(db, 'users', userId)
@@ -557,7 +563,6 @@ export async function purchaseStoreItem(
     }
   } else {
     // LocalStorage
-    const inv = await fetchUserInventory(userId)
     if (!inv.ownedItems.includes(item.id)) {
       inv.ownedItems.push(item.id)
     }

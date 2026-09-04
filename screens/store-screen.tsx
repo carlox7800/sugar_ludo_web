@@ -33,6 +33,7 @@ import {
   purchaseStoreItem,
   equipStoreItem
 } from '@/lib/store-service'
+import { createDepositOrder } from '@/lib/wallet-service'
 import { AnimatedEmote } from '@/src/components/AnimatedEmote'
 import confetti from 'canvas-confetti'
 
@@ -103,12 +104,20 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
           prev.map((pkg) => {
             const livePkg = cfg.packages.find((p: any) => p.id === pkg.id)
             if (livePkg) {
+              const usdtCost = livePkg.priceUSDT ?? livePkg.usdtCost ?? pkg.usdtCost
+              const baseCoins = livePkg.coinsAmount ?? livePkg.baseCoins ?? pkg.baseCoins
+              const bonusCoins = livePkg.bonusCoins ?? (livePkg.bonusPercent ? Math.round((baseCoins * livePkg.bonusPercent) / 100) : 0)
+              const totalCoins = livePkg.totalCoins ?? (baseCoins + bonusCoins)
+              const bonusPercent = livePkg.bonusPercent ?? (baseCoins > 0 ? Math.round((bonusCoins / baseCoins) * 100) : pkg.bonusPercent)
+
               return {
                 ...pkg,
-                usdtCost: livePkg.usdtCost ?? pkg.usdtCost,
-                baseCoins: livePkg.baseCoins ?? pkg.baseCoins,
-                bonusPercent: livePkg.bonusPercent ?? pkg.bonusPercent,
-                totalCoins: livePkg.totalCoins ?? pkg.totalCoins
+                name: livePkg.name || pkg.name,
+                usdtCost,
+                baseCoins,
+                bonusPercent,
+                totalCoins,
+                tag: livePkg.badgeTag || livePkg.tag || pkg.tag
               }
             }
             return pkg
@@ -169,47 +178,89 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
   // Handle USDT Coin Package Purchase
   const handleConfirmPackagePurchase = async () => {
-    if (!packageToBuy) return
+    if (!packageToBuy || isProcessing) return
     setIsProcessing(true)
 
-    const res = await purchaseCoinPackage(user?.uid || 'guest', packageToBuy.id)
-    setIsProcessing(false)
-    setPackageToBuy(null)
+    try {
+      if (user && !user.isDev) {
+        // En producción: Crear orden de depósito P2P formal para verificación de cajero
+        const orderRes = await createDepositOrder(
+          user.uid,
+          user.displayName || 'Jugador',
+          packageToBuy.usdtCost,
+          'USDT',
+          packageToBuy.totalCoins,
+          `TIENDA-${packageToBuy.id.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`
+        )
 
-    if (res.success) {
-      setCoins(coins + res.coinsAdded)
-      showToast(`🎉 ¡${res.coinsAdded} Sugar Coins acreditadas con éxito!`)
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      })
-    } else {
-      showToast(`⚠️ ${res.message}`)
+        setIsProcessing(false)
+        setPackageToBuy(null)
+
+        if (orderRes.success) {
+          showToast(`📋 Solicitud de recarga #${orderRes.orderId?.slice(0, 8)} creada. Paga a través de un Cajero para acreditar.`)
+        } else {
+          showToast(`⚠️ ${orderRes.error || 'No se pudo generar la orden de recarga'}`)
+        }
+      } else {
+        // Modo Sandbox / Dev: Acreditación local simulada
+        const res = await purchaseCoinPackage(user?.uid || 'guest', packageToBuy.id)
+        setIsProcessing(false)
+        setPackageToBuy(null)
+
+        if (res.success) {
+          setCoins(coins + res.coinsAdded)
+          showToast(`🎉 ¡${res.coinsAdded} Sugar Coins acreditadas con éxito!`)
+          confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 }
+          })
+        } else {
+          showToast(`⚠️ ${res.message}`)
+        }
+      }
+    } catch (err: any) {
+      setIsProcessing(false)
+      setPackageToBuy(null)
+      showToast(`⚠️ Error al procesar recarga: ${err?.message || 'Fallo de conexión'}`)
     }
   }
 
   // Handle Sugar Coins Item Purchase
   const handleConfirmItemPurchase = async () => {
-    if (!itemToBuy) return
+    if (!itemToBuy || isProcessing) return
+
+    // Bloquear si ya lo tiene en inventario
+    if (itemToBuy.category !== 'booster' && inventory.ownedItems.includes(itemToBuy.id)) {
+      showToast('⚠️ Ya posees este artículo en tu inventario.')
+      setItemToBuy(null)
+      return
+    }
+
     setIsProcessing(true)
 
-    const res = await purchaseStoreItem(user?.uid || 'guest', itemToBuy, coins, deductCoins)
-    setIsProcessing(false)
-    setItemToBuy(null)
+    try {
+      const res = await purchaseStoreItem(user?.uid || 'guest', itemToBuy, coins, deductCoins)
+      setIsProcessing(false)
+      setItemToBuy(null)
 
-    if (res.success) {
-      // Reload inventory
-      const updatedInv = await fetchUserInventory(user?.uid)
-      setInventory(updatedInv)
-      showToast(`✨ ¡${itemToBuy.name} añadido a tu inventario!`)
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 }
-      })
-    } else {
-      showToast(`⚠️ ${res.message}`)
+      if (res.success) {
+        // Reload inventory
+        const updatedInv = await fetchUserInventory(user?.uid)
+        setInventory(updatedInv)
+        showToast(`✨ ¡${itemToBuy.name} añadido a tu inventario!`)
+        confetti({
+          particleCount: 80,
+          spread: 60,
+          origin: { y: 0.6 }
+        })
+      } else {
+        showToast(`⚠️ ${res.message}`)
+      }
+    } catch (err: any) {
+      setIsProcessing(false)
+      setItemToBuy(null)
+      showToast(`⚠️ Error al realizar la compra: ${err?.message || 'Fallo de conexión'}`)
     }
   }
 
@@ -707,6 +758,11 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
 
             <p className="text-xs text-muted-foreground">
               Estás a punto de adquirir el paquete <strong className="text-foreground">{packageToBuy.name}</strong> por <strong className="text-emerald-500 font-black">${packageToBuy.usdtCost}.00 USDT</strong>.
+              {user && !user.isDev && (
+                <span className="block mt-1 text-[11px] text-cyan-400 font-medium">
+                  🛡️ Se generará una orden P2P segura para ser atendida por la red de Cajeros oficiales.
+                </span>
+              )}
             </p>
 
             <div className="bg-muted/40 rounded-2xl p-3 border border-border flex items-center justify-between shadow-inner">

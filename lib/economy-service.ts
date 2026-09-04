@@ -115,7 +115,22 @@ function applyEconomyConfig(config: any) {
   }
 
   if (Array.isArray(config.packages)) {
-    liveCoinPackages = config.packages
+    liveCoinPackages = config.packages.map((pkg: any) => {
+      const usdtCost = pkg.priceUSDT ?? pkg.usdtCost ?? 5
+      const baseCoins = pkg.coinsAmount ?? pkg.baseCoins ?? 500
+      const bonusCoins = pkg.bonusCoins ?? (pkg.bonusPercent ? Math.round((baseCoins * pkg.bonusPercent) / 100) : 0)
+      const totalCoins = pkg.totalCoins ?? (baseCoins + bonusCoins)
+      const bonusPercent = pkg.bonusPercent ?? (baseCoins > 0 ? Math.round((bonusCoins / baseCoins) * 100) : 0)
+      return {
+        ...pkg,
+        usdtCost,
+        baseCoins,
+        bonusCoins,
+        bonusPercent,
+        totalCoins,
+        tag: pkg.badgeTag || pkg.tag
+      }
+    })
   }
 
   if (Array.isArray(config.items)) {
