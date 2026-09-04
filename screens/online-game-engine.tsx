@@ -41,15 +41,15 @@ const slotToAndroidColorId: Record<number, number> = {
 
 // --- NATIVE 0-INDEXED MULTI-BOARD MATH HELPERS ---
 const getTrackSteps = (isHex: boolean): number => isHex ? 77 : 51
-const getGoalStep = (isHex: boolean): number => isHex ? 82 : 56
+const getGoalStep = (isHex: boolean): number => isHex ? 83 : 56
 const getTotalPerimeter = (isHex: boolean): number => isHex ? 78 : 52
 const getStartOffset = (color: PlayerColor, isHex: boolean): number => {
   if (isHex) {
-    const offsets6: Record<PlayerColor, number> = { blue: 1, green: 14, red: 27, yellow: 40, purple: 53, orange: 66 }
-    return offsets6[color] || 0
+    const offsets6: Record<PlayerColor, number> = { purple: 8, red: 21, yellow: 34, orange: 47, blue: 60, green: 73 }
+    return offsets6[color] ?? 0
   }
   const offsets4: Record<PlayerColor, number> = { blue: 1, green: 14, red: 27, yellow: 40, purple: 0, orange: 0 }
-  return offsets4[color] || 0
+  return offsets4[color] ?? 0
 }
 
 const buildFinalRankings = (
@@ -352,28 +352,42 @@ export function OnlineGameEngine({
   const updateBarrierLifetimes = (currentTokens: Token[] = tokensRef.current, endingPlayerIdx?: number) => {
     const nextLifetimes: Record<number, number> = { ...barrierLifetimesRef.current }
     const cellCounts: Record<number, number> = {}
-    const pCount = dynamicPlayers.length
     const trackSteps = getTrackSteps(isHexGame)
     const perimeter = getTotalPerimeter(isHexGame)
 
     currentTokens.forEach((tk) => {
-      if (tk.step >= 0 && tk.step < trackSteps) {
-        const tkIdx = (getStartOffset(tk.color, isHexGame) + tk.step) % perimeter
-        cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1
+      if (isHexGame) {
+        if (tk.step > 0 && tk.step <= 77) {
+          const tkIdx = getCellIndexForToken(tk.color as any, tk.step)
+          if (typeof tkIdx === 'number') {
+            cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1
+          }
+        }
+      } else {
+        if (tk.step >= 0 && tk.step < trackSteps) {
+          const tkIdx = (getStartOffset(tk.color, false) + tk.step) % perimeter
+          cellCounts[tkIdx] = (cellCounts[tkIdx] || 0) + 1
+        }
       }
     })
 
     currentTokens.forEach((t) => {
       const globalId = t.playerId * 4 + t.id
-      if (t.step >= 0 && t.step < trackSteps) {
-        const tkIdx = (getStartOffset(t.color, pCount) + t.step) % perimeter
-        if (cellCounts[tkIdx] >= 2) {
-          nextLifetimes[globalId] = nextLifetimes[globalId] || 0
-          if (endingPlayerIdx === undefined || t.playerId === endingPlayerIdx) {
-            nextLifetimes[globalId] += 1
-          }
-        } else {
-          nextLifetimes[globalId] = 0
+      let tkIdx: number | string | null = null
+      if (isHexGame) {
+        if (t.step > 0 && t.step <= 77) {
+          tkIdx = getCellIndexForToken(t.color as any, t.step)
+        }
+      } else {
+        if (t.step >= 0 && t.step < trackSteps) {
+          tkIdx = (getStartOffset(t.color, false) + t.step) % perimeter
+        }
+      }
+
+      if (typeof tkIdx === 'number' && (cellCounts[tkIdx] || 0) >= 2) {
+        nextLifetimes[globalId] = nextLifetimes[globalId] || 0
+        if (endingPlayerIdx === undefined || t.playerId === endingPlayerIdx) {
+          nextLifetimes[globalId] += 1
         }
       } else {
         nextLifetimes[globalId] = 0
@@ -473,17 +487,25 @@ export function OnlineGameEngine({
 
   // Check if a perimeter cell has 2 or more tokens (forming a barrier/bloqueo)
   const hasBarrierAt = (perimeterIndex: number, currentTokens: Token[] = tokensRef.current): boolean => {
-    const pCount = dynamicPlayers.length
     const trackSteps = getTrackSteps(isHexGame)
     const perimeter = getTotalPerimeter(isHexGame)
 
     if (perimeterIndex < 0 || perimeterIndex >= perimeter) return false
     let totalCount = 0
     currentTokens.forEach((tk) => {
-      if (tk.step >= 0 && tk.step < trackSteps) {
-        const tkIdx = (getStartOffset(tk.color, isHexGame) + tk.step) % perimeter
-        if (tkIdx === perimeterIndex) {
-          totalCount++
+      if (isHexGame) {
+        if (tk.step > 0 && tk.step <= 77) {
+          const tkIdx = getCellIndexForToken(tk.color as any, tk.step)
+          if (tkIdx === perimeterIndex) {
+            totalCount++
+          }
+        }
+      } else {
+        if (tk.step >= 0 && tk.step < trackSteps) {
+          const tkIdx = (getStartOffset(tk.color, false) + tk.step) % perimeter
+          if (tkIdx === perimeterIndex) {
+            totalCount++
+          }
         }
       }
     })
@@ -1151,7 +1173,7 @@ export function OnlineGameEngine({
                 : t
             )
           )
-          setTimeout(animateNextStep, 220)
+          setTimeout(animateNextStep, 250)
         } else {
           // Finished animating all steps - Apply rules, bonuses, and captures
           let bonusSteps = 0
