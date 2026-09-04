@@ -54,7 +54,7 @@ if (!admin.apps?.length) {
     } 
     // Opción 3: Entorno sin credenciales explícitas (desarrollo o Render sin clave de servicio)
     else {
-      // Si no hay credenciales, no inicializar para evitar que intente consultar ADC en Render
+      // Si no hay credenciales, inicializar una app mínima sin credenciales para satisfacer el contrato de Firebase SDK si es necesario
       console.warn('[FirebaseAdmin] No se detectaron credenciales de cuenta de servicio. Activando motor híbrido de respaldo.')
     }
   } catch (error) {
@@ -70,8 +70,12 @@ try {
 } catch {}
 
 export const adminDb = rawAdminDb
-export const adminAuth = admin.auth ? admin.auth() : {}
-export const adminStorage = admin.storage ? admin.storage() : {}
+export const adminAuth = (hasAdminCredentials && admin.apps?.length && typeof admin.auth === 'function')
+  ? admin.auth()
+  : null
+export const adminStorage = (hasAdminCredentials && admin.apps?.length && typeof admin.storage === 'function')
+  ? admin.storage()
+  : null
 
 export { admin }
 
