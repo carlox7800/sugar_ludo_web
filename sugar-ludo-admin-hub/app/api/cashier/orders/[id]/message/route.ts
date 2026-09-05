@@ -179,7 +179,24 @@ export async function POST(
                   badge: { stringValue: 'Soporte P2P' },
                   orderId: { stringValue: orderId },
                   status: { stringValue: 'pending' },
-                  timestamp: { integerValue: String(timestamp) }
+                  timestamp: { integerValue: String(timestamp) },
+                  replies: {
+                    arrayValue: {
+                      values: [
+                        {
+                          mapValue: {
+                            fields: {
+                              id: { stringValue: msgId },
+                              sender: { stringValue: senderName || 'Cajero Autorizado' },
+                              senderRole: { stringValue: 'cashier' },
+                              message: { stringValue: message.trim() },
+                              timestamp: { integerValue: String(timestamp) }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             }

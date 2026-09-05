@@ -203,13 +203,15 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                 const replyMap = new Map<string, SupportReply>()
                 orderMessages.forEach((m: any) => {
                   const key = m.id || `${m.timestamp}_${m.message}`
+                  const sRole = m.senderRole === 'cashier' ? 'cashier' : (m.senderRole === 'player' ? 'player' : (m.role === 'cashier' ? 'cashier' : 'player'))
                   replyMap.set(key, {
                     id: key,
-                    sender: m.senderName || (m.senderRole === 'cashier' ? 'Cajero Autorizado' : 'Jugador'),
-                    role: m.senderRole === 'cashier' ? 'cashier' : 'player',
+                    sender: m.senderName || (sRole === 'cashier' ? (ord.cashierName || 'Cajero Autorizado') : 'Jugador'),
+                    senderRole: sRole as any,
                     message: m.message || '',
-                    timestamp: Number(m.timestamp || 0)
-                  })
+                    timestamp: Number(m.timestamp || 0),
+                    attachmentUrl: m.attachmentUrl
+                  } as any)
                 })
                 const replies = Array.from(replyMap.values()).sort((a, b) => a.timestamp - b.timestamp)
 
@@ -405,6 +407,23 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
 
     setReplyInput('')
+
+    // Actualización optimista inmediata en UI local
+    setSelectedMail(prev => {
+      if (!prev) return null
+      const currentReplies = Array.isArray(prev.replies) ? prev.replies : []
+      return {
+        ...prev,
+        replies: [...currentReplies, newReply]
+      }
+    })
+    setMailList(prev => prev.map(m => {
+      if (m.id === selectedMail.id || (selectedMail.orderId && m.orderId === selectedMail.orderId)) {
+        const cur = Array.isArray(m.replies) ? m.replies : []
+        return { ...m, replies: [...cur, newReply] }
+      }
+      return m
+    }))
 
     try {
       // 1. Si está vinculado a una orden P2P, actualizar directamente cashier_orders
@@ -852,13 +871,26 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
                   {/* Unique Deduplicated Replies con WhatsApp Checks */}
                   <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-                    {Array.from(new Map((selectedMail.replies || []).map(r => [r.id || `${r.timestamp}_${r.message}`, r])).values()).map((rep) => {
-                      const isMe = rep.senderRole === 'player'
-                      const isReadByCashier = Boolean(
-                        selectedMail.status === 'resolved' || 
-                        selectedMail.badge === 'Completado' ||
-                        ((selectedMail as any).cashierReadAt && (selectedMail as any).cashierReadAt > rep.timestamp)
-                      )
+                    {(() => {
+                      let activeReplies = Array.isArray(selectedMail.replies) && selectedMail.replies.length > 0 
+                        ? selectedMail.replies 
+                        : []
+                      if (activeReplies.length === 0 && selectedMail.content) {
+                        activeReplies = [{
+                          id: `init_${selectedMail.timestamp}`,
+                          sender: selectedMail.sender || 'Cajero Oficial',
+                          senderRole: 'cashier',
+                          message: selectedMail.content,
+                          timestamp: selectedMail.timestamp || Date.now()
+                        }]
+                      }
+                      return Array.from(new Map(activeReplies.map(r => [r.id || `${r.timestamp}_${r.message}`, r])).values()).map((rep) => {
+                        const isMe = rep.senderRole === 'player'
+                        const isReadByCashier = Boolean(
+                          selectedMail.status === 'resolved' || 
+                          selectedMail.badge === 'Completado' ||
+                          ((selectedMail as any).cashierReadAt && (selectedMail as any).cashierReadAt > rep.timestamp)
+                        )
 
                       return (
                         <div
@@ -896,7 +928,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                           </div>
                         </div>
                       )
-                    })}
+                    })})()}
                     <div ref={chatEndRef} />
                   </div>
                 </div>

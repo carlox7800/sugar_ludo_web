@@ -236,7 +236,18 @@ export default function OrderDetailPage() {
     }
   }, [orderId])
 
-  if (!order) {
+  const [mounted, setMounted] = useState(false)
+  const [, setTick] = useState(0)
+  const [isValidating, setIsValidating] = useState(false)
+  const [isValidatingPayout, setIsValidatingPayout] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    const timer = setInterval(() => setTick((t) => t + 1), 30000)
+    return () => clearInterval(timer)
+  }, [])
+
+  if (!order || !mounted) {
     return (
       <div className="min-h-screen bg-[#090d16] flex items-center justify-center text-cyan-400 font-mono text-xs">
         <div className="flex items-center gap-2">
@@ -258,12 +269,6 @@ export default function OrderDetailPage() {
   const cashierFloatCoins = Number((cashierTarget as any).floatBalanceCoins ?? 0)
   const cashierFloatUSDT = Number((cashierTarget as any).floatBalanceUSDT ?? (cashierFloatCoins / 100))
 
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    const timer = setInterval(() => setTick((t) => t + 1), 30000)
-    return () => clearInterval(timer)
-  }, [])
-
   const slaInfo = getWithdrawalSla(order)
   const totalFiatRequestedUSD = Number(order.amountFiat || (Number(order.amountSugarCoins || 0) / 100))
   const isVipOrder = Boolean(slaInfo?.isVip || (order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
@@ -271,8 +276,6 @@ export default function OrderDetailPage() {
   const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
   const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
   const hasSufficientFloat = cashierFloatUSDT >= netPayoutUSD
-
-  const [isValidating, setIsValidating] = useState(false)
 
   const handleSendMessage = async (text: string, attachmentUrl?: string) => {
     if (!text.trim() && !attachmentUrl) return
@@ -425,8 +428,6 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       setIsValidating(false)
     }
   }
-
-  const [isValidatingPayout, setIsValidatingPayout] = useState(false)
 
   const handleConfirmPayout = async () => {
     const finalPayoutRef = payoutTxId.trim() || `TX-PAYOUT-${Date.now().toString(36).toUpperCase()}`

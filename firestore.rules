@@ -62,7 +62,7 @@ service cloud.firestore {
       allow update: if (resource.data.status == 'pending' && (request.resource.data.status == 'cancelled' || request.resource.data.status == 'completed')) ||
                     request.resource.data.status == 'completed' ||
                     request.resource.data.diff(resource.data).affectedKeys()
-                      .hasOnly(['messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'playerReadAt']);
+                      .hasOnly(['messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'hasUnreadPlayerMessage', 'playerReadAt']);
       allow delete: if false;
       
       match /messages/{messageId} {
