@@ -125,6 +125,9 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     await deleteMailsBatch(user?.uid, eligibleToDelete)
     setMailList((prev) => prev.filter((m) => !eligibleToDelete.includes(m.id)))
     setSelectedIds((prev) => prev.filter((id) => !eligibleToDelete.includes(id)))
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
     showToast(`🧹 Se limpiaron ${eligibleToDelete.length} ${eligibleToDelete.length === 1 ? 'mensaje archivado' : 'mensajes archivados'}`)
   }
 
@@ -192,7 +195,20 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               const ord = docSnap.data() as any
               const orderId = docSnap.id
               const mailKey = `mail_ord_sup_${orderId}`
-              if (hidden.has(mailKey)) return
+              const isHidden = hidden.has(mailKey) || hidden.has(`mail_sup_${orderId}`) || hidden.has(orderId)
+
+              // Auto-saneamiento: Si una orden está oculta o huérfana pero aún figura como no leída en Firestore, limpiarla
+              if (isHidden && ord.hasUnreadCashierMessage !== false) {
+                try {
+                  const orderRef = doc(db, 'cashier_orders', orderId)
+                  updateDoc(orderRef, {
+                    hasUnreadCashierMessage: false,
+                    playerReadAt: Date.now()
+                  }).catch(() => {})
+                } catch {}
+              }
+
+              if (isHidden) return
 
               const orderMessages = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
 

@@ -14,6 +14,7 @@ import { useAuth } from '@/lib/auth-context'
 import { db } from '@/lib/firebase'
 import { onSnapshot, collection, query, where, limit } from 'firebase/firestore'
 import { subscribeToFriendRequests, subscribeToIncomingDuelInvites } from '@/lib/friends-service'
+import { getHiddenMails } from '@/lib/mail-service'
 
 type NavItem = {
   label: string
@@ -72,8 +73,13 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
 
       sharedUnsubOrders = onSnapshot(qOrders, (snap) => {
         let supportUnread = 0
+        const hidden = new Set(getHiddenMails())
         snap.forEach((d) => {
           const ord = d.data() as any
+          const orderId = d.id
+          if (hidden.has(`mail_ord_sup_${orderId}`) || hidden.has(`mail_sup_${orderId}`) || hidden.has(orderId)) {
+            return
+          }
           const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
           if (msgs.length > 0) {
             const lastMsg = msgs[msgs.length - 1]

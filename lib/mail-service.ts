@@ -314,7 +314,26 @@ export async function deleteMailsBatch(userId: string | undefined, mailIds: stri
   // 1. Ocultar localmente (sirve tanto para mensajes de orden P2P como para mensajes regulares)
   hideMailsBatchLocal(mailIds)
 
-  // 2. Si son mensajes de la colección del usuario (recompensas/sistema), removerlos de user.inbox
+  // 2. Si hay mensajes vinculados a órdenes de soporte P2P, actualizar cashier_orders en Firestore
+  const orderIdsToMark = mailIds
+    .map(id => id.startsWith('mail_ord_sup_') ? id.replace('mail_ord_sup_', '') : (id.startsWith('mail_sup_') ? id.replace('mail_sup_', '') : null))
+    .filter(Boolean) as string[]
+
+  if (orderIdsToMark.length > 0 && userId && !userId.startsWith('dev_')) {
+    orderIdsToMark.forEach(async (orderId) => {
+      try {
+        const orderRef = doc(db, 'cashier_orders', orderId)
+        await updateDoc(orderRef, {
+          hasUnreadCashierMessage: false,
+          playerReadAt: Date.now()
+        })
+      } catch (err) {
+        console.debug('[MailService] Error actualizando cashier_orders al borrar:', err)
+      }
+    })
+  }
+
+  // 3. Si son mensajes de la colección del usuario (recompensas/sistema), removerlos de user.inbox
   const regularIds = mailIds.filter(id => !id.startsWith('mail_ord_sup_'))
   if (regularIds.length > 0) {
     let inbox = await fetchUserInbox(userId)
