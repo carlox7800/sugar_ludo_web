@@ -333,13 +333,20 @@ export async function deleteMailsBatch(userId: string | undefined, mailIds: stri
     })
   }
 
-  // 3. Si son mensajes de la colección del usuario (recompensas/sistema), removerlos de user.inbox
-  const regularIds = mailIds.filter(id => !id.startsWith('mail_ord_sup_'))
-  if (regularIds.length > 0) {
-    let inbox = await fetchUserInbox(userId)
-    const idSet = new Set(regularIds)
-    inbox = inbox.filter(m => !idSet.has(m.id))
-    
+  // 3. Remover de user.inbox cualquier mensaje regular o mensaje legado de soporte (mail_sup_ / orderId)
+  let inbox = await fetchUserInbox(userId)
+  const initialLength = inbox.length
+  const idSet = new Set(mailIds)
+  const orderIdSet = new Set(orderIdsToMark)
+
+  inbox = inbox.filter(m => {
+    if (idSet.has(m.id)) return false
+    if (m.orderId && orderIdSet.has(m.orderId)) return false
+    if (m.id && orderIdsToMark.some(oid => m.id.includes(oid))) return false
+    return true
+  })
+
+  if (inbox.length !== initialLength) {
     if (userId && !userId.startsWith('dev_')) {
       try {
         const userRef = doc(db, 'users', userId)

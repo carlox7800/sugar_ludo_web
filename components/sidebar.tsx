@@ -157,7 +157,18 @@ function useNavigationBadges(user: any) {
 
   const unreadInboxCount = React.useMemo(() => {
     if (!user || !Array.isArray(user.inbox)) return 0
-    return user.inbox.filter((m: any) => !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)).length
+    const hidden = new Set(getHiddenMails())
+    return user.inbox.filter((m: any) => {
+      // Excluir correos ocultos o eliminados por el jugador
+      if (hidden.has(m.id) || (m.orderId && (hidden.has(`mail_ord_sup_${m.orderId}`) || hidden.has(`mail_sup_${m.orderId}`) || hidden.has(m.orderId)))) {
+        return false
+      }
+      // Excluir correos de soporte P2P y órdenes ya contabilizados por unreadSupportCount
+      if (m.orderId || m.id?.startsWith('mail_sup_') || m.id?.startsWith('mail_ord_sup_') || m.category === 'support') {
+        return false
+      }
+      return !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)
+    }).length
   }, [user?.inbox])
 
   useEffect(() => {
