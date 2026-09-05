@@ -274,36 +274,80 @@ export async function markAllMailsAsRead(userId: string | undefined): Promise<vo
   }
 }
 
+export const PURGE_TIMESTAMP_KEY = 'sugar_last_inbox_purge_at'
+
+export function getLastPurgeTimestamp(): number {
+  if (typeof window === 'undefined') return 0
+  try {
+    return Number(localStorage.getItem(PURGE_TIMESTAMP_KEY) || 0)
+  } catch {
+    return 0
+  }
+}
+
+export function recordPurgeTimestampNow(): number {
+  const now = Date.now()
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(PURGE_TIMESTAMP_KEY, String(now))
+    } catch {}
+  }
+  return now
+}
+
 /**
  * purgeOrphanInboxItems: Marca TODOS los elementos de user.inbox como isRead=true y claimed=true
- * en Firestore. Elimina cualquier entrada que causara el badge fantasma invisible.
- * También resetea el localStorage y dispara actualización del Sidebar.
+ * en Firestore y localmente. Limpia además cualquier orden de soporte en cashier_orders para el jugador.
+ * Guarda sugar_last_inbox_purge_at para actuar como candado absoluto de consistencia.
  */
 export async function purgeOrphanInboxItems(userId: string | undefined): Promise<void> {
-  try {
-    if (userId && !userId.startsWith('dev_')) {
+  const now = recordPurgeTimestampNow()
+
+  // 1. Limpieza local inmediata
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('sugar_user_inbox')
+      // Ocultar cualquier correo previo registrado
+      const current = getHiddenMails()
+      // Guardar también estado limpio
+      localStorage.setItem('sugar_user_inbox', JSON.stringify([]))
+    } catch {}
+    window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+  }
+
+  // 2. Limpieza en Firestore si hay usuario conectado
+  if (userId && !userId.startsWith('dev_')) {
+    try {
+      // a) Purgar array inbox en users/{userId}
       const userRef = doc(db, 'users', userId)
       const snap = await getDoc(userRef)
       if (snap.exists()) {
         const data = snap.data()
         const inbox = Array.isArray(data.inbox) ? data.inbox : []
-        // Marcar todo como leído y reclamado para que no sume al contador
         const purged = inbox.map((m: any) => ({ ...m, isRead: true, claimed: true }))
         await updateDoc(userRef, { inbox: purged })
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('sugar_user_inbox', JSON.stringify(purged))
-          window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-        }
-        return
       }
+
+      // b) Purgar cashier_orders donde playerUid == userId
+      const { collection, query, where, getDocs } = await import('firebase/firestore')
+      const q = query(collection(db, 'cashier_orders'), where('playerUid', '==', userId))
+      const ordersSnap = await getDocs(q)
+      ordersSnap.forEach(async (d) => {
+        try {
+          await updateDoc(d.ref, {
+            hasUnreadCashierMessage: false,
+            playerReadAt: now
+          })
+        } catch {}
+      })
+    } catch (e) {
+      console.warn('[MailService] Error en purgeOrphanInboxItems (Firestore):', e)
     }
-    // Dev fallback: limpiar localStorage directamente
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('sugar_user_inbox')
-      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-    }
-  } catch (e) {
-    console.warn('[MailService] Error en purgeOrphanInboxItems:', e)
+  }
+
+  // 3. Notificar a toda la interfaz
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
   }
 }
 

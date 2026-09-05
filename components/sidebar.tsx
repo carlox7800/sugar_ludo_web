@@ -14,7 +14,7 @@ import { useAuth } from '@/lib/auth-context'
 import { db } from '@/lib/firebase'
 import { onSnapshot, collection, query, where, limit } from 'firebase/firestore'
 import { subscribeToFriendRequests, subscribeToIncomingDuelInvites } from '@/lib/friends-service'
-import { getHiddenMails } from '@/lib/mail-service'
+import { getHiddenMails, getLastPurgeTimestamp } from '@/lib/mail-service'
 
 type NavItem = {
   label: string
@@ -74,6 +74,7 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
       sharedUnsubOrders = onSnapshot(qOrders, (snap) => {
         let supportUnread = 0
         const hidden = new Set(getHiddenMails())
+        const lastPurgeAt = getLastPurgeTimestamp()
         snap.forEach((d) => {
           const ord = d.data() as any
           const orderId = d.id
@@ -87,6 +88,12 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
             if (ord.hasUnreadCashierMessage === false) return
             const playerReadAt = Number(ord.playerReadAt || 0)
             const msgTimestamp = Number(lastMsg.timestamp || 0)
+
+            // Candado de consistencia: Si el mensaje es previo a la última purga manual, no contar
+            if (lastPurgeAt > 0 && msgTimestamp <= lastPurgeAt) {
+              return
+            }
+
             if (playerReadAt < msgTimestamp) {
               supportUnread++
             }
@@ -158,9 +165,14 @@ function useNavigationBadges(user: any) {
   const unreadInboxCount = React.useMemo(() => {
     if (!user || !Array.isArray(user.inbox)) return 0
     const hidden = new Set(getHiddenMails())
+    const lastPurgeAt = getLastPurgeTimestamp()
     const passing = user.inbox.filter((m: any) => {
       // Excluir correos ocultos o eliminados por el jugador
       if (hidden.has(m.id) || (m.orderId && (hidden.has(`mail_ord_sup_${m.orderId}`) || hidden.has(`mail_sup_${m.orderId}`) || hidden.has(m.orderId)))) {
+        return false
+      }
+      // Candado de consistencia: Si el correo se generó antes de la última purga, no contar
+      if (lastPurgeAt > 0 && Number(m.timestamp || 0) <= lastPurgeAt) {
         return false
       }
       // Excluir correos de soporte P2P y órdenes ya contabilizados por unreadSupportCount
