@@ -158,7 +158,7 @@ function useNavigationBadges(user: any) {
   const unreadInboxCount = React.useMemo(() => {
     if (!user || !Array.isArray(user.inbox)) return 0
     const hidden = new Set(getHiddenMails())
-    return user.inbox.filter((m: any) => {
+    const passing = user.inbox.filter((m: any) => {
       // Excluir correos ocultos o eliminados por el jugador
       if (hidden.has(m.id) || (m.orderId && (hidden.has(`mail_ord_sup_${m.orderId}`) || hidden.has(`mail_sup_${m.orderId}`) || hidden.has(m.orderId)))) {
         return false
@@ -168,7 +168,11 @@ function useNavigationBadges(user: any) {
         return false
       }
       return !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)
-    }).length
+    })
+    if (passing.length > 0) {
+      console.log('[DEBUG SIDEBAR INBOX] Elementos que generan el badge:', JSON.stringify(passing.map((m: any) => ({ id: m.id, category: m.category, isRead: m.isRead, claimed: m.claimed, rewardSC: m.rewardSC, orderId: m.orderId })), null, 2))
+    }
+    return passing.length
   }, [user?.inbox])
 
   useEffect(() => {

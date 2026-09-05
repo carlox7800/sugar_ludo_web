@@ -274,6 +274,39 @@ export async function markAllMailsAsRead(userId: string | undefined): Promise<vo
   }
 }
 
+/**
+ * purgeOrphanInboxItems: Marca TODOS los elementos de user.inbox como isRead=true y claimed=true
+ * en Firestore. Elimina cualquier entrada que causara el badge fantasma invisible.
+ * También resetea el localStorage y dispara actualización del Sidebar.
+ */
+export async function purgeOrphanInboxItems(userId: string | undefined): Promise<void> {
+  try {
+    if (userId && !userId.startsWith('dev_')) {
+      const userRef = doc(db, 'users', userId)
+      const snap = await getDoc(userRef)
+      if (snap.exists()) {
+        const data = snap.data()
+        const inbox = Array.isArray(data.inbox) ? data.inbox : []
+        // Marcar todo como leído y reclamado para que no sume al contador
+        const purged = inbox.map((m: any) => ({ ...m, isRead: true, claimed: true }))
+        await updateDoc(userRef, { inbox: purged })
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('sugar_user_inbox', JSON.stringify(purged))
+          window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+        }
+        return
+      }
+    }
+    // Dev fallback: limpiar localStorage directamente
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('sugar_user_inbox')
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
+  } catch (e) {
+    console.warn('[MailService] Error en purgeOrphanInboxItems:', e)
+  }
+}
+
 const HIDDEN_MAILS_KEY = 'sugar_hidden_mails'
 
 export function getHiddenMails(): string[] {

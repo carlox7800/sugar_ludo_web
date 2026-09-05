@@ -40,7 +40,8 @@ import {
   markMailAsRead,
   replySupportMail,
   deleteMailsBatch,
-  getHiddenMails
+  getHiddenMails,
+  purgeOrphanInboxItems
 } from '@/lib/mail-service'
 
 export function MailScreen({ onBack }: { onBack: () => void }) {
@@ -129,6 +130,17 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
       window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
     }
     showToast(`🧹 Se limpiaron ${eligibleToDelete.length} ${eligibleToDelete.length === 1 ? 'mensaje archivado' : 'mensajes archivados'}`)
+  }
+
+  const handlePurgeOrphans = async () => {
+    // Purga agresiva: marca como leídos/reclamados TODOS los elementos de user.inbox en Firestore
+    // incluidos huérfanos invisibles que producen el badge fantasma
+    await purgeOrphanInboxItems(user?.uid)
+    setMailList([])
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
+    showToast('🧹 Buzón purgado completamente. Todos los registros marcados como leídos.')
   }
 
   // Load real inbox
@@ -681,6 +693,14 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                 ? 'No tienes consultas o mensajes de cajeros pendientes. Las notificaciones de soporte aparecerán aquí.'
                 : 'No tienes mensajes nuevos en esta categoría. Las recompensas y anuncios aparecerán aquí.'}
             </p>
+            <button
+              onClick={handlePurgeOrphans}
+              className="mt-3 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all cursor-pointer"
+              title="Borrar todos los registros de inbox en Firestore para resetear el badge del menú lateral"
+            >
+              <Trash2 className="size-3.5" />
+              <span>Limpiar Todo (Resetear Badge)</span>
+            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
