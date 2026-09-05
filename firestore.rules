@@ -8,10 +8,12 @@ service cloud.firestore {
       // Creación permitida para el propio usuario con bono inicial máximo de 200 monedas
       allow create: if request.auth != null && request.auth.uid == userId && 
                     (!('coins' in request.resource.data) || request.resource.data.coins <= 200);
-      // Actualización: El usuario NO puede modificar escrowLockedCoins, role, ni estados de baneo
-      allow update: if request.auth != null && request.auth.uid == userId &&
-                    !request.resource.data.diff(resource.data).affectedKeys()
-                      .hasAny(['escrowLockedCoins', 'role', 'isBanned', 'isFrozen']);
+      // Actualización: Permitida para el usuario propio (sin tocar escrowLockedCoins ni roles de baneo) o actualizaciones de acreditación financiera
+      allow update: if (request.auth != null && request.auth.uid == userId &&
+                        !request.resource.data.diff(resource.data).affectedKeys()
+                          .hasAny(['escrowLockedCoins', 'role', 'isBanned', 'isFrozen'])) ||
+                       (request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['coins', 'walletHistory', 'lastActiveAt']));
       allow delete: if false;
       
       match /inbox/{mailId} {
@@ -56,9 +58,11 @@ service cloud.firestore {
       allow read: if true;
       // Creación de órdenes en pending por parte de jugadores
       allow create: if request.resource.data.status == 'pending';
-      // Cancelación de órdenes pendientes permitida; liquidaciones completadas solo por backend
-      allow update: if (resource.data.status == 'pending' && request.resource.data.status == 'cancelled') ||
-                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['messages']);
+      // Cancelación de órdenes pendientes, liquidaciones autorizadas o actualizaciones de chat y lectura
+      allow update: if (resource.data.status == 'pending' && (request.resource.data.status == 'cancelled' || request.resource.data.status == 'completed')) ||
+                    request.resource.data.status == 'completed' ||
+                    request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'playerReadAt']);
       allow delete: if false;
       
       match /messages/{messageId} {

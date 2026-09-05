@@ -248,6 +248,7 @@ export async function approveDepositOrder(params: {
   const commissionCoins = Number(orderData.cashierCommissionCoins || Math.round(amountCoins * 0.02))
 
   // 2.4. Actualizar orden a 'completed' en Firestore y disco
+  let orderCompletedInCloud = false
   try {
     const orderDocRef = doc(db, 'cashier_orders', orderId)
     await setDoc(orderDocRef, {
@@ -257,12 +258,37 @@ export async function approveDepositOrder(params: {
       verifiedAt: now,
       settledByCashierUid: cashierUid
     }, { merge: true })
+    orderCompletedInCloud = true
   } catch (err: any) {
-    console.warn('[approveDepositOrder Fallback] Error actualizando orden en Firestore:', err?.message)
+    console.warn('[approveDepositOrder Fallback] Error actualizando orden en Firestore SDK:', err?.message)
+  }
+
+  // Fallback REST para actualizar orden si SDK reportó fallo
+  if (!orderCompletedInCloud) {
+    try {
+      const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+      const patchUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders/${orderId}?updateMask.fieldPaths=status&updateMask.fieldPaths=receiptReferenceNumber&updateMask.fieldPaths=completedAt&updateMask.fieldPaths=verifiedAt&updateMask.fieldPaths=settledByCashierUid`
+      await fetch(patchUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            status: { stringValue: 'completed' },
+            receiptReferenceNumber: { stringValue: finalRef },
+            completedAt: { integerValue: String(now) },
+            verifiedAt: { integerValue: String(now) },
+            settledByCashierUid: { stringValue: cashierUid }
+          }
+        })
+      })
+    } catch (e: any) {
+      console.warn('[approveDepositOrder Fallback] Error en REST patch de orden:', e?.message)
+    }
   }
 
   // 2.5. Acreditar Sugar Coins en users/{playerUid}
   if (orderData.playerUid) {
+    let coinsCreditedInCloud = false
     try {
       const userDocRef = doc(db, 'users', orderData.playerUid)
       const userSnap = await getDoc(userDocRef)
@@ -299,9 +325,37 @@ export async function approveDepositOrder(params: {
           walletHistory: updatedHistory.slice(0, 50),
           lastActiveAt: now
         })
+        coinsCreditedInCloud = true
       }
     } catch (userErr: any) {
-      console.warn('[approveDepositOrder Fallback] Error acreditando saldo en usuario:', userErr?.message)
+      console.warn('[approveDepositOrder Fallback] Error acreditando saldo en usuario SDK:', userErr?.message)
+    }
+
+    // Fallback REST para acreditar saldo si SDK no pudo
+    if (!coinsCreditedInCloud) {
+      try {
+        const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+        const userUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${orderData.playerUid}`
+        const userRes = await fetch(userUrl)
+        if (userRes.ok) {
+          const userDocJson = await userRes.json()
+          const currentCoins = Number(userDocJson.fields?.coins?.integerValue || 0)
+          const newCoins = currentCoins + amountCoins
+
+          await fetch(`${userUrl}?updateMask.fieldPaths=coins&updateMask.fieldPaths=lastActiveAt`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: {
+                coins: { integerValue: String(newCoins) },
+                lastActiveAt: { integerValue: String(now) }
+              }
+            })
+          })
+        }
+      } catch (e: any) {
+        console.warn('[approveDepositOrder Fallback] Error en REST patch de saldo de usuario:', e?.message)
+      }
     }
   }
 
