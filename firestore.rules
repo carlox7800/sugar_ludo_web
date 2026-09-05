@@ -13,7 +13,7 @@ service cloud.firestore {
                         !request.resource.data.diff(resource.data).affectedKeys()
                           .hasAny(['escrowLockedCoins', 'role', 'isBanned', 'isFrozen'])) ||
                        (request.resource.data.diff(resource.data).affectedKeys()
-                          .hasOnly(['coins', 'walletHistory', 'lastActiveAt']));
+                          .hasOnly(['coins', 'walletHistory', 'lastActiveAt', 'inbox']));
       allow delete: if false;
       
       match /inbox/{mailId} {

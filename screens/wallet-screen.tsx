@@ -89,6 +89,12 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                     localStorage.setItem(creditedKey, 'true')
                   }
                   const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
+                  const currentBalance = typeof coins === 'number' ? coins : 0
+                  const updatedBalance = currentBalance + amountCoins
+                  setCoins(updatedBalance)
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('sugar_player_coins', String(updatedBalance))
+                  }
                   showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
                 }
               }

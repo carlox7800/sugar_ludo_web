@@ -222,6 +222,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                 orderSupportMails.push({
                   id: mailKey,
                   type: 'support',
+                  category: 'support',
                   title: `💬 Soporte Orden #${orderId.slice(0, 8)}`,
                   sender: ord.cashierName || 'Cajero Oficial',
                   date: new Date(lastMsgTime || Date.now()).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
@@ -245,6 +246,14 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                 !hidden.has(m.id)
               )
               const combined = [...orderSupportMails, ...nonOrderMails]
+
+              // Si el usuario tiene soporte sin leer y no tiene recompensas pendientes, redirigir automáticamente a la pestaña de Soporte
+              const hasUnreadSupport = orderSupportMails.some(m => !m.isRead)
+              const hasUnreadRewards = combined.some(m => m.category === 'rewards' && !m.claimed)
+              if (hasUnreadSupport && !hasUnreadRewards) {
+                setActiveTab((current) => current === 'rewards' ? 'support' : current)
+              }
+
               return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
             })
 
