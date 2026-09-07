@@ -674,23 +674,59 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
             </div>
             
             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar max-h-[450px] flex flex-col gap-3">
-              {transactions.length === 0 ? (
-                <div className="text-center text-muted-foreground p-8 font-display text-sm">
-                  No hay movimientos recientes
-                </div>
-              ) : (
-                transactions.map(tx => (
-                  <TransactionItem 
-                    key={tx.id}
-                    type={tx.amount > 0 ? 'deposit' : 'withdrawal'}
-                    title={tx.description}
-                    date={tx.dateStr || 'Reciente'}
-                    amount={`${tx.amount > 0 ? '+' : ''}${tx.amount}`}
-                    usdtEquivalent={Math.abs(tx.amount / 100).toFixed(2)}
-                    color={tx.amount > 0 ? (tx.type === 'match_prize' ? 'var(--candy-gold)' : 'var(--candy-cyan)') : 'var(--candy-magenta)'}
-                  />
-                ))
-              )}
+              {(() => {
+                // Deduplicación reactiva inteligente de transacciones (evita duplicados de doble-escritura)
+                const seenOrderIds = new Set<string>()
+                const uniqueTransactions: WalletTransaction[] = []
+
+                for (const tx of transactions) {
+                  // Extraer orderId explícito o del texto (#wit_...) o (#dep_...)
+                  const match = (tx.orderId) || (tx.description && tx.description.match(/#(wit_[a-zA-Z0-9_]+|dep_[a-zA-Z0-9_]+)/)?.[1])
+                  if (match) {
+                    if (seenOrderIds.has(match)) {
+                      // Ya mostramos una fila para esta orden; descartar la réplica
+                      continue
+                    }
+                    seenOrderIds.add(match)
+                  }
+                  uniqueTransactions.push(tx)
+                }
+
+                if (uniqueTransactions.length === 0) {
+                  return (
+                    <div className="text-center text-muted-foreground p-8 font-display text-sm">
+                      No hay movimientos recientes
+                    </div>
+                  )
+                }
+
+                return uniqueTransactions.map((tx, idx) => {
+                  // Formateo de fecha/hora canónico en la zona horaria del dispositivo del cliente
+                  let formattedDate = tx.dateStr || 'Reciente'
+                  if (tx.timestamp && typeof tx.timestamp === 'number') {
+                    try {
+                      formattedDate = new Date(tx.timestamp).toLocaleDateString('es-ES', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })
+                    } catch {}
+                  }
+
+                  return (
+                    <TransactionItem 
+                      key={tx.id || `tx_${idx}_${tx.timestamp || Date.now()}`}
+                      tx={tx}
+                      date={formattedDate}
+                      amount={`${tx.amount > 0 ? '+' : ''}${tx.amount}`}
+                      usdtEquivalent={Math.abs(tx.amount / 100).toFixed(2)}
+                      color={tx.amount > 0 ? (tx.type === 'match_prize' ? 'var(--candy-gold)' : 'var(--candy-cyan)') : 'var(--candy-magenta)'}
+                    />
+                  )
+                })
+              })()}
             </div>
           </div>
         </div>
@@ -704,10 +740,44 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
   )
 }
 
-function TransactionItem({ type, title, date, amount, usdtEquivalent, color }: { type: 'deposit' | 'withdrawal', title: string, date: string, amount: string, usdtEquivalent: string, color: string }) {
+function TransactionItem({ 
+  tx, 
+  date, 
+  amount, 
+  usdtEquivalent, 
+  color 
+}: { 
+  tx: WalletTransaction
+  date: string
+  amount: string
+  usdtEquivalent: string
+  color: string 
+}) {
+  const title = tx.description || ''
   const isCancelled = title.toLowerCase().includes('cancelad')
-  const isPendingWithdraw = type === 'withdrawal' && (title.includes('(Pendiente)') || title.toLowerCase().includes('solicitud de retiro')) && !isCancelled
-  const isSettledWithdraw = type === 'withdrawal' && (title.toLowerCase().includes('liquidado') || title.toLowerCase().includes('aprobado') || title.toLowerCase().includes('txid')) && !isCancelled
+  const isPendingWithdraw = tx.type === 'withdraw' && (title.includes('(Pendiente)') || title.toLowerCase().includes('solicitud de retiro')) && !isCancelled
+  const isSettledWithdraw = tx.type === 'withdraw' && (title.toLowerCase().includes('liquidado') || title.toLowerCase().includes('aprobado') || title.toLowerCase().includes('txid')) && !isCancelled
+
+  // Extraer ID de orden limpio (#wit_... o #dep_...)
+  const orderIdMatch = tx.orderId || title.match(/#(wit_[a-zA-Z0-9_]+|dep_[a-zA-Z0-9_]+)/)?.[1]
+  const displayOrderId = orderIdMatch ? `#${orderIdMatch.slice(0, 10)}` : null
+
+  // Extraer TxID limpio si está disponible
+  let payoutTxId = tx.payoutTxId || null
+  if (!payoutTxId && title.includes('TxID:')) {
+    const txMatch = title.split('TxID:')[1]
+    if (txMatch) payoutTxId = txMatch.trim()
+  }
+
+  // Título canónico limpio para no saturar la vista
+  let cleanTitle = title
+  if (isPendingWithdraw) {
+    cleanTitle = title.includes('VIP') ? 'Retiro VIP en Proceso' : 'Retiro en Proceso'
+  } else if (isSettledWithdraw) {
+    cleanTitle = title.includes('VIP') ? 'Retiro VIP Liquidado' : 'Retiro Liquidado'
+  } else if (isCancelled && tx.type === 'withdraw') {
+    cleanTitle = 'Retiro Anulado'
+  }
 
   let displayColor = color
   if (isCancelled) {
@@ -728,7 +798,7 @@ function TransactionItem({ type, title, date, amount, usdtEquivalent, color }: {
         ? 'border-pink-500/30 bg-pink-500/5'
         : 'border-border/50'
     }`}>
-      <div className="flex items-center gap-4 min-w-0">
+      <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-2">
         <div 
           className={`flex size-10 items-center justify-center rounded-xl shrink-0 ${isPendingWithdraw ? 'border border-amber-500/50' : ''}`}
           style={{ 
@@ -755,20 +825,22 @@ function TransactionItem({ type, title, date, amount, usdtEquivalent, color }: {
           ) : isSettledWithdraw ? (
             <ArrowUpRight className="size-5 text-pink-400" />
           ) : (
-            type === 'deposit' ? <ArrowDownLeft className="size-5" /> : <ArrowUpRight className="size-5" />
+            tx.type === 'deposit' ? <ArrowDownLeft className="size-5" /> : <ArrowUpRight className="size-5" />
           )}
         </div>
-        <div className="flex flex-col min-w-0">
+
+        <div className="flex flex-col min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`font-display text-sm font-bold truncate ${
+            <span className={`font-display text-sm font-bold ${
               isCancelled 
                 ? 'text-muted-foreground line-through decoration-rose-500/50' 
                 : isPendingWithdraw
                 ? 'text-amber-200 font-extrabold'
                 : 'text-foreground'
             }`}>
-              {title}
+              {cleanTitle}
             </span>
+
             {isCancelled && (
               <span className="px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-300 font-extrabold text-[9px] uppercase tracking-wider">
                 Cancelada
@@ -786,15 +858,30 @@ function TransactionItem({ type, title, date, amount, usdtEquivalent, color }: {
               </span>
             )}
           </div>
-          <span className="text-[11px] text-muted-foreground">{date}</span>
+
+          {/* Badges secundarios estructurados y legibles */}
+          <div className="flex items-center gap-2 flex-wrap mt-0.5 text-[11px] text-muted-foreground">
+            <span>{date}</span>
+            {displayOrderId && (
+              <span className="font-mono px-1.5 py-0.2 rounded bg-white/5 border border-white/10 text-cyan-300 font-bold text-[10px]">
+                {displayOrderId}
+              </span>
+            )}
+            {payoutTxId && (
+              <span className="font-mono px-1.5 py-0.2 rounded bg-pink-500/10 border border-pink-500/20 text-pink-300 font-bold text-[10px] break-all">
+                TxID: {payoutTxId}
+              </span>
+            )}
+          </div>
         </div>
       </div>
-      <div className="flex flex-col items-end shrink-0 pl-3">
+
+      <div className="flex flex-col items-end shrink-0 pl-2">
         <span className="font-display text-base font-extrabold" style={{ color: displayColor }}>
           {isCancelled ? '0 SC' : `${amount} Sugar Coins`}
         </span>
         <span className={`text-[11px] font-semibold tracking-wide ${isPendingWithdraw ? 'text-amber-300/90 font-mono' : 'text-muted-foreground'}`}>
-          {isCancelled ? '(Anulada)' : isPendingWithdraw ? `(Fondos en Escrow ≈ $${usdtEquivalent} USDT)` : `(${usdtEquivalent} USDT)`}
+          {isCancelled ? '(Anulada)' : isPendingWithdraw ? `(En Escrow ≈ $${usdtEquivalent} USDT)` : `(${usdtEquivalent} USDT)`}
         </span>
       </div>
     </div>

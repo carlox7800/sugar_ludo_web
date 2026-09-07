@@ -424,15 +424,20 @@ export async function createWithdrawOrderWithEscrow(params: {
         const newCoins = currentCoins - amountSugarCoins
 
         const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
-        const withdrawTxEntry = {
-          id: `tx_wit_${now}_${Math.random().toString(36).slice(2, 6)}`,
-          type: 'withdraw',
-          amount: -amountSugarCoins,
-          description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${finalOrderId.slice(0, 8)})` : `Solicitud de Retiro (Pendiente) (#${finalOrderId.slice(0, 8)})`,
-          timestamp: now,
-          dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        const alreadyHasTx = existingHistory.some((tx: any) => tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8))))
+        let updatedHistory = existingHistory
+        if (!alreadyHasTx) {
+          const withdrawTxEntry = {
+            id: `tx_wit_${now}_${Math.random().toString(36).slice(2, 6)}`,
+            orderId: finalOrderId,
+            type: 'withdraw',
+            amount: -amountSugarCoins,
+            description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${finalOrderId.slice(0, 8)})` : `Solicitud de Retiro (Pendiente) (#${finalOrderId.slice(0, 8)})`,
+            timestamp: now,
+            dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+          }
+          updatedHistory = [withdrawTxEntry, ...existingHistory].slice(0, 50)
         }
-        const updatedHistory = [withdrawTxEntry, ...existingHistory].slice(0, 50)
 
         transaction.update(playerRef, {
           coins: newCoins,
@@ -491,15 +496,20 @@ export async function createWithdrawOrderWithEscrow(params: {
       const newEscrow = currentEscrow + amountSugarCoins
 
       const existingHistory = Array.isArray(userData.walletHistory) ? userData.walletHistory : []
-      const withdrawTxEntry = {
-        id: `tx_wit_${now}_${Math.random().toString(36).slice(2, 6)}`,
-        type: 'withdraw',
-        amount: -amountSugarCoins,
-        description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${finalOrderId.slice(0, 8)})` : `Solicitud de Retiro (Pendiente) (#${finalOrderId.slice(0, 8)})`,
-        timestamp: now,
-        dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      const alreadyHasTx = existingHistory.some((tx: any) => tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8))))
+      let updatedHistory = existingHistory
+      if (!alreadyHasTx) {
+        const withdrawTxEntry = {
+          id: `tx_wit_${now}_${Math.random().toString(36).slice(2, 6)}`,
+          orderId: finalOrderId,
+          type: 'withdraw',
+          amount: -amountSugarCoins,
+          description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${finalOrderId.slice(0, 8)})` : `Solicitud de Retiro (Pendiente) (#${finalOrderId.slice(0, 8)})`,
+          timestamp: now,
+          dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        }
+        updatedHistory = [withdrawTxEntry, ...existingHistory].slice(0, 50)
       }
-      const updatedHistory = [withdrawTxEntry, ...existingHistory].slice(0, 50)
 
       await updateDoc(userDocRef, {
         coins: newCoins,
@@ -969,19 +979,29 @@ export async function completeWithdrawalOrder(params: {
         const newEscrow = Math.max(0, currentEscrow - amountCoins)
 
         const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
-        let updatedHistory = existingHistory.map((tx: any) => {
-          if (tx.description && tx.description.includes(orderId.slice(0, 8)) && tx.description.includes('(Pendiente)')) {
-            return {
-              ...tx,
-              description: `Retiro Liquidado (#${orderId.slice(0, 8)}) - TxID: ${payoutTxId}`
+        let matched = false
+        const cleanHistory: any[] = []
+        for (const tx of existingHistory) {
+          const isTargetOrder = tx.orderId === orderId || (tx.description && tx.description.includes(orderId.slice(0, 8)))
+          if (isTargetOrder) {
+            if (!matched) {
+              matched = true
+              cleanHistory.push({
+                ...tx,
+                orderId,
+                payoutTxId,
+                description: `Retiro Liquidado (#${orderId}) - TxID: ${payoutTxId}`
+              })
             }
+            // Si ya se procesó una entrada para esta misma orden, se descarta el duplicado huérfano
+          } else {
+            cleanHistory.push(tx)
           }
-          return tx
-        })
+        }
 
         await updateDoc(userDocRef, {
           escrowLockedCoins: newEscrow,
-          walletHistory: updatedHistory,
+          walletHistory: cleanHistory.slice(0, 50),
           lastActiveAt: now
         })
         escrowReleasedInCloud = true

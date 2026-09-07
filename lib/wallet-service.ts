@@ -6,6 +6,8 @@ export type TransactionType = 'deposit' | 'withdraw' | 'match_fee' | 'match_priz
 
 export interface WalletTransaction {
   id?: string
+  orderId?: string
+  payoutTxId?: string
   type: TransactionType
   amount: number
   description: string
@@ -299,6 +301,7 @@ export async function createWithdrawOrder(params: {
         const now = Date.now()
         const pendingTx: WalletTransaction = {
           id: `tx_wit_${now}_${Math.random().toString(36).substring(2, 6)}`,
+          orderId,
           type: 'withdraw',
           amount: -amountSugarCoins,
           description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${orderId.slice(0, 8)})` : `Solicitud de Retiro (Pendiente) (#${orderId.slice(0, 8)})`,
@@ -313,7 +316,8 @@ export async function createWithdrawOrder(params: {
         }
 
         const existingHistory = Array.isArray(userData.walletHistory) ? userData.walletHistory : []
-        const updatedHistory = [pendingTx, ...existingHistory].slice(0, 50)
+        const alreadyHasTx = existingHistory.some((tx: any) => tx.orderId === orderId || (tx.description && tx.description.includes(orderId.slice(0, 8))))
+        const updatedHistory = alreadyHasTx ? existingHistory : [pendingTx, ...existingHistory].slice(0, 50)
 
         await updateDoc(userRef, {
           coins: newCoins,
