@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle, X, Trash2, CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ArrowDownLeft, History, Copy, Check, Info, Wallet, Clock, ShieldCheck, AlertCircle, X, Trash2, CheckCircle2, Loader2, XCircle, Lock } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
 import { ProfileModal } from '@/components/profile-modal'
@@ -96,6 +96,14 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                     localStorage.setItem('sugar_player_coins', String(updatedBalance))
                   }
                   showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
+                }
+              } else if (ord.type === 'withdraw') {
+                // Auto-saneamiento reactivo: Si el retiro ya fue completado, asegurar liberación de escrowLockedCoins
+                if (user?.uid && Number(user?.escrowLockedCoins || 0) > 0) {
+                  try {
+                    const userRef = doc(db, 'users', user.uid)
+                    updateDoc(userRef, { escrowLockedCoins: 0, lastActiveAt: Date.now() }).catch(() => {})
+                  } catch {}
                 }
               }
             }
@@ -375,14 +383,6 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                   ≈ {usdtEquivalent} USDT
                 </span>
               </div>
-              {Number(user?.escrowLockedCoins || 0) > 0 && (
-                <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 flex items-center gap-1.5 shadow-sm">
-                  <Clock className="size-3.5 text-amber-400 animate-spin" />
-                  <span className="font-display text-xs font-bold text-amber-300">
-                    Retenido: {Number(user?.escrowLockedCoins).toLocaleString('es')} SC (≈ ${(Number(user?.escrowLockedCoins) / 100).toFixed(2)} USDT)
-                  </span>
-                </div>
-              )}
             </div>
           </div>
 
@@ -706,29 +706,67 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
 function TransactionItem({ type, title, date, amount, usdtEquivalent, color }: { type: 'deposit' | 'withdrawal', title: string, date: string, amount: string, usdtEquivalent: string, color: string }) {
   const isCancelled = title.toLowerCase().includes('cancelad')
-  const displayColor = isCancelled ? 'var(--muted-foreground)' : color
+  const isPendingWithdraw = type === 'withdrawal' && (title.includes('(Pendiente)') || title.toLowerCase().includes('solicitud de retiro')) && !isCancelled
+  const isSettledWithdraw = type === 'withdrawal' && (title.toLowerCase().includes('liquidado') || title.toLowerCase().includes('aprobado') || title.toLowerCase().includes('txid')) && !isCancelled
+
+  let displayColor = color
+  if (isCancelled) {
+    displayColor = 'var(--muted-foreground)'
+  } else if (isPendingWithdraw) {
+    displayColor = '#f59e0b' // Amber-500
+  } else if (isSettledWithdraw) {
+    displayColor = 'var(--candy-magenta)'
+  }
 
   return (
-    <div className={`glass flex shrink-0 items-center justify-between rounded-2xl p-4 transition-colors hover:bg-[oklch(1_0_0/0.03)] border ${
-      isCancelled ? 'border-rose-500/20 bg-rose-500/5' : 'border-border/50'
+    <div className={`glass flex shrink-0 items-center justify-between rounded-2xl p-4 transition-all hover:bg-[oklch(1_0_0/0.03)] border ${
+      isCancelled 
+        ? 'border-rose-500/20 bg-rose-500/5' 
+        : isPendingWithdraw 
+        ? 'border-amber-500/40 bg-amber-500/10 shadow-[0_0_15px_rgba(245,158,11,0.12)]' 
+        : isSettledWithdraw
+        ? 'border-pink-500/30 bg-pink-500/5'
+        : 'border-border/50'
     }`}>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 min-w-0">
         <div 
-          className="flex size-10 items-center justify-center rounded-xl"
+          className={`flex size-10 items-center justify-center rounded-xl shrink-0 ${isPendingWithdraw ? 'border border-amber-500/50' : ''}`}
           style={{ 
-            backgroundColor: isCancelled ? 'rgba(244, 63, 94, 0.15)' : `${color}22`, 
-            color: isCancelled ? '#f43f5e' : color 
+            backgroundColor: isCancelled 
+              ? 'rgba(244, 63, 94, 0.15)' 
+              : isPendingWithdraw 
+              ? 'rgba(245, 158, 11, 0.2)' 
+              : isSettledWithdraw
+              ? 'rgba(236, 72, 153, 0.2)'
+              : `${color}22`, 
+            color: isCancelled 
+              ? '#f43f5e' 
+              : isPendingWithdraw 
+              ? '#fbbf24' 
+              : isSettledWithdraw
+              ? '#f472b6'
+              : color 
           }}
         >
           {isCancelled ? (
             <XCircle className="size-5 text-rose-400" />
+          ) : isPendingWithdraw ? (
+            <Lock className="size-5 text-amber-400 animate-pulse" />
+          ) : isSettledWithdraw ? (
+            <ArrowUpRight className="size-5 text-pink-400" />
           ) : (
             type === 'deposit' ? <ArrowDownLeft className="size-5" /> : <ArrowUpRight className="size-5" />
           )}
         </div>
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <span className={`font-display text-sm font-bold ${isCancelled ? 'text-muted-foreground line-through decoration-rose-500/50' : 'text-foreground'}`}>
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`font-display text-sm font-bold truncate ${
+              isCancelled 
+                ? 'text-muted-foreground line-through decoration-rose-500/50' 
+                : isPendingWithdraw
+                ? 'text-amber-200 font-extrabold'
+                : 'text-foreground'
+            }`}>
               {title}
             </span>
             {isCancelled && (
@@ -736,16 +774,27 @@ function TransactionItem({ type, title, date, amount, usdtEquivalent, color }: {
                 Cancelada
               </span>
             )}
+            {isPendingWithdraw && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/25 border border-amber-500/40 text-amber-300 font-black text-[9px] uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                <Clock className="size-2.5 animate-spin" />
+                Retenido / En Espera
+              </span>
+            )}
+            {isSettledWithdraw && (
+              <span className="px-1.5 py-0.5 rounded-md bg-pink-500/20 text-pink-300 border border-pink-500/30 font-extrabold text-[9px] uppercase tracking-wider">
+                Liquidado
+              </span>
+            )}
           </div>
           <span className="text-[11px] text-muted-foreground">{date}</span>
         </div>
       </div>
-      <div className="flex flex-col items-end">
+      <div className="flex flex-col items-end shrink-0 pl-3">
         <span className="font-display text-base font-extrabold" style={{ color: displayColor }}>
           {isCancelled ? '0 SC' : `${amount} Sugar Coins`}
         </span>
-        <span className="text-[11px] font-semibold tracking-wide text-muted-foreground">
-          {isCancelled ? '(Anulada)' : `(${usdtEquivalent} USDT)`}
+        <span className={`text-[11px] font-semibold tracking-wide ${isPendingWithdraw ? 'text-amber-300/90 font-mono' : 'text-muted-foreground'}`}>
+          {isCancelled ? '(Anulada)' : isPendingWithdraw ? `(Fondos en Escrow ≈ $${usdtEquivalent} USDT)` : `(${usdtEquivalent} USDT)`}
         </span>
       </div>
     </div>

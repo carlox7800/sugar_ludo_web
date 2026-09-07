@@ -493,12 +493,18 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
         throw new Error(result.error || 'Error al liquidar el retiro en el servidor')
       }
 
-      // 2.1. Actualizar estado reactivo local del cajero
+      // 2.1. Actualizar estado reactivo local del cajero y persistir globalmente
       const cashierTarget = cashierList.find(c => c.uid === currentCashierSession.uid) || currentCashierSession
       const currentCoins = (cashierTarget as any).floatBalanceCoins ?? 30000
       const currentUSDT = (cashierTarget as any).floatBalanceUSDT ?? (currentCoins / 100)
       const newCoins = Math.max(0, currentCoins - netPayoutCoins)
       const newUSDT = Math.max(0, parseFloat((currentUSDT - netPayoutUSD).toFixed(2)))
+
+      try {
+        await updateCashierFloat(currentCashierSession.uid, newCoins, newUSDT, netPayoutUSD)
+      } catch (floatErr: any) {
+        console.warn('[handleConfirmPayout] Error en updateCashierFloat:', floatErr?.message)
+      }
 
       // 2.2. Emitir evento BroadcastChannel para sincronizar otras pestañas y pantallas (0 lecturas)
       try {

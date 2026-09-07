@@ -958,6 +958,7 @@ export async function completeWithdrawalOrder(params: {
   }
 
   // 2.2. Liberar saldo de Escrow del jugador y actualizar historial
+  let escrowReleasedInCloud = false
   if (order.playerUid) {
     try {
       const userDocRef = doc(db, 'users', order.playerUid)
@@ -983,13 +984,43 @@ export async function completeWithdrawalOrder(params: {
           walletHistory: updatedHistory,
           lastActiveAt: now
         })
+        escrowReleasedInCloud = true
       }
     } catch (userErr: any) {
-      console.warn('[completeWithdrawalOrder Fallback] Error liberando escrow en usuario:', userErr?.message)
+      console.warn('[completeWithdrawalOrder Fallback] Error liberando escrow en usuario SDK:', userErr?.message)
+    }
+
+    // Fallback REST para garantizar liberación de Escrow en Firestore si SDK falló
+    if (!escrowReleasedInCloud) {
+      try {
+        const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+        const userUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${order.playerUid}`
+        const userRes = await fetch(userUrl)
+        if (userRes.ok) {
+          const userDocJson = await userRes.json()
+          const currentEscrow = Number(userDocJson.fields?.escrowLockedCoins?.integerValue || 0)
+          const newEscrow = Math.max(0, currentEscrow - amountCoins)
+
+          await fetch(`${userUrl}?updateMask.fieldPaths=escrowLockedCoins&updateMask.fieldPaths=lastActiveAt`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: {
+                escrowLockedCoins: { integerValue: String(newEscrow) },
+                lastActiveAt: { integerValue: String(now) }
+              }
+            })
+          })
+        }
+      } catch (restErr: any) {
+        console.warn('[completeWithdrawalOrder Fallback] Error en REST patch de escrow:', restErr?.message)
+      }
     }
   }
 
-  // 2.3. Actualizar perfil del cajero
+  // 2.3. Actualizar perfil del cajero en cashier_profiles y en system_config/cashier_accounts
+  let newFloatUSDT = 0
+  let newFloatCoins = 0
   try {
     const cashierDocRef = doc(db, 'cashier_profiles', cashierUid)
     const cashierSnap = await getDoc(cashierDocRef)
@@ -997,8 +1028,8 @@ export async function completeWithdrawalOrder(params: {
     const currentFloatUSDT = Number(cData.floatBalanceUSDT ?? (Number(cData.floatBalanceCoins || 0) / 100))
     const currentFloatCoins = Number(cData.floatBalanceCoins ?? (currentFloatUSDT * 100))
 
-    const newFloatUSDT = Math.max(0, parseFloat((currentFloatUSDT - netPayoutUSD).toFixed(2)))
-    const newFloatCoins = Math.max(0, currentFloatCoins - netPayoutCoins)
+    newFloatUSDT = Math.max(0, parseFloat((currentFloatUSDT - netPayoutUSD).toFixed(2)))
+    newFloatCoins = Math.max(0, currentFloatCoins - netPayoutCoins)
 
     await setDoc(cashierDocRef, {
       uid: cashierUid,
@@ -1008,6 +1039,27 @@ export async function completeWithdrawalOrder(params: {
       totalCommissionsEarnedCoins: (Number(cData.totalCommissionsEarnedCoins) || 0) + commissionCoins,
       lastActiveAt: now
     }, { merge: true })
+
+    // Sincronizar también en system_config/cashier_accounts para que todo el Admin Hub lo vea
+    const configDocRef = doc(db, 'system_config', 'cashier_accounts')
+    const configSnap = await getDoc(configDocRef)
+    if (configSnap.exists()) {
+      const configData = configSnap.data() || {}
+      const accounts = Array.isArray(configData.accounts) ? configData.accounts : []
+      const updatedAccounts = accounts.map((acc: any) => {
+        if (acc.uid === cashierUid) {
+          return {
+            ...acc,
+            floatBalanceCoins: newFloatCoins,
+            floatBalanceUSDT: newFloatUSDT,
+            totalPaidWithdrawalsUSDT: (acc.totalPaidWithdrawalsUSDT || 0) + netPayoutUSD,
+            lastActiveAt: now
+          }
+        }
+        return acc
+      })
+      await updateDoc(configDocRef, { accounts: updatedAccounts, updatedAt: now })
+    }
   } catch (cashierErr: any) {
     console.warn('[completeWithdrawalOrder Fallback] Error actualizando cajero:', cashierErr?.message)
   }
