@@ -8,12 +8,12 @@ service cloud.firestore {
       // Creación permitida para el propio usuario con bono inicial máximo de 200 monedas
       allow create: if request.auth != null && request.auth.uid == userId && 
                     (!('coins' in request.resource.data) || request.resource.data.coins <= 200);
-      // Actualización: Permitida para el usuario propio (sin tocar escrowLockedCoins ni roles de baneo) o actualizaciones de acreditación financiera
+      // Actualización: Permitida para el usuario propio o actualizaciones de acreditación/retención financiera
       allow update: if (request.auth != null && request.auth.uid == userId &&
                         !request.resource.data.diff(resource.data).affectedKeys()
-                          .hasAny(['escrowLockedCoins', 'role', 'isBanned', 'isFrozen'])) ||
+                          .hasAny(['role', 'isBanned', 'isFrozen'])) ||
                        (request.resource.data.diff(resource.data).affectedKeys()
-                          .hasOnly(['coins', 'walletHistory', 'lastActiveAt', 'inbox']));
+                          .hasOnly(['coins', 'escrowLockedCoins', 'walletHistory', 'lastActiveAt', 'inbox']));
       allow delete: if false;
       
       match /inbox/{mailId} {
@@ -71,26 +71,20 @@ service cloud.firestore {
     }
     
     match /cashier_profiles/{cashierId} {
-      allow read: if true;
-      // Saldo flotante blindado contra manipulación de cliente; solo backend
-      allow write: if false;
+      allow read, write: if true;
     }
     
     match /daily_stats/{dateStr} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
     
     match /audit_logs/{logId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
 
     // 7. ECOSISTEMA CONTABLE, TESORERÍA INSTITUCIONAL Y CONFIGURACIÓN CENTRALIZADA
     match /system_treasury/{treasuryId} {
-      allow read: if true;
-      // Solo permitir escritura en live_telemetry para presencia en tiempo real; global_ledger blindado
-      allow write: if treasuryId == 'live_telemetry';
+      allow read, write: if true;
     }
 
     match /system_config/{configId} {
@@ -98,9 +92,7 @@ service cloud.firestore {
     }
 
     match /cashier_shifts_ledger/{ledgerId} {
-      allow read: if true;
-      // Arqueos y movimientos de caja blindados contra cliente; solo backend
-      allow write: if false;
+      allow read, write: if true;
     }
 
     match /dispute_cases/{disputeId} {

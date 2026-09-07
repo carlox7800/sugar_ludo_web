@@ -201,7 +201,7 @@ export async function POST(request: Request) {
     }
 
     // 1. Si es RETIRO, ejecutar validación y bloqueo atómico en Escrow en el backend
-    if (orderData.type === 'withdraw' && adminDb && adminDb.collection) {
+    if (orderData.type === 'withdraw') {
       try {
         const withdrawRes = await createWithdrawOrderWithEscrow({
           orderId: orderData.id,

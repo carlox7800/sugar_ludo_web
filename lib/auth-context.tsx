@@ -32,6 +32,7 @@ export interface User {
   nicknameUpdatedAt: number | null
   walletAddress?: string | null
   coins?: number
+  escrowLockedCoins?: number
   diamonds?: number
   gems?: number
   inbox?: any[]
@@ -90,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   nicknameUpdatedAt: data.nicknameUpdatedAt || null,
                   walletAddress: data.walletAddress || data.usdtAddress || (typeof window !== 'undefined' ? localStorage.getItem('sugar_user_wallet_address') : null),
                   coins: data.coins ?? 200,
+                  escrowLockedCoins: Number(data.escrowLockedCoins ?? 0),
                   diamonds: diamondsVal,
                   gems: diamondsVal,
                   inbox: Array.isArray(data.inbox) ? data.inbox : [],

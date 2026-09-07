@@ -242,6 +242,11 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
 
       if (res.success) {
         globalLogger.wallet(`Retiro registrado con éxito: #${res.orderId}`, res)
+        const newAvailable = Math.max(0, coins - coinsToDeduct)
+        setCoins(newAvailable)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('sugar_player_coins', String(newAvailable))
+        }
         setWithdrawAmount('')
         showNotification(`Solicitud de retiro enviada (-${coinsToDeduct} SC retenidos en espera de validación).`, 'success')
         refreshData()
@@ -364,10 +369,20 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
               </span>
             </div>
             
-            <div className="mt-2 rounded-full border border-[var(--candy-cyan)]/20 bg-[var(--candy-cyan)]/10 px-4 py-1 z-10">
-              <span className="font-display text-sm font-bold text-[var(--candy-cyan)]">
-                ≈ {usdtEquivalent} USDT
-              </span>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2 z-10">
+              <div className="rounded-full border border-[var(--candy-cyan)]/20 bg-[var(--candy-cyan)]/10 px-4 py-1">
+                <span className="font-display text-sm font-bold text-[var(--candy-cyan)]">
+                  ≈ {usdtEquivalent} USDT
+                </span>
+              </div>
+              {Number(user?.escrowLockedCoins || 0) > 0 && (
+                <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 flex items-center gap-1.5 shadow-sm">
+                  <Clock className="size-3.5 text-amber-400 animate-spin" />
+                  <span className="font-display text-xs font-bold text-amber-300">
+                    Retenido: {Number(user?.escrowLockedCoins).toLocaleString('es')} SC (≈ ${(Number(user?.escrowLockedCoins) / 100).toFixed(2)} USDT)
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

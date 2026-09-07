@@ -279,7 +279,58 @@ export async function createWithdrawOrder(params: {
     })
   } catch {}
 
-  // 2. Despachar al Hub autoritativo (que ejecuta createWithdrawOrderWithEscrow en el servidor)
+  // 2. Retener saldo en Escrow en el perfil del usuario (coins -> escrowLockedCoins) y registrar transacción pendiente
+  if (playerUid && !playerUid.startsWith('dev_')) {
+    try {
+      const userRef = doc(db, 'users', playerUid)
+      const userSnap = await getDoc(userRef)
+      if (userSnap.exists()) {
+        const userData = userSnap.data() || {}
+        const currentCoins = Number(userData.coins ?? 200)
+        const currentEscrow = Number(userData.escrowLockedCoins ?? 0)
+
+        if (currentCoins < amountSugarCoins) {
+          throw new Error(`Saldo insuficiente de Sugar Coins (Disponibles: ${currentCoins} SC, Requeridos: ${amountSugarCoins} SC)`)
+        }
+
+        const newCoins = Math.max(0, currentCoins - amountSugarCoins)
+        const newEscrow = currentEscrow + amountSugarCoins
+
+        const now = Date.now()
+        const pendingTx: WalletTransaction = {
+          id: `tx_wit_${now}_${Math.random().toString(36).substring(2, 6)}`,
+          type: 'withdraw',
+          amount: -amountSugarCoins,
+          description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${orderId.slice(0, 8)})` : `Solicitud de Retiro (Pendiente) (#${orderId.slice(0, 8)})`,
+          timestamp: now,
+          dateStr: new Date(now).toLocaleDateString('es-ES', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+        }
+
+        const existingHistory = Array.isArray(userData.walletHistory) ? userData.walletHistory : []
+        const updatedHistory = [pendingTx, ...existingHistory].slice(0, 50)
+
+        await updateDoc(userRef, {
+          coins: newCoins,
+          escrowLockedCoins: newEscrow,
+          walletHistory: updatedHistory,
+          lastActiveAt: now
+        })
+      }
+    } catch (escrowErr: any) {
+      console.warn('[WalletService] Error bloqueando escrow local en cliente:', escrowErr?.message)
+      if (escrowErr?.message?.includes('Saldo insuficiente')) {
+        throw escrowErr
+      }
+    }
+  }
+
+  // 3. Despachar al Hub autoritativo (que ejecuta createWithdrawOrderWithEscrow en el servidor)
   const isLocalDev = typeof window !== 'undefined' && (
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
@@ -317,7 +368,7 @@ export async function createWithdrawOrder(params: {
     }
   }
 
-  // 3. Fallback en caso de que el Hub esté fuera de línea en entorno local
+  // 4. Fallback en caso de que el Hub esté fuera de línea en entorno local
   if (!serverProcessed) {
     try {
       const orderRef = doc(db, 'cashier_orders', orderId)
@@ -421,17 +472,31 @@ export async function cancelPlayerOrder(playerUid: string, orderId: string): Pro
     })
   } catch {}
 
-  // Actualizar historial del usuario para reflejar que la orden fue cancelada
+  // Reembolsar saldo de Escrow hacia coins y actualizar historial del usuario para reflejar que la orden fue cancelada
   try {
     const userRef = doc(db, 'users', playerUid)
     const userSnap = await getDoc(userRef)
     if (userSnap.exists()) {
-      const userData = userSnap.data()
+      const userData = userSnap.data() || {}
+      const currentCoins = Number(userData.coins ?? 200)
+      const currentEscrow = Number(userData.escrowLockedCoins ?? 0)
+
+      // Determinar monto a reembolsar
+      let refundAmount = 0
+      const stored = getStoredLocalOrders()
+      const targetOrder = stored.find(o => o.id === orderId)
+      if (targetOrder && targetOrder.type === 'withdraw') {
+        refundAmount = Number(targetOrder.amountSugarCoins || (targetOrder.amountFiat * 100))
+      }
+
       const history: WalletTransaction[] = userData.walletHistory || []
       let modified = false
       const updatedHistory = history.map((tx) => {
-        if (!modified && tx.description && tx.description.includes('(Pendiente)')) {
+        if (!modified && tx.description && tx.description.includes(orderId.slice(0, 8)) && tx.description.includes('(Pendiente)')) {
           modified = true
+          if (!refundAmount && tx.amount < 0) {
+            refundAmount = Math.abs(tx.amount)
+          }
           return {
             ...tx,
             description: tx.description.replace('(Pendiente)', '(Cancelada)'),
@@ -441,18 +506,20 @@ export async function cancelPlayerOrder(playerUid: string, orderId: string): Pro
         return tx
       })
 
-      if (modified) {
-        await updateDoc(userRef, { walletHistory: updatedHistory })
-      } else {
-        await recordWalletTransaction(playerUid, {
-          type: 'deposit',
-          amount: 0,
-          description: 'Solicitud Cancelada'
-        }, true)
+      const updates: any = {
+        walletHistory: updatedHistory,
+        lastActiveAt: Date.now()
       }
+
+      if (refundAmount > 0) {
+        updates.coins = currentCoins + refundAmount
+        updates.escrowLockedCoins = Math.max(0, currentEscrow - refundAmount)
+      }
+
+      await updateDoc(userRef, updates)
     }
   } catch (histErr) {
-    console.warn('[WalletService] Error actualizando historial cancelado:', histErr)
+    console.warn('[WalletService] Error actualizando historial cancelado y reembolso:', histErr)
   }
 
   return { success: true, message: 'Solicitud cancelada con éxito' }
