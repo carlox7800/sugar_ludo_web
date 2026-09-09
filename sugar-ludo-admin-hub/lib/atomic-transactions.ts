@@ -870,8 +870,9 @@ export async function completeWithdrawalOrder(params: {
   payoutTxId: string
   actorUid: string
   actorRole: 'admin' | 'cashier'
+  cashierName?: string
 }): Promise<{ success: boolean; message: string }> {
-  const { orderId, cashierUid, payoutTxId, actorUid, actorRole } = params
+  const { orderId, cashierUid, payoutTxId, actorUid, actorRole, cashierName } = params
   const now = Date.now()
 
   // 1. Vía Firebase Admin SDK si existen credenciales
@@ -898,6 +899,33 @@ export async function completeWithdrawalOrder(params: {
         const netPayoutCoins = Math.round(netPayoutUSD * 100)
         const feeCoins = Math.round(withdrawalFeeUSD * 100)
 
+        // Inyección atómica del comprobante formal de retiro al chat de soporte
+        const payoutNoticeText = `💸 ¡${isVip ? 'RETIRO VIP' : 'RETIRO'} LIQUIDADO Y TRANSFERIDO!
+
+Hola ${order.playerName || 'Jugador'}, hemos enviado tus fondos a tu cuenta de destino:
+━━━━━━━━━━━━━━━━━━━━
+💵 Monto Solicitado: $${totalFiatRequestedUSD.toFixed(2)} ${order.currency || 'USDT'}
+⚡ Modalidad: Retiro ${isVip ? 'VIP (Prioridad Máxima - Comisión 10%)' : 'Estándar (Comisión 5%)'}
+🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(withdrawalFeePercent * 100)}%)
+💰 Monto Neto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency || 'USDT'}
+🪙 Sugar Coins Liquidados: -${amountCoins} SC
+🏦 Destino: ${(order.paymentMethod || 'USDT').toUpperCase()} (${(order as any).paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
+🔗 Hash / TxID Oficial: ${payoutTxId}
+👨‍💼 Cajero Responsable: ${cashierName || 'Cajero Oficial'}
+━━━━━━━━━━━━━━━━━━━━
+Conserva este mensaje como comprobante formal de la transacción.`
+
+        const existingSupportMsgs = Array.isArray(order.supportMessages) ? order.supportMessages : []
+        const officialNoticeMsg = {
+          id: `msg_payout_${now}`,
+          orderId,
+          senderUid: cashierUid,
+          senderName: cashierName || 'Cajero Oficial',
+          senderRole: 'cashier',
+          message: payoutNoticeText,
+          timestamp: now
+        }
+
         // Actualizar orden
         transaction.update(orderRef, {
           status: 'completed',
@@ -906,7 +934,11 @@ export async function completeWithdrawalOrder(params: {
           isEscrowLocked: false,
           settledByCashierUid: cashierUid,
           netPayoutUSD,
-          withdrawalFeeUSD
+          withdrawalFeeUSD,
+          supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+          lastMessage: payoutNoticeText,
+          lastMessageTime: now,
+          hasUnreadCashierMessage: true
         })
 
         // Liberar escrow del jugador y actualizar historial
@@ -1039,7 +1071,33 @@ export async function completeWithdrawalOrder(params: {
   const netPayoutCoins = Math.round(netPayoutUSD * 100)
   const feeCoins = Math.round(withdrawalFeeUSD * 100)
 
-  // 2.1. Actualizar orden a completed en Firestore
+  // 2.1. Inyección atómica del comprobante formal de retiro y actualización a completed en Firestore
+  const fallbackNoticeText = `💸 ¡${isVip ? 'RETIRO VIP' : 'RETIRO'} LIQUIDADO Y TRANSFERIDO!
+
+Hola ${order.playerName || 'Jugador'}, hemos enviado tus fondos a tu cuenta de destino:
+━━━━━━━━━━━━━━━━━━━━
+💵 Monto Solicitado: $${totalFiatRequestedUSD.toFixed(2)} ${order.currency || 'USDT'}
+⚡ Modalidad: Retiro ${isVip ? 'VIP (Prioridad Máxima - Comisión 10%)' : 'Estándar (Comisión 5%)'}
+🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(withdrawalFeePercent * 100)}%)
+💰 Monto Neto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency || 'USDT'}
+🪙 Sugar Coins Liquidados: -${amountCoins} SC
+🏦 Destino: ${(order.paymentMethod || 'USDT').toUpperCase()} (${(order as any).paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
+🔗 Hash / TxID Oficial: ${payoutTxId}
+👨‍💼 Cajero Responsable: ${cashierName || 'Cajero Oficial'}
+━━━━━━━━━━━━━━━━━━━━
+Conserva este mensaje como comprobante formal de la transacción.`
+
+  const existingSupportMsgs = Array.isArray(order.supportMessages) ? order.supportMessages : []
+  const officialNoticeMsg = {
+    id: `msg_payout_${now}`,
+    orderId,
+    senderUid: cashierUid,
+    senderName: cashierName || 'Cajero Oficial',
+    senderRole: 'cashier',
+    message: fallbackNoticeText,
+    timestamp: now
+  }
+
   try {
     await setDoc(orderDocRef, {
       status: 'completed',
@@ -1048,7 +1106,11 @@ export async function completeWithdrawalOrder(params: {
       isEscrowLocked: false,
       settledByCashierUid: cashierUid,
       netPayoutUSD,
-      withdrawalFeeUSD
+      withdrawalFeeUSD,
+      supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+      lastMessage: fallbackNoticeText,
+      lastMessageTime: now,
+      hasUnreadCashierMessage: true
     }, { merge: true })
   } catch (err: any) {
     console.warn('[completeWithdrawalOrder Fallback] Error actualizando orden en Firestore SDK:', err?.message)

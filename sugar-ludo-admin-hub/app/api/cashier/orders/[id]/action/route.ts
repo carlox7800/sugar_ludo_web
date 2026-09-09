@@ -40,7 +40,7 @@ export async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { action, cashierUid, referenceNumber, txId, payoutTxId, actorUid, actorRole } = body
+    const { action, cashierUid, referenceNumber, txId, payoutTxId, actorUid, actorRole, cashierName } = body
     const finalRef = payoutTxId || txId || referenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
 
     if (action === 'approve_deposit') {
@@ -67,7 +67,8 @@ export async function POST(
           cashierUid: cashierUid || 'csh_carlosandroid_001',
           payoutTxId: finalRef,
           actorUid: actorUid || 'csh_carlosandroid_001',
-          actorRole: actorRole || 'cashier'
+          actorRole: actorRole || 'cashier',
+          cashierName: cashierName || 'Cajero Oficial'
         })
         updateDiskOrderStatus(orderId, 'completed', finalRef)
         return NextResponse.json({ success: true, message: result.message }, { headers: corsHeaders })

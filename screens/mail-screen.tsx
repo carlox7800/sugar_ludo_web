@@ -54,8 +54,6 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   const [selectedMail, setSelectedMail] = useState<MailItem | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [replyInput, setReplyInput] = useState('')
-  const [isSendingReply, setIsSendingReply] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isSelectionMode, setIsSelectionMode] = useState(false)
@@ -192,13 +190,14 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   // Auto-marcar mensajes de soporte de cajeros como leídos en Firestore al abrir la pestaña Soporte
   useEffect(() => {
     if (activeTab === 'support' && user?.uid && !user.uid.startsWith('dev_')) {
+      const now = Date.now()
       const unreadOrders = mailList.filter(m => m.category === 'support' && !m.isRead && m.orderId)
       if (unreadOrders.length > 0) {
         unreadOrders.forEach(async (m) => {
           try {
             const orderRef = doc(db, 'cashier_orders', m.orderId!)
             await updateDoc(orderRef, {
-              playerReadAt: Date.now(),
+              playerReadAt: now,
               hasUnreadCashierMessage: false
             })
           } catch {}
@@ -254,6 +253,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               if (isHidden) return
 
               const orderMessages = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
+              const playerReadAt = Number(ord.playerReadAt || 0)
 
               if (orderMessages.length > 0) {
                 const lastMsg = orderMessages[orderMessages.length - 1]
@@ -274,20 +274,25 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                 })
                 const replies = Array.from(replyMap.values()).sort((a, b) => a.timestamp - b.timestamp)
 
-                const playerReadAt = Number(ord.playerReadAt || 0)
-                const lastMsgTime = Number(lastMsg.timestamp || 0)
+                const lastMsgTime = Number(lastMsg.timestamp || ord.lastMessageTime || ord.completedAt || ord.createdAt || 0)
                 const isUnreadByPlayer = (lastMsg.senderRole === 'cashier' || lastMsg.senderUid !== user.uid) && 
                   (ord.hasUnreadCashierMessage !== false) &&
                   (playerReadAt < lastMsgTime)
+
+                const isWithdraw = ord.type === 'withdraw'
+                const isCompleted = ord.status === 'completed'
+                const title = isWithdraw 
+                  ? (isCompleted ? `💸 Comprobante Retiro #${orderId.slice(0, 8)}` : `💬 Soporte Retiro #${orderId.slice(0, 8)}`)
+                  : (isCompleted ? `✅ Comprobante Depósito #${orderId.slice(0, 8)}` : `💬 Soporte Depósito #${orderId.slice(0, 8)}`)
 
                 orderSupportMails.push({
                   id: mailKey,
                   type: 'support',
                   category: 'support',
-                  title: `💬 Soporte Orden #${orderId.slice(0, 8)}`,
+                  title,
                   sender: ord.cashierName || 'Cajero Oficial',
                   date: new Date(lastMsgTime || Date.now()).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
-                  preview: lastMsg.message || 'Mensaje de soporte',
+                  preview: lastMsg.message || (isWithdraw ? 'Retiro liquidado y pagado' : 'Depósito procesado'),
                   content: lastMsg.message || '',
                   isRead: !isUnreadByPlayer,
                   claimed: true,
@@ -295,6 +300,35 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                   orderId,
                   orderStatus: ord.status,
                   replies
+                })
+              } else if (ord.status === 'completed' && (ord.lastMessage || ord.receiptReferenceNumber || ord.payoutTxId)) {
+                // Fallback de resiliencia: Si la orden está completada pero supportMessages aún no se cargó
+                const fallbackTime = Number(ord.completedAt || ord.lastMessageTime || ord.createdAt || Date.now())
+                const isWithdraw = ord.type === 'withdraw'
+                const isUnread = ord.hasUnreadCashierMessage !== false && playerReadAt < fallbackTime
+                const msgText = ord.lastMessage || (isWithdraw ? `Retiro liquidado exitosamente. Referencia: ${ord.receiptReferenceNumber || ord.payoutTxId}` : `Depósito acreditado exitosamente.`)
+
+                orderSupportMails.push({
+                  id: mailKey,
+                  type: 'support',
+                  category: 'support',
+                  title: isWithdraw ? `💸 Comprobante Retiro #${orderId.slice(0, 8)}` : `✅ Comprobante Depósito #${orderId.slice(0, 8)}`,
+                  sender: ord.cashierName || 'Cajero Oficial',
+                  date: new Date(fallbackTime).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+                  preview: msgText,
+                  content: msgText,
+                  isRead: !isUnread,
+                  claimed: true,
+                  timestamp: fallbackTime,
+                  orderId,
+                  orderStatus: ord.status,
+                  replies: [{
+                    id: `msg_${fallbackTime}`,
+                    sender: ord.cashierName || 'Cajero Oficial',
+                    senderRole: 'cashier',
+                    message: msgText,
+                    timestamp: fallbackTime
+                  }]
                 })
               }
             })
@@ -447,81 +481,6 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
       })
     } else {
       showToast('No hay recompensas pendientes para reclamar.')
-    }
-  }
-
-  const handleSendReply = async () => {
-    if (!replyInput.trim() || !selectedMail || isSendingReply) return
-    setIsSendingReply(true)
-    const replyText = replyInput.trim()
-    const senderName = user?.displayName || 'Jugador'
-    const now = Date.now()
-    const newReplyId = `rep_${now}_${Math.random().toString(36).slice(2, 6)}`
-    const newReply: SupportReply = {
-      id: newReplyId,
-      sender: senderName,
-      senderRole: 'player',
-      message: replyText,
-      timestamp: now
-    }
-
-    setReplyInput('')
-
-    // Actualización optimista inmediata en UI local
-    setSelectedMail(prev => {
-      if (!prev) return null
-      const currentReplies = Array.isArray(prev.replies) ? prev.replies : []
-      return {
-        ...prev,
-        replies: [...currentReplies, newReply]
-      }
-    })
-    setMailList(prev => prev.map(m => {
-      if (m.id === selectedMail.id || (selectedMail.orderId && m.orderId === selectedMail.orderId)) {
-        const cur = Array.isArray(m.replies) ? m.replies : []
-        return { ...m, replies: [...cur, newReply] }
-      }
-      return m
-    }))
-
-    try {
-      // 1. Si está vinculado a una orden P2P, actualizar directamente cashier_orders
-      if (selectedMail.orderId) {
-        const orderRef = doc(db, 'cashier_orders', selectedMail.orderId)
-        const orderSnap = await getDoc(orderRef)
-        if (orderSnap.exists()) {
-          const ordData = orderSnap.data() || {}
-          const currentMsgs = Array.isArray(ordData.supportMessages) ? ordData.supportMessages : []
-          await updateDoc(orderRef, {
-            supportMessages: [...currentMsgs, {
-              id: newReply.id,
-              orderId: selectedMail.orderId,
-              senderUid: user?.uid || 'usr_player',
-              senderName: senderName,
-              senderRole: 'player',
-              message: replyText,
-              timestamp: now
-            }],
-            lastMessage: replyText,
-            lastMessageTime: now,
-            hasUnreadPlayerMessage: true,
-            playerReadAt: now
-          })
-        }
-      }
-
-      // 2. Sincronizar también con inbox de usuario
-      await replySupportMail(
-        user?.uid,
-        selectedMail.id,
-        replyText,
-        senderName,
-        'player'
-      )
-    } catch (e) {
-      console.warn('Error sending reply:', e)
-    } finally {
-      setIsSendingReply(false)
     }
   }
 
@@ -1046,33 +1005,6 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
             {/* Sticky Footer */}
             <div className="p-4 bg-slate-900 border-t border-white/10 space-y-3 shrink-0">
-              {selectedMail.category === 'support' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={replyInput}
-                    onChange={(e) => setReplyInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        handleSendReply()
-                      }
-                    }}
-                    placeholder="Escribe tu respuesta al cajero..."
-                    disabled={isSendingReply}
-                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400 disabled:opacity-50"
-                  />
-                  <button
-                    onClick={handleSendReply}
-                    disabled={!replyInput.trim() || isSendingReply}
-                    className="btn-3d px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0 cursor-pointer"
-                  >
-                    <Send className="size-3.5" />
-                    <span>{isSendingReply ? '...' : 'Enviar'}</span>
-                  </button>
-                </div>
-              )}
-
               <div className="flex gap-2">
                 <button
                   onClick={() => setSelectedMail(null)}

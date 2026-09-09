@@ -92,9 +92,11 @@ export interface CashierOrder {
   // Lectura y Notificaciones de Soporte
   playerReadAt?: number
   cashierReadAt?: number
+  lastMessage?: string
   lastMessageTime?: number
   hasUnreadPlayerMessage?: boolean
   hasUnreadCashierMessage?: boolean
+  supportMessages?: any[]
 
   // Mediación y Disputas
   disputeReason?: string

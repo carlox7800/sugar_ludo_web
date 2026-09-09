@@ -486,6 +486,7 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
           cashierUid: currentCashierSession.uid,
           actorUid: currentCashierSession.uid,
           actorRole: 'cashier',
+          cashierName: currentCashierSession.name || 'Cajero Oficial',
           payoutTxId: finalPayoutRef
         })
       })
