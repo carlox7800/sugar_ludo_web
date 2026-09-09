@@ -10,11 +10,33 @@ interface TreasuryBreakdownCardProps {
 }
 
 export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardProps) {
-  // Desglose de ubicación física de la custodia de jugadores
-  const inCashiersUSD = vault.cashierFloatsUSD
-  const inCentralUSD = Math.max(0, vault.playerBalancesUSD - inCashiersUSD)
-  const cashierPercent = vault.playerBalancesUSD > 0 ? Math.min(100, Math.round((inCashiersUSD / vault.playerBalancesUSD) * 100)) : 0
+  // Desglose seguro con fallbacks ante undefined o nulos
+  const playerBalancesUSD = Number(vault?.playerBalancesUSD ?? 0)
+  const playerBalancesCoins = Number(vault?.playerBalancesCoins ?? 0)
+  const houseNetProfitsUSD = Number(vault?.houseNetProfitsUSD ?? 0)
+  const houseNetProfitsCoins = Number(vault?.houseNetProfitsCoins ?? 0)
+  const cashierFloatsUSD = Number(vault?.cashierFloatsUSD ?? 0)
+  const totalVaultUSD = Number(vault?.totalVaultUSD ?? (playerBalancesUSD + houseNetProfitsUSD))
+  const totalVaultSugarCoins = Number(vault?.totalVaultSugarCoins ?? Math.round(totalVaultUSD * 100))
+
+  const inCashiersUSD = cashierFloatsUSD
+  const inCentralUSD = Math.max(0, playerBalancesUSD - inCashiersUSD)
+  const cashierPercent = playerBalancesUSD > 0 ? Math.min(100, Math.round((inCashiersUSD / playerBalancesUSD) * 100)) : 0
   const centralPercent = 100 - cashierPercent
+
+  // Safe profits fallbacks
+  const safeProfits = {
+    tableRakeUSD: Number(profits?.tableRakeUSD ?? 0),
+    tableRakeCoins: Number(profits?.tableRakeCoins ?? 0),
+    storeSalesUSD: Number(profits?.storeSalesUSD ?? 0),
+    storeSalesCoins: Number(profits?.storeSalesCoins ?? 0),
+    tournamentMarginUSD: Number(profits?.tournamentMarginUSD ?? 0),
+    tournamentMarginCoins: Number(profits?.tournamentMarginCoins ?? 0),
+    normalWithdrawalFeesUSD: Number(profits?.normalWithdrawalFeesUSD ?? 0),
+    normalWithdrawalFeesCoins: Number(profits?.normalWithdrawalFeesCoins ?? 0),
+    vipWithdrawalFeesUSD: Number(profits?.vipWithdrawalFeesUSD ?? 0),
+    vipWithdrawalFeesCoins: Number(profits?.vipWithdrawalFeesCoins ?? 0),
+  }
 
   return (
     <div className="space-y-6">
@@ -30,10 +52,10 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
             </div>
             <div className="space-y-1">
               <p className="text-3xl font-black text-white font-mono">
-                ${vault.totalVaultUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
+                ${totalVaultUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
               </p>
               <p className="text-xs text-cyan-300 font-mono flex items-center gap-1">
-                <Coins className="size-3.5" /> {vault.totalVaultSugarCoins.toLocaleString()} SC Circulantes
+                <Coins className="size-3.5" /> {totalVaultSugarCoins.toLocaleString()} SC Circulantes
               </p>
             </div>
           </div>
@@ -41,7 +63,7 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
           <div className="pt-3 border-t border-white/5 space-y-2">
             <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-[11px] text-cyan-200/90 font-mono">
               <span className="text-cyan-400 font-bold block mb-0.5">Ecuación Contable Real:</span>
-              ${vault.playerBalancesUSD.toFixed(2)} (Custodia) + ${vault.houseNetProfitsUSD.toFixed(2)} (Ganancias) = ${vault.totalVaultUSD.toFixed(2)} USDT
+              ${playerBalancesUSD.toFixed(2)} (Custodia) + ${houseNetProfitsUSD.toFixed(2)} (Ganancias) = ${totalVaultUSD.toFixed(2)} USDT
             </div>
             <p className="text-[11px] text-slate-400">
               Respaldo total garantizado en el ecosistema sin duplicación de saldos operativos.
@@ -58,10 +80,10 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
             </div>
             <div className="space-y-1">
               <p className="text-3xl font-black text-white font-mono">
-                ${vault.playerBalancesUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
+                ${playerBalancesUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
               </p>
               <p className="text-xs text-amber-300 font-mono flex items-center gap-1">
-                <Coins className="size-3.5" /> {vault.playerBalancesCoins.toLocaleString()} SC en Billeteras
+                <Coins className="size-3.5" /> {playerBalancesCoins.toLocaleString()} SC en Billeteras
               </p>
             </div>
           </div>
@@ -83,7 +105,7 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
               </div>
 
               {/* Barra de Distribución Proporcional */}
-              {vault.playerBalancesUSD > 0 && (
+              {playerBalancesUSD > 0 && (
                 <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden flex mt-1">
                   <div style={{ width: `${centralPercent}%` }} className="bg-amber-400 transition-all" title={`Cuenta Central: ${centralPercent}%`} />
                   <div style={{ width: `${cashierPercent}%` }} className="bg-pink-500 transition-all" title={`En Cajeros: ${cashierPercent}%`} />
@@ -105,10 +127,10 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
             </div>
             <div className="space-y-1">
               <p className="text-3xl font-black text-emerald-300 font-mono">
-                +${vault.houseNetProfitsUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
+                +${houseNetProfitsUSD.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
               </p>
               <p className="text-xs text-emerald-400/80 font-mono flex items-center gap-1">
-                <Coins className="size-3.5" /> +{vault.houseNetProfitsCoins.toLocaleString()} SC Netos Acumulados
+                <Coins className="size-3.5" /> +{houseNetProfitsCoins.toLocaleString()} SC Netos Acumulados
               </p>
             </div>
           </div>
@@ -136,22 +158,22 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
           {/* Rake */}
           <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-1">
             <span className="text-[10px] text-slate-400 uppercase font-semibold">Rake de Mesas</span>
-            <p className="text-base font-black text-white font-mono">${profits.tableRakeUSD.toLocaleString()}</p>
-            <p className="text-[10px] text-cyan-300 font-mono">+{profits.tableRakeCoins.toLocaleString()} SC</p>
+            <p className="text-base font-black text-white font-mono">${safeProfits.tableRakeUSD.toLocaleString()}</p>
+            <p className="text-[10px] text-cyan-300 font-mono">+{safeProfits.tableRakeCoins.toLocaleString()} SC</p>
           </div>
 
           {/* Store */}
           <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-1">
             <span className="text-[10px] text-slate-400 uppercase font-semibold">Tienda Cosméticos</span>
-            <p className="text-base font-black text-white font-mono">${profits.storeSalesUSD.toLocaleString()}</p>
-            <p className="text-[10px] text-pink-300 font-mono">+{profits.storeSalesCoins.toLocaleString()} SC</p>
+            <p className="text-base font-black text-white font-mono">${safeProfits.storeSalesUSD.toLocaleString()}</p>
+            <p className="text-[10px] text-pink-300 font-mono">+{safeProfits.storeSalesCoins.toLocaleString()} SC</p>
           </div>
 
           {/* Tournaments */}
           <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-1">
             <span className="text-[10px] text-slate-400 uppercase font-semibold">Margen Torneos</span>
-            <p className="text-base font-black text-white font-mono">${profits.tournamentMarginUSD.toLocaleString()}</p>
-            <p className="text-[10px] text-purple-300 font-mono">+{profits.tournamentMarginCoins.toLocaleString()} SC</p>
+            <p className="text-base font-black text-white font-mono">${safeProfits.tournamentMarginUSD.toLocaleString()}</p>
+            <p className="text-[10px] text-purple-300 font-mono">+{safeProfits.tournamentMarginCoins.toLocaleString()} SC</p>
           </div>
 
           {/* Normal Withdrawal Fees (5%) */}
@@ -160,8 +182,8 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
               <span className="text-[10px] text-cyan-300 uppercase font-bold">Fee Retiro Normal (5%)</span>
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold">hasta 48h</span>
             </div>
-            <p className="text-base font-black text-cyan-300 font-mono">${profits.normalWithdrawalFeesUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-[10px] text-cyan-400/80 font-mono">+{profits.normalWithdrawalFeesCoins.toLocaleString()} SC</p>
+            <p className="text-base font-black text-cyan-300 font-mono">${safeProfits.normalWithdrawalFeesUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <p className="text-[10px] text-cyan-400/80 font-mono">+{safeProfits.normalWithdrawalFeesCoins.toLocaleString()} SC</p>
           </div>
 
           {/* VIP Withdrawal Fees (10%) */}
@@ -170,8 +192,8 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
               <span className="text-[10px] text-pink-300 uppercase font-bold">Fee Retiro VIP (10%)</span>
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-300 font-mono font-bold">hasta 12h</span>
             </div>
-            <p className="text-base font-black text-pink-300 font-mono">${profits.vipWithdrawalFeesUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-[10px] text-pink-400/80 font-mono">+{profits.vipWithdrawalFeesCoins.toLocaleString()} SC</p>
+            <p className="text-base font-black text-pink-300 font-mono">${safeProfits.vipWithdrawalFeesUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <p className="text-[10px] text-pink-400/80 font-mono">+{safeProfits.vipWithdrawalFeesCoins.toLocaleString()} SC</p>
           </div>
 
         </div>

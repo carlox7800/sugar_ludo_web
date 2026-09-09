@@ -27,6 +27,8 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
   const isDeposit = order.type === 'deposit'
   const isPaid = order.status === 'paid'
   const isCompleted = order.status === 'completed'
+  const isCancelled = order.status === 'cancelled'
+  const isTerminated = isCompleted || isCancelled
   const isDisputed = order.status === 'disputed'
   const isPending = order.status === 'pending'
   const isVip = slaInfo?.isVip ?? false
@@ -125,7 +127,7 @@ export function OrderCard({ order, onViewReceipt, onApproveOrder }: OrderCardPro
       </div>
 
       {/* SLA Countdown Clock Bar for Active Withdrawals */}
-      {slaInfo && !isCompleted && (
+      {slaInfo && !isTerminated && (
         <div
           className={clsx(
             'flex items-center justify-between px-3 py-1.5 rounded-xl border text-xs font-mono transition-all',

@@ -262,6 +262,7 @@ export default function OrderDetailPage() {
   const isPaid = order.status === 'paid'
   const isCompleted = order.status === 'completed'
   const isCancelled = order.status === 'cancelled'
+  const isTerminated = isCompleted || isCancelled
   const isWithdraw = order.type === 'withdraw'
 
   // Saldo flotante real de trabajo del cajero activo
@@ -690,7 +691,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
       )}
 
       {/* SLA Countdown & Urgency Banner for Withdrawals */}
-      {slaInfo && !isCompleted && (
+      {slaInfo && !isTerminated && (
         <div className="max-w-7xl mx-auto w-full px-6 pt-4">
           <div
             className={clsx(

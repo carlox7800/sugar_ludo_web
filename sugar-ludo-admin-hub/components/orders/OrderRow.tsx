@@ -28,6 +28,8 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
   const isDeposit = order.type === 'deposit'
   const isPaid = order.status === 'paid'
   const isCompleted = order.status === 'completed'
+  const isCancelled = order.status === 'cancelled'
+  const isTerminated = isCompleted || isCancelled
   const isDisputed = order.status === 'disputed'
   const isPending = order.status === 'pending'
   const isVip = slaInfo?.isVip ?? false
@@ -136,7 +138,7 @@ export function OrderRow({ order, onViewReceipt, onApproveOrder }: OrderRowProps
         </div>
 
         {/* 3. SLA Countdown Timer Bar (Withdrawals in progress) */}
-        {slaInfo && !isCompleted ? (
+        {slaInfo && !isTerminated ? (
           <div
             className={clsx(
               'px-2.5 py-1 rounded-xl border text-[11px] font-mono flex items-center gap-1.5 min-w-[150px]',

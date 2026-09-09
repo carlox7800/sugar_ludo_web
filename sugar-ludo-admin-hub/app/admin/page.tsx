@@ -101,113 +101,108 @@ export default function AdminDashboardPage() {
     let unsubLedger: (() => void) | null = null
     try {
       const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
-      unsubLedger = onSnapshot(ledgerRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data() as any
-          const totalFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
-          const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
+      unsubLedger = onSnapshot(
+        ledgerRef,
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as any
+            const totalFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
+            const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
 
-          const playerBalancesUSD = Number(data.playerCustodyUSD || 0)
-          const playerBalancesCoins = Number(data.playerCustodyCoins || Math.round(playerBalancesUSD * 100))
-          const houseNetProfitsUSD = Number(data.houseNetProfitsUSD || 0)
-          const houseNetProfitsCoins = Number(data.houseNetProfitsCoins || Math.round(houseNetProfitsUSD * 100))
+            const playerBalancesUSD = Number(data.playerCustodyUSD ?? data.playerBalancesUSD ?? 0)
+            const playerBalancesCoins = Number(data.playerCustodyCoins ?? data.playerBalancesCoins ?? Math.round(playerBalancesUSD * 100))
+            const houseNetProfitsUSD = Number(data.houseNetProfitsUSD ?? 0)
+            const houseNetProfitsCoins = Number(data.houseNetProfitsCoins ?? Math.round(houseNetProfitsUSD * 100))
 
-          // REGLA DE ORO CONTABLE: Bóveda Total = Fondos de Jugadores (Custodia) + Ganancias Netas de la Casa
-          const vaultUSD = playerBalancesUSD + houseNetProfitsUSD
-          const vaultCoins = Math.round(vaultUSD * 100)
+            // REGLA DE ORO CONTABLE: Bóveda Total = Fondos de Jugadores (Custodia) + Ganancias Netas de la Casa
+            const vaultUSD = playerBalancesUSD + houseNetProfitsUSD
+            const vaultCoins = Math.round(vaultUSD * 100)
 
-          setVault({
-            totalVaultUSD: vaultUSD,
-            totalVaultSugarCoins: vaultCoins,
-            playerBalancesUSD,
-            playerBalancesCoins,
-            cashierFloatsUSD: totalFloatsUSD,
-            cashierFloatsCoins: totalFloatsCoins,
-            houseNetProfitsUSD,
-            houseNetProfitsCoins,
-            lastAuditedAt: data.lastAuditedAt || Date.now()
-          })
+            setVault({
+              totalVaultUSD: vaultUSD,
+              totalVaultSugarCoins: vaultCoins,
+              playerBalancesUSD,
+              playerBalancesCoins,
+              cashierFloatsUSD: totalFloatsUSD,
+              cashierFloatsCoins: totalFloatsCoins,
+              houseNetProfitsUSD,
+              houseNetProfitsCoins,
+              lastAuditedAt: data.lastAuditedAt || Date.now()
+            })
 
-          if (data.profitsBreakdown) {
-            const normalUSD = data.profitsBreakdown.normalWithdrawalFeesUSD !== undefined
-              ? Number(data.profitsBreakdown.normalWithdrawalFeesUSD)
-              : Number(data.profitsBreakdown.withdrawalFeesUSD || 0)
-            const vipUSD = Number(data.profitsBreakdown.vipWithdrawalFeesUSD || 0)
-            const tournamentUSD = Number(data.profitsBreakdown.tournamentMarginUSD || 0)
-            const cashierOpsUSD = Number(data.profitsBreakdown.cashierOperationsUSD || 0)
-            const rakeUSD = Number(data.profitsBreakdown.tableRakeUSD || 0)
-            const storeUSD = Number(data.profitsBreakdown.storeSalesUSD || 0)
+            if (data.profitsBreakdown) {
+              const normalUSD = data.profitsBreakdown.normalWithdrawalFeesUSD !== undefined
+                ? Number(data.profitsBreakdown.normalWithdrawalFeesUSD)
+                : Number(data.profitsBreakdown.withdrawalFeesUSD || 0)
+              const vipUSD = Number(data.profitsBreakdown.vipWithdrawalFeesUSD || 0)
+              const tournamentUSD = Number(data.profitsBreakdown.tournamentMarginUSD || 0)
+              const cashierOpsUSD = Number(data.profitsBreakdown.cashierOperationsUSD || 0)
+              const rakeUSD = Number(data.profitsBreakdown.tableRakeUSD || 0)
+              const storeUSD = Number(data.profitsBreakdown.storeSalesUSD || 0)
 
-            setProfits((prev) => ({
-              ...prev,
-              tableRakeUSD: rakeUSD,
-              tableRakeCoins: Math.round(rakeUSD * 100),
-              storeSalesUSD: storeUSD,
-              storeSalesCoins: Math.round(storeUSD * 100),
-              tournamentMarginUSD: tournamentUSD,
-              tournamentMarginCoins: Math.round(tournamentUSD * 100),
-              cashierOperationsUSD: cashierOpsUSD,
-              cashierOperationsCoins: Math.round(cashierOpsUSD * 100),
-              normalWithdrawalFeesUSD: normalUSD,
-              normalWithdrawalFeesCoins: Math.round(normalUSD * 100),
-              vipWithdrawalFeesUSD: vipUSD,
-              vipWithdrawalFeesCoins: Math.round(vipUSD * 100),
-              totalProfitUSD: houseNetProfitsUSD,
-              totalProfitCoins: houseNetProfitsCoins
-            }))
+              setProfits((prev) => ({
+                ...prev,
+                tableRakeUSD: rakeUSD,
+                tableRakeCoins: Math.round(rakeUSD * 100),
+                storeSalesUSD: storeUSD,
+                storeSalesCoins: Math.round(storeUSD * 100),
+                tournamentMarginUSD: tournamentUSD,
+                tournamentMarginCoins: Math.round(tournamentUSD * 100),
+                cashierOperationsUSD: cashierOpsUSD,
+                cashierOperationsCoins: Math.round(cashierOpsUSD * 100),
+                normalWithdrawalFeesUSD: normalUSD,
+                normalWithdrawalFeesCoins: Math.round(normalUSD * 100),
+                vipWithdrawalFeesUSD: vipUSD,
+                vipWithdrawalFeesCoins: Math.round(vipUSD * 100),
+                totalProfitUSD: houseNetProfitsUSD,
+                totalProfitCoins: houseNetProfitsCoins
+              }))
+            }
           }
-        } else {
-          // Sembrar global_ledger inicial en Firestore
-          const totalFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
-          const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
-          setDoc(ledgerRef, {
-            id: 'global_ledger',
-            totalVaultUSD: 0,
-            totalVaultSugarCoins: 0,
-            playerCustodyUSD: 0,
-            playerCustodyCoins: 0,
-            cashierFloatsUSD: totalFloatsUSD,
-            cashierFloatsCoins: totalFloatsCoins,
-            houseNetProfitsUSD: 0,
-            houseNetProfitsCoins: 0,
-            profitsBreakdown: {
-              tableRakeUSD: 0,
-              storeSalesUSD: 0,
-              withdrawalFeesUSD: 0
-            },
-            lastAuditedAt: Date.now()
-          }, { merge: true }).catch(() => {})
+        },
+        (err) => {
+          console.warn('[AdminTreasury] Firestore snapshot global_ledger error suprimido:', err.message)
         }
-      })
-    } catch {}
+      )
+    } catch (err) {
+      console.warn('[AdminTreasury] Error iniciando snapshot ledger:', err)
+    }
 
     let unsubTelemetry: (() => void) | null = null
     try {
       const telRef = doc(db, 'system_treasury', 'live_telemetry')
-      unsubTelemetry = onSnapshot(telRef, (tSnap) => {
-        if (tSnap.exists()) {
-          const tData = tSnap.data()
-          const pLobby = Math.max(0, Number(tData.playersInLobby || 0))
-          const pAI = Math.max(0, Number(tData.playersInAITraining || 0))
-          const pOnline = Math.max(0, Number(tData.playersInOnlineTraining || 0))
-          const pComp = Math.max(0, Number(tData.playersInCompetitive || 0))
-          const totalOnline = pLobby + pAI + pOnline + pComp
-          const rooms = Math.max(0, Number(tData.activeMatchRooms || Math.ceil((pOnline + pComp) / 2)))
+      unsubTelemetry = onSnapshot(
+        telRef,
+        (tSnap) => {
+          if (tSnap.exists()) {
+            const tData = tSnap.data()
+            const pLobby = Math.max(0, Number(tData.playersInLobby || 0))
+            const pAI = Math.max(0, Number(tData.playersInAITraining || 0))
+            const pOnline = Math.max(0, Number(tData.playersInOnlineTraining || 0))
+            const pComp = Math.max(0, Number(tData.playersInCompetitive || 0))
+            const totalOnline = pLobby + pAI + pOnline + pComp
+            const rooms = Math.max(0, Number(tData.activeMatchRooms || Math.ceil((pOnline + pComp) / 2)))
 
-          setTelemetry((prev) => ({
-            ...prev,
-            playersInLobby: pLobby,
-            playersInAITraining: pAI,
-            playersInOnlineTraining: pOnline,
-            playersInCompetitive: pComp,
-            totalOnlinePlayers: totalOnline,
-            activeMatchRooms: rooms,
-            serverStatus: 'online',
-            updatedAt: tData.updatedAt || Date.now()
-          }))
+            setTelemetry((prev) => ({
+              ...prev,
+              playersInLobby: pLobby,
+              playersInAITraining: pAI,
+              playersInOnlineTraining: pOnline,
+              playersInCompetitive: pComp,
+              totalOnlinePlayers: totalOnline,
+              activeMatchRooms: rooms,
+              serverStatus: 'online',
+              updatedAt: tData.updatedAt || Date.now()
+            }))
+          }
+        },
+        (err) => {
+          console.warn('[AdminTelemetry] Firestore snapshot live_telemetry error suprimido:', err.message)
         }
-      })
-    } catch {}
+      )
+    } catch (err) {
+      console.warn('[AdminTelemetry] Error iniciando snapshot telemetría:', err)
+    }
 
     return () => {
       if (unsubLedger) unsubLedger()
@@ -233,7 +228,27 @@ export default function AdminDashboardPage() {
         if (reconcileRes.ok) {
           const recData = await reconcileRes.json()
           if (recData.ledger) {
-            setVault(recData.ledger)
+            const l = recData.ledger
+            const playerUSD = Number(l.playerCustodyUSD ?? l.playerBalancesUSD ?? 0)
+            const playerCoins = Number(l.playerCustodyCoins ?? l.playerBalancesCoins ?? Math.round(playerUSD * 100))
+            const profitsUSD = Number(l.houseNetProfitsUSD ?? 0)
+            const profitsCoins = Number(l.houseNetProfitsCoins ?? Math.round(profitsUSD * 100))
+            const floatsUSD = Number(l.cashierFloatsUSD ?? 0)
+            const floatsCoins = Number(l.cashierFloatsCoins ?? Math.round(floatsUSD * 100))
+            const totalUSD = Number(l.totalVaultUSD ?? (playerUSD + profitsUSD))
+            const totalCoins = Number(l.totalVaultSugarCoins ?? Math.round(totalUSD * 100))
+
+            setVault({
+              totalVaultUSD: totalUSD,
+              totalVaultSugarCoins: totalCoins,
+              playerBalancesUSD: playerUSD,
+              playerBalancesCoins: playerCoins,
+              cashierFloatsUSD: floatsUSD,
+              cashierFloatsCoins: floatsCoins,
+              houseNetProfitsUSD: profitsUSD,
+              houseNetProfitsCoins: profitsCoins,
+              lastAuditedAt: l.lastAuditedAt || Date.now()
+            })
           }
         }
       } catch (recErr) {
@@ -247,7 +262,7 @@ export default function AdminDashboardPage() {
         setTelemetry((prev) => ({
           ...prev,
           totalRegisteredUsers: realCount,
-          totalDownloadsCount: Math.max(realCount, prev.totalDownloadsCount || realCount)
+          totalDownloadsCount: Math.max(realCount, prev.totalRegisteredUsers || realCount)
         }))
       } catch (err) {
         console.warn('[AdminTelemetry] Error leyendo conteo de usuarios:', err)
@@ -276,7 +291,9 @@ export default function AdminDashboardPage() {
 
       setVault((prev) => {
         // Ecuación Contable: Bóveda Total = Custodia de Jugadores + Ganancias Netas
-        const vaultUSD = prev.playerBalancesUSD + prev.houseNetProfitsUSD
+        const playerBal = Number(prev.playerBalancesUSD || 0)
+        const houseProf = Number(prev.houseNetProfitsUSD || 0)
+        const vaultUSD = playerBal + houseProf
         return {
           ...prev,
           cashierFloatsUSD: totalCashierFloatsUSD,
