@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import React, { useState, useEffect } from 'react'
 import { X, Wallet, ArrowDownLeft, ArrowUpRight, Plus, Copy, Check, Clock, ShieldCheck, RefreshCw, FileText } from 'lucide-react'
@@ -54,7 +54,43 @@ export function CashierFloatHistoryModal({ isOpen, onClose, cashier, orders = []
       unsubscribe = onSnapshot(q, (snapshot) => {
         const liveEntries: CashierLedgerEntry[] = []
         snapshot.forEach((docSnap) => {
-          liveEntries.push({ id: docSnap.id, ...docSnap.data() } as CashierLedgerEntry)
+          const raw = docSnap.data() || {}
+          // Normalizar el monto numérico tanto si viene como amountFiatUSD o amountUSDT
+          const rawAmount = raw.amountFiatUSD !== undefined
+            ? Number(raw.amountFiatUSD)
+            : raw.amountUSDT !== undefined
+            ? Number(raw.amountUSDT)
+            : Number(raw.amountCoins ? raw.amountCoins / 100 : 0)
+          const amountUSD = isNaN(rawAmount) ? 0 : rawAmount
+
+          // Normalizar el tipo de movimiento
+          let normType: CashierLedgerEntry['type'] = 'initial_shift'
+          if (raw.type === 'withdrawal_payout' || raw.type === 'withdraw_payout') {
+            normType = 'withdrawal_payout'
+          } else if (raw.type === 'recharge_float' || raw.type === 'recharge') {
+            normType = 'recharge_float'
+          }
+
+          const resultingBal = raw.resultingBalanceUSDT !== undefined
+            ? Number(raw.resultingBalanceUSDT)
+            : raw.newBalanceUSDT !== undefined
+            ? Number(raw.newBalanceUSDT)
+            : undefined
+
+          liveEntries.push({
+            id: docSnap.id,
+            cashierUid: raw.cashierUid || cashier.uid,
+            cashierName: raw.cashierName || cashier.name,
+            type: normType,
+            orderId: raw.orderId,
+            referenceNumber: raw.referenceNumber || raw.payoutTxId || `TX-${docSnap.id.slice(0, 8).toUpperCase()}`,
+            amountFiatUSD: amountUSD,
+            amountCoins: raw.amountCoins !== undefined ? Number(raw.amountCoins) : Math.round(amountUSD * 100),
+            resultingBalanceUSDT: resultingBal !== undefined && !isNaN(resultingBal) ? resultingBal : 0,
+            resultingBalanceCoins: Math.round((resultingBal || 0) * 100),
+            timestamp: Number(raw.timestamp || raw.createdAt || Date.now()),
+            notes: raw.notes
+          })
         })
 
         // Si existen registros en Firestore, ordenarlos cronológicamente descendente

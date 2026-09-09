@@ -1,6 +1,6 @@
 import { adminDb, admin, hasAdminCredentials } from './firebase-admin'
 import { db } from './firebase'
-import { doc, getDoc, updateDoc, setDoc, increment } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
 import { CashierOrder, CashierProfile, DailyStats, AuditLog } from '../types/cashier'
 import fs from 'fs'
 import path from 'path'
@@ -934,13 +934,14 @@ export async function completeWithdrawalOrder(params: {
         }
 
         // Actualizar cajero
+        let cashierCurrentFloatUSDT = 0
         const cashierRef = adminDb.collection('cashier_profiles').doc(cashierUid)
         const cashierSnap = await transaction.get(cashierRef)
         if (cashierSnap.exists) {
           const cData = cashierSnap.data() || {}
-          const currentFloatUSDT = Number(cData.floatBalanceUSDT ?? (Number(cData.floatBalanceCoins || 0) / 100))
-          if (currentFloatUSDT < netPayoutUSD) {
-            throw new Error(`Saldo flotante insuficiente ($${currentFloatUSDT.toFixed(2)} USDT disponibles). Se requieren $${netPayoutUSD.toFixed(2)} USDT.`)
+          cashierCurrentFloatUSDT = Number(cData.floatBalanceUSDT ?? (Number(cData.floatBalanceCoins || 0) / 100))
+          if (cashierCurrentFloatUSDT < netPayoutUSD) {
+            throw new Error(`Saldo flotante insuficiente ($${cashierCurrentFloatUSDT.toFixed(2)} USDT disponibles). Se requieren $${netPayoutUSD.toFixed(2)} USDT.`)
           }
 
           transaction.update(cashierRef, {
@@ -959,9 +960,12 @@ export async function completeWithdrawalOrder(params: {
         transaction.set(ledgerEntryRef, {
           id: ledgerEntryRef.id,
           cashierUid,
-          type: 'withdraw_payout',
+          type: 'withdrawal_payout',
           amountUSDT: -netPayoutUSD,
+          amountFiatUSD: -netPayoutUSD,
           amountCoins: -netPayoutCoins,
+          resultingBalanceUSDT: Math.max(0, parseFloat((cashierCurrentFloatUSDT - netPayoutUSD).toFixed(2))),
+          resultingBalanceCoins: Math.max(0, Math.round((cashierCurrentFloatUSDT - netPayoutUSD) * 100)),
           orderId,
           payoutTxId,
           notes: `Liquidación de retiro #${orderId.slice(0, 8)}: Transferido neto $${netPayoutUSD.toFixed(2)} USDT (Fee: $${withdrawalFeeUSD.toFixed(2)} USDT)`,
@@ -1161,9 +1165,12 @@ export async function completeWithdrawalOrder(params: {
     await setDoc(shiftDocRef, {
       id: shiftDocRef.id,
       cashierUid,
-      type: 'withdraw_payout',
+      type: 'withdrawal_payout',
       amountUSDT: -netPayoutUSD,
+      amountFiatUSD: -netPayoutUSD,
       amountCoins: -netPayoutCoins,
+      resultingBalanceUSDT: newFloatUSDT,
+      resultingBalanceCoins: newFloatCoins,
       orderId,
       payoutTxId,
       notes: `Liquidación de retiro #${orderId.slice(0, 8)}: Transferido neto $${netPayoutUSD.toFixed(2)} USDT (Fee: $${withdrawalFeeUSD.toFixed(2)} USDT)`,
@@ -1207,7 +1214,7 @@ export async function rechargeCashierFloatAtomics(params: {
   notes: string
   adminUid: string
   adminName: string
-}): Promise<{ success: boolean; message: string }> {
+}): Promise<{ success: boolean; message: string; newFloatUSDT?: number; newFloatCoins?: number }> {
   const { cashierUid, amountUSDT, notes, adminUid, adminName } = params
   const now = Date.now()
   const amountCoins = Math.round(amountUSDT * 100)
@@ -1246,16 +1253,21 @@ export async function rechargeCashierFloatAtomics(params: {
           cashierUid,
           type: 'recharge',
           amountUSDT,
+          amountFiatUSD: amountUSDT,
           amountCoins,
           previousBalanceUSDT: prevFloatUSDT,
           newBalanceUSDT: newFloatUSDT,
+          resultingBalanceUSDT: newFloatUSDT,
+          resultingBalanceCoins: newFloatCoins,
           notes: `Asignación de saldo flotante por Super Admin ${adminName}: ${notes}`,
           timestamp: now
         })
 
         return {
           success: true,
-          message: `Asignados +$${amountUSDT.toFixed(2)} USDT a la caja del cajero.`
+          message: `Asignados +$${amountUSDT.toFixed(2)} USDT a la caja del cajero.`,
+          newFloatUSDT,
+          newFloatCoins
         }
       })
     } catch (e: any) {
@@ -1264,25 +1276,45 @@ export async function rechargeCashierFloatAtomics(params: {
   }
 
   // Fallback SDK
+  let fallbackNewUSDT = amountUSDT
+  let fallbackNewCoins = amountCoins
   try {
     const cashierDocRef = doc(db, 'cashier_profiles', cashierUid)
     const cashierSnap = await getDoc(cashierDocRef)
     const prevFloatUSDT = cashierSnap.exists() ? Number(cashierSnap.data()?.floatBalanceUSDT || 0) : 0
-    const newFloatUSDT = prevFloatUSDT + amountUSDT
-    const newFloatCoins = Math.round(newFloatUSDT * 100)
+    fallbackNewUSDT = prevFloatUSDT + amountUSDT
+    fallbackNewCoins = Math.round(fallbackNewUSDT * 100)
 
     await setDoc(cashierDocRef, {
       uid: cashierUid,
-      floatBalanceUSDT: newFloatUSDT,
-      floatBalanceCoins: newFloatCoins,
+      floatBalanceUSDT: fallbackNewUSDT,
+      floatBalanceCoins: fallbackNewCoins,
       lastRechargeAt: now
     }, { merge: true })
+
+    const shiftRef = doc(collection(db, 'cashier_shifts_ledger'))
+    await setDoc(shiftRef, {
+      id: shiftRef.id,
+      cashierUid,
+      type: 'recharge',
+      amountUSDT,
+      amountFiatUSD: amountUSDT,
+      amountCoins,
+      previousBalanceUSDT: prevFloatUSDT,
+      newBalanceUSDT: fallbackNewUSDT,
+      resultingBalanceUSDT: fallbackNewUSDT,
+      resultingBalanceCoins: fallbackNewCoins,
+      notes: `Asignación de saldo flotante por Super Admin ${adminName}: ${notes}`,
+      timestamp: now
+    })
   } catch (err: any) {
     console.warn('[rechargeCashierFloatAtomics Fallback] Error:', err?.message)
   }
 
   return {
     success: true,
-    message: `Asignados +$${amountUSDT.toFixed(2)} USDT a la caja del cajero.`
+    message: `Asignados +$${amountUSDT.toFixed(2)} USDT a la caja del cajero.`,
+    newFloatUSDT: fallbackNewUSDT,
+    newFloatCoins: fallbackNewCoins
   }
 }

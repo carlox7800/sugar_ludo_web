@@ -137,51 +137,10 @@ export default function AdminCajerosManagementPage() {
   const handleRecharge = async (cashierUid: string, amountUSDT: number, notes: string) => {
     const target = cashierList.find((c) => c.uid === cashierUid)
     const amountCoins = Math.round(amountUSDT * 100)
-    let newUSDT = amountUSDT
-    let newCoins = amountCoins
 
-    if (target) {
-      const currentUSDT = (target as any).floatBalanceUSDT ?? (target.floatBalanceCoins / 100)
-      newUSDT = currentUSDT + amountUSDT
-      newCoins = Math.round(newUSDT * 100)
-      updateCashierFloat(cashierUid, newCoins, newUSDT)
-    }
-
-    // 1. Sincronizar en global_ledger en Firestore
     try {
-      const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
-      await setDoc(ledgerRef, {
-        id: 'global_ledger',
-        cashierFloatsUSD: increment(amountUSDT),
-        cashierFloatsCoins: increment(amountCoins),
-        lastAuditedAt: Date.now()
-      }, { merge: true })
-    } catch {}
-
-    // 2. Registrar movimiento en cashier_shifts_ledger
-    try {
-      const shiftRef = doc(collection(db, 'cashier_shifts_ledger'))
-      await setDoc(shiftRef, {
-        id: shiftRef.id,
-        cashierUid,
-        cashierName: target?.name || cashierUid,
-        type: 'recharge_float',
-        amountFiatUSD: amountUSDT,
-        amountCoins,
-        resultingBalanceUSDT: newUSDT,
-        resultingBalanceCoins: newCoins,
-        referenceNumber: `REC-${Date.now().toString(36).toUpperCase()}`,
-        adminUid: adminUser?.uid || 'adm_super',
-        adminName: adminUser?.displayName || 'Super Admin',
-        timestamp: Date.now(),
-        createdAt: Date.now(),
-        notes: notes || 'Recarga de Saldo Flotante'
-      })
-    } catch {}
-
-    // Sincronizar en Firestore de forma atómica en el backend
-    try {
-      await fetch('/api/cashier/orders/recharge/action', {
+      // 1. Ejecutar recarga atómica en el backend autoritativo (se actualiza cashier_profiles, system_config, shift_ledger y global_ledger)
+      const res = await fetch('/api/cashier/orders/recharge/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -193,20 +152,50 @@ export default function AdminCajerosManagementPage() {
           adminName: adminUser?.displayName || 'Super Admin'
         })
       })
-    } catch (e) {
-      console.warn('[AdminCajeros] Fallback local para recarga de flotante:', e)
-    }
 
-    // Notificar en canal de difusión oficial
-    if (adminUser) {
-      sendBroadcastMessage(
-        adminUser.uid,
-        adminUser.displayName,
-        `💰 Asignación de saldo flotante aprobada: +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) asignados a ${target?.name || cashierUid}. Motivo: ${notes}`
-      ).catch(() => {})
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error en la respuesta del servidor al recargar')
+      }
+
+      // 2. Si el backend calculó el nuevo flotante, reflejarlo exactamente en el estado local de memoria
+      const finalUSDT = data.newFloatUSDT !== undefined
+        ? Number(data.newFloatUSDT)
+        : (target ? ((target as any).floatBalanceUSDT ?? (target.floatBalanceCoins / 100)) + amountUSDT : amountUSDT)
+      const finalCoins = data.newFloatCoins !== undefined
+        ? Number(data.newFloatCoins)
+        : Math.round(finalUSDT * 100)
+
+      // Actualizar estado en memoria y notificar vía canal sin re-escribir ni re-sumar
+      updateCashierFloat(cashierUid, finalCoins, finalUSDT)
+
+      // Sincronizar incremento en global_ledger de tesorería
+      try {
+        const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+        await setDoc(ledgerRef, {
+          id: 'global_ledger',
+          cashierFloatsUSD: increment(amountUSDT),
+          cashierFloatsCoins: increment(amountCoins),
+          lastAuditedAt: Date.now()
+        }, { merge: true })
+      } catch {}
+
+      // 3. Notificar en canal de difusión oficial
+      if (adminUser) {
+        sendBroadcastMessage(
+          adminUser.uid,
+          adminUser.displayName,
+          `💰 Asignación de saldo flotante aprobada: +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) asignados a ${target?.name || cashierUid}. Motivo: ${notes}`
+        ).catch(() => {})
+      }
+
+      setNotification(`¡Asignados +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) con éxito! Saldo actual: $${finalUSDT.toFixed(2)} USDT`)
+      setTimeout(() => setNotification(null), 4000)
+    } catch (e: any) {
+      console.warn('[AdminCajeros] Fallo al procesar recarga autoritativa:', e)
+      setNotification(`Error al recargar saldo flotante: ${e?.message || 'Intente nuevamente'}`)
+      setTimeout(() => setNotification(null), 4000)
     }
-    setNotification(`¡Asignados +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) con éxito!`)
-    setTimeout(() => setNotification(null), 4000)
   }
 
   useEffect(() => {
