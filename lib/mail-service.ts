@@ -274,83 +274,6 @@ export async function markAllMailsAsRead(userId: string | undefined): Promise<vo
   }
 }
 
-export const PURGE_TIMESTAMP_KEY = 'sugar_last_inbox_purge_at'
-
-export function getLastPurgeTimestamp(): number {
-  if (typeof window === 'undefined') return 0
-  try {
-    return Number(localStorage.getItem(PURGE_TIMESTAMP_KEY) || 0)
-  } catch {
-    return 0
-  }
-}
-
-export function recordPurgeTimestampNow(): number {
-  const now = Date.now()
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(PURGE_TIMESTAMP_KEY, String(now))
-    } catch {}
-  }
-  return now
-}
-
-/**
- * purgeOrphanInboxItems: Marca TODOS los elementos de user.inbox como isRead=true y claimed=true
- * en Firestore y localmente. Limpia además cualquier orden de soporte en cashier_orders para el jugador.
- * Guarda sugar_last_inbox_purge_at para actuar como candado absoluto de consistencia.
- */
-export async function purgeOrphanInboxItems(userId: string | undefined): Promise<void> {
-  const now = recordPurgeTimestampNow()
-
-  // 1. Limpieza local inmediata
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.removeItem('sugar_user_inbox')
-      // Ocultar cualquier correo previo registrado
-      const current = getHiddenMails()
-      // Guardar también estado limpio
-      localStorage.setItem('sugar_user_inbox', JSON.stringify([]))
-    } catch {}
-    window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-  }
-
-  // 2. Limpieza en Firestore si hay usuario conectado
-  if (userId && !userId.startsWith('dev_')) {
-    try {
-      // a) Purgar array inbox en users/{userId}
-      const userRef = doc(db, 'users', userId)
-      const snap = await getDoc(userRef)
-      if (snap.exists()) {
-        const data = snap.data()
-        const inbox = Array.isArray(data.inbox) ? data.inbox : []
-        const purged = inbox.map((m: any) => ({ ...m, isRead: true, claimed: true }))
-        await updateDoc(userRef, { inbox: purged })
-      }
-
-      // b) Purgar cashier_orders donde playerUid == userId
-      const { collection, query, where, getDocs } = await import('firebase/firestore')
-      const q = query(collection(db, 'cashier_orders'), where('playerUid', '==', userId))
-      const ordersSnap = await getDocs(q)
-      ordersSnap.forEach(async (d) => {
-        try {
-          await updateDoc(d.ref, {
-            hasUnreadCashierMessage: false,
-            playerReadAt: now
-          })
-        } catch {}
-      })
-    } catch (e) {
-      console.warn('[MailService] Error en purgeOrphanInboxItems (Firestore):', e)
-    }
-  }
-
-  // 3. Notificar a toda la interfaz
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-  }
-}
-
 const HIDDEN_MAILS_KEY = 'sugar_hidden_mails'
 
 export function getHiddenMails(): string[] {
@@ -391,39 +314,13 @@ export async function deleteMailsBatch(userId: string | undefined, mailIds: stri
   // 1. Ocultar localmente (sirve tanto para mensajes de orden P2P como para mensajes regulares)
   hideMailsBatchLocal(mailIds)
 
-  // 2. Si hay mensajes vinculados a órdenes de soporte P2P, actualizar cashier_orders en Firestore
-  const orderIdsToMark = mailIds
-    .map(id => id.startsWith('mail_ord_sup_') ? id.replace('mail_ord_sup_', '') : (id.startsWith('mail_sup_') ? id.replace('mail_sup_', '') : null))
-    .filter(Boolean) as string[]
-
-  if (orderIdsToMark.length > 0 && userId && !userId.startsWith('dev_')) {
-    orderIdsToMark.forEach(async (orderId) => {
-      try {
-        const orderRef = doc(db, 'cashier_orders', orderId)
-        await updateDoc(orderRef, {
-          hasUnreadCashierMessage: false,
-          playerReadAt: Date.now()
-        })
-      } catch (err) {
-        console.debug('[MailService] Error actualizando cashier_orders al borrar:', err)
-      }
-    })
-  }
-
-  // 3. Remover de user.inbox cualquier mensaje regular o mensaje legado de soporte (mail_sup_ / orderId)
-  let inbox = await fetchUserInbox(userId)
-  const initialLength = inbox.length
-  const idSet = new Set(mailIds)
-  const orderIdSet = new Set(orderIdsToMark)
-
-  inbox = inbox.filter(m => {
-    if (idSet.has(m.id)) return false
-    if (m.orderId && orderIdSet.has(m.orderId)) return false
-    if (m.id && orderIdsToMark.some(oid => m.id.includes(oid))) return false
-    return true
-  })
-
-  if (inbox.length !== initialLength) {
+  // 2. Si son mensajes de la colección del usuario (recompensas/sistema), removerlos de user.inbox
+  const regularIds = mailIds.filter(id => !id.startsWith('mail_ord_sup_'))
+  if (regularIds.length > 0) {
+    let inbox = await fetchUserInbox(userId)
+    const idSet = new Set(regularIds)
+    inbox = inbox.filter(m => !idSet.has(m.id))
+    
     if (userId && !userId.startsWith('dev_')) {
       try {
         const userRef = doc(db, 'users', userId)

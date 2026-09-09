@@ -1,157 +1,61 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    function isServerBackend() {
-      return request.auth != null && (
-        request.auth.token.role in ['super_admin', 'server_daemon'] ||
-        request.auth.uid == 'sugar_system_treasury_daemon' ||
-        request.auth.token.email == 'server-treasury@sugarludo.com'
-      );
-    }
-
+    
     // 1. PERFIL DE USUARIOS Y CLASIFICACIÓN GLOBAL (LEADERBOARD)
     match /users/{userId} {
-      allow read: if true;
-      // Creación permitida únicamente al registrarse con saldo inicial máximo de 200 monedas
-      allow create: if request.auth != null && request.auth.uid == userId &&
-                    (!('coins' in request.resource.data) || request.resource.data.coins <= 200) &&
-                    (!('escrowLockedCoins' in request.resource.data) || request.resource.data.escrowLockedCoins == 0) &&
-                    (!('role' in request.resource.data) || request.resource.data.role == 'player');
-      // Actualización: BLINDAJE ZERO-TRUST + LEY DE CONSERVACIÓN CONTABLE MATEMÁTICA
-      // 1. Servidor privilegiado (Admin SDK o daemon de tesorería)
-      allow update: if isServerBackend() || (
-        // 2. Modificación de perfil no financiera por parte del propio jugador
-        request.auth != null && request.auth.uid == userId &&
-        !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['coins', 'escrowLockedCoins', 'role', 'isBanned', 'isFrozen'])
-      ) || (
-        // 3. RETENCIÓN LEGÍTIMA POR RETIRO (ESCROW LOCK): Invariante matemática estricta
-        request.auth != null && request.auth.uid == userId &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned', 'isFrozen']) &&
-        request.resource.data.coins < resource.data.coins &&
-        request.resource.data.coins >= 0 &&
-        request.resource.data.escrowLockedCoins > resource.data.escrowLockedCoins &&
-        (request.resource.data.coins + request.resource.data.escrowLockedCoins) == (resource.data.coins + resource.data.escrowLockedCoins)
-      ) || (
-        // 4. LIBERACIÓN DE ESCROW POR LIQUIDACIÓN DE RETIRO
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins', 'role', 'isBanned', 'isFrozen']) &&
-        request.resource.data.coins == resource.data.coins &&
-        request.resource.data.escrowLockedCoins < resource.data.escrowLockedCoins &&
-        request.resource.data.escrowLockedCoins >= 0
-      ) || (
-        // 5. REEMBOLSO POR CANCELACIÓN DE RETIRO (DEVOLUCIÓN DE ESCROW A SALDO DISPONIBLE)
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned', 'isFrozen']) &&
-        request.resource.data.escrowLockedCoins < resource.data.escrowLockedCoins &&
-        request.resource.data.escrowLockedCoins >= 0 &&
-        request.resource.data.coins > resource.data.coins &&
-        (request.resource.data.coins + request.resource.data.escrowLockedCoins) == (resource.data.coins + resource.data.escrowLockedCoins)
-      );
-      allow delete: if false;
-
-      // Sub-colección inbox: lectura libre.
-      // v9.1.0: El jugador puede persistir isRead/claimed en Firestore para sincronización entre dispositivos.
-      // Solo esos campos pueden modificarse — ningún campo financiero ni de categoría.
+      allow read, write: if true;
+      
       match /inbox/{mailId} {
-        allow read: if true;
-        allow create: if false;
-        allow update: if request.auth != null && request.auth.uid == userId &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'claimed']);
-        allow delete: if false;
+        allow read, write: if true;
       }
-
+      
       match /match_history/{matchId} {
-        allow read: if true;
-        allow write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if true;
       }
     }
-
+    
     // 2. SISTEMA DE AMISTADES DEDICADO
     match /friendships/{friendshipId} {
       allow read, write: if true;
     }
-
+    
     // 3. SOLICITUDES DE AMISTAD EN TIEMPO REAL
     match /friend_requests/{requestId} {
       allow read, write: if true;
     }
-
+    
     // 4. RETOS A DUELOS 1 VS 1 EN TIEMPO REAL
     match /duel_challenges/{challengeId} {
       allow read, write: if true;
     }
-
-    // 5. BILLETERAS Y TRANSACCIONES (BLINDADAS: Solo backend Admin SDK)
+    
+    // 5. BILLETERAS Y TRANSACCIONES
     match /wallets/{userId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
-
+    
     match /transactions/{txId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
 
     // 6. SISTEMA DE CAJEROS P2P, CHAT Y AUDITORÍA
     match /cashier_orders/{orderId} {
-      allow read: if true;
-      // v9.1.0: Creación SOLO para usuarios autenticados.
-      // El playerUid debe coincidir con el uid del usuario autenticado.
-      // Estado inicial obligatorio: 'pending'.
-      allow create: if request.auth != null &&
-                    request.resource.data.status == 'pending' &&
-                    request.resource.data.playerUid == request.auth.uid;
-      // Actualizaciones autorizadas en cashier_orders:
-      allow update: if (
-        // a) Backend privilegiado puede hacer cualquier mutación (incluyendo status=completed)
-        isServerBackend()
-      ) || (
-        // b) Mensajería y Lecturas de Soporte: Jugador, Cajero o Soporte autenticado/cliente
-        // Permite agregar mensajes a supportMessages, actualizar banderas de lectura y marcas de tiempo
-        request.auth != null &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'coins', 'amountFiat', 'amountSugarCoins', 'playerUid']) &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['supportMessages', 'lastMessage', 'lastMessageTime',
-                    'hasUnreadCashierMessage', 'hasUnreadPlayerMessage',
-                    'playerReadAt', 'cashierReadAt',
-                    'receiptUrl', 'receiptReferenceNumber', 'payoutTxId'])
-      ) || (
-        // c) Transiciones legítimas de ciclo de vida con estado válido y preservación estricta de saldo/monto
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins', 'amountFiat', 'amountSugarCoins', 'playerUid']) &&
-        request.resource.data.status in ['pending', 'paid', 'verified', 'completed', 'cancelled', 'disputed', 'resolved_player', 'resolved_cashier'] &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'receiptReferenceNumber', 'payoutTxId', 'completedAt', 'verifiedAt', 'cancelledAt',
-                    'isEscrowLocked', 'settledByCashierUid', 'netPayoutUSD', 'withdrawalFeeUSD',
-                    'supportMessages', 'lastMessage', 'lastMessageTime',
-                    'hasUnreadCashierMessage', 'hasUnreadPlayerMessage', 'playerReadAt', 'cashierReadAt',
-                    'receiptUrl', 'cancelledByUid', 'cancelledByRole'])
-      ) || (
-        // d) Arbitraje y Disputas: Registro de notas de disputa y escalación
-        request.auth != null &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['disputeReason', 'disputedAt', 'disputedBy', 'resolutionNotes', 'resolvedBy', 'resolvedAt'])
-      ) || (
-        // e) Fallback de compatibilidad de mensajería para clientes sin sesión de auth Firebase activa
-        // (cajeros operando en hub web con sesión local)
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins', 'amountFiat', 'amountSugarCoins', 'playerUid']) &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'hasUnreadPlayerMessage', 'playerReadAt', 'cashierReadAt'])
-      );
-      allow delete: if false;
-
+      allow read, write: if true;
+      
       match /messages/{messageId} {
         allow read, write: if true;
       }
     }
-
+    
     match /cashier_profiles/{cashierId} {
       allow read, write: if true;
     }
-
+    
     match /daily_stats/{dateStr} {
       allow read, write: if true;
     }
-
+    
     match /audit_logs/{logId} {
       allow read, write: if true;
     }
@@ -172,25 +76,5 @@ service cloud.firestore {
     match /dispute_cases/{disputeId} {
       allow read, write: if true;
     }
-
-    // 8. COMUNICACIONES INTERNAS DE STAFF Y CHAT DUAL CON CAJEROS
-    match /staff_broadcast_messages/{msgId} {
-      allow read, write: if true;
-    }
-
-    match /staff_private_chats/{chatId} {
-      allow read, write: if true;
-
-      match /messages/{messageId} {
-        allow read, write: if true;
-      }
-    }
-
-    // 9. TORNEOS Y EVENTOS COMPETITIVOS EN VIVO
-    match /tournaments/{tournamentId} {
-      allow read: if true;
-      allow write: if false;
-    }
   }
 }
-
