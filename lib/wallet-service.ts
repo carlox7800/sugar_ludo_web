@@ -278,9 +278,8 @@ export async function createWithdrawOrder(params: {
     })
   } catch {}
 
-  // 2. Validación de saldo en lectura (pre-chequeo defensivo)
-  // Nota: La retención formal y atómica del saldo en Escrow la realiza el Servidor Autoritativo
-  // a través de createWithdrawOrderWithEscrow, cumpliendo la regla Zero-Trust de Firestore.
+  // 2. Retención atómica de saldo en Escrow y registro en historial
+  // Cumple estrictamente la Ley de Conservación Contable aprobada en firestore.rules
   if (playerUid && !playerUid.startsWith('dev_')) {
     try {
       const userRef = doc(db, 'users', playerUid)
@@ -288,15 +287,50 @@ export async function createWithdrawOrder(params: {
       if (userSnap.exists()) {
         const userData = userSnap.data() || {}
         const currentCoins = Number(userData.coins ?? 200)
+        const currentEscrow = Number(userData.escrowLockedCoins ?? 0)
 
         if (currentCoins < amountSugarCoins) {
           throw new Error(`Saldo insuficiente de Sugar Coins (Disponibles: ${currentCoins} SC, Requeridos: ${amountSugarCoins} SC)`)
         }
+
+        const newCoins = Math.max(0, currentCoins - amountSugarCoins)
+        const newEscrow = currentEscrow + amountSugarCoins
+
+        const now = new Date()
+        const newTx: WalletTransaction = {
+          id: `wit_${orderId.slice(4)}`,
+          orderId: orderId,
+          type: 'withdraw',
+          amount: -amountSugarCoins,
+          description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${orderId.slice(0, 10)})` : `Solicitud de Retiro (Pendiente) (#${orderId.slice(0, 10)})`,
+          timestamp: Date.now(),
+          dateStr: now.toLocaleDateString('es-ES', { 
+            day: '2-digit', 
+            month: 'short', 
+            year: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })
+        }
+
+        const existingHistory = Array.isArray(userData.walletHistory) ? userData.walletHistory : []
+        const history = [newTx, ...existingHistory].slice(0, 50)
+
+        await updateDoc(userRef, {
+          coins: newCoins,
+          escrowLockedCoins: newEscrow,
+          walletHistory: history,
+          lastActiveAt: Date.now()
+        })
+
+        orderData.isEscrowLocked = true
+        orderData.escrowLockedAt = Date.now()
       }
     } catch (checkErr: any) {
       if (checkErr?.message?.includes('Saldo insuficiente')) {
         throw checkErr
       }
+      console.warn('[WalletService] Error en retención de Escrow cliente:', checkErr?.message)
     }
   }
 

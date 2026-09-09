@@ -209,7 +209,7 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
   const navItems: NavItem[] = BASE_NAV_ITEMS.map(item => {
     let badge: string | undefined
     let hasGlow = false
-    if (item.screen === 'correo' && totalUnreadMail > 0) {
+    if (item.screen === 'correo' && currentScreen !== 'correo' && totalUnreadMail > 0) {
       badge = totalUnreadMail.toString()
       hasGlow = unreadSupportCount > 0
     } else if (item.screen === 'amigos' && friendsBadgeCount > 0) {
@@ -303,7 +303,7 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
   const navItems: NavItem[] = BASE_NAV_ITEMS.map(item => {
     let badge: string | undefined
     let hasGlow = false
-    if (item.screen === 'correo' && totalUnreadMail > 0) {
+    if (item.screen === 'correo' && currentScreen !== 'correo' && totalUnreadMail > 0) {
       badge = totalUnreadMail.toString()
       hasGlow = unreadSupportCount > 0
     } else if (item.screen === 'amigos' && friendsBadgeCount > 0) {

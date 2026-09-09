@@ -18,14 +18,49 @@ service cloud.firestore {
                     (!('coins' in request.resource.data) || request.resource.data.coins <= 200) &&
                     (!('escrowLockedCoins' in request.resource.data) || request.resource.data.escrowLockedCoins == 0) &&
                     (!('role' in request.resource.data) || request.resource.data.role == 'player');
-      // Actualización: BLINDAJE ZERO-TRUST ABSOLUTO
-      // El jugador JAMÁS puede alterar su saldo (coins), saldo retenido (escrowLockedCoins),
-      // historial contable (walletHistory), rol, estado de baneo o congelamiento.
-      // Cualquier mutación financiera es rechazada si proviene del cliente.
+      // Actualización: BLINDAJE ZERO-TRUST + LEY DE CONSERVACIÓN CONTABLE MATEMÁTICA
+      // 1. Servidor privilegiado (Admin SDK o daemon de tesorería)
       allow update: if isServerBackend() || (
+        // 2. Modificación de perfil no financiera por parte del propio jugador
         request.auth != null && request.auth.uid == userId &&
         !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['coins', 'escrowLockedCoins', 'walletHistory', 'role', 'isBanned', 'isFrozen'])
+          .hasAny(['coins', 'escrowLockedCoins', 'role', 'isBanned', 'isFrozen'])
+      ) || (
+        // 3. RETENCIÓN LEGÍTIMA POR RETIRO (ESCROW LOCK): Invariante matemática estricta
+        // El jugador autenticado mueve coins -> escrowLockedCoins:
+        // - Invariante 1: Cero generación de dinero (coins + escrowLockedCoins es idéntico a la suma previa)
+        // - Invariante 2: coins disminuye (se deduce el monto solicitado)
+        // - Invariante 3: escrowLockedCoins aumenta (se congela en custodia)
+        // - Invariante 4: coins final >= 0 (no sobregiro)
+        // - Prohibido alterar rol, baneo o congelamiento
+        request.auth != null && request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned', 'isFrozen']) &&
+        request.resource.data.coins < resource.data.coins &&
+        request.resource.data.coins >= 0 &&
+        request.resource.data.escrowLockedCoins > resource.data.escrowLockedCoins &&
+        (request.resource.data.coins + request.resource.data.escrowLockedCoins) == (resource.data.coins + resource.data.escrowLockedCoins)
+      ) || (
+        // 4. LIBERACIÓN DE ESCROW POR LIQUIDACIÓN DE RETIRO (PAGO COMPLETADO AL JUGADOR):
+        // Permite extinguir escrowLockedCoins cuando el cajero liquida el retiro
+        // - coins permanece idéntico (no se puede generar ni alterar saldo disponible)
+        // - escrowLockedCoins disminuye (>= 0)
+        // - Prohibido alterar rol, baneo o congelamiento
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins', 'role', 'isBanned', 'isFrozen']) &&
+        request.resource.data.coins == resource.data.coins &&
+        request.resource.data.escrowLockedCoins < resource.data.escrowLockedCoins &&
+        request.resource.data.escrowLockedCoins >= 0
+      ) || (
+        // 5. REEMBOLSO POR CANCELACIÓN DE RETIRO (DEVOLUCIÓN DE ESCROW A SALDO DISPONIBLE):
+        // Si el retiro es cancelado o rechazado, escrow vuelve a coins con estricta conservación:
+        // - Suma total (coins + escrowLockedCoins) permanece idéntica
+        // - escrowLockedCoins disminuye (>= 0)
+        // - coins aumenta exactamente lo liberado
+        // - Prohibido alterar rol, baneo o congelamiento
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned', 'isFrozen']) &&
+        request.resource.data.escrowLockedCoins < resource.data.escrowLockedCoins &&
+        request.resource.data.escrowLockedCoins >= 0 &&
+        request.resource.data.coins > resource.data.coins &&
+        (request.resource.data.coins + request.resource.data.escrowLockedCoins) == (resource.data.coins + resource.data.escrowLockedCoins)
       );
       allow delete: if false;
       

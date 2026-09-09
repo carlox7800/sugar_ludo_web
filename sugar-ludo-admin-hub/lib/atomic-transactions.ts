@@ -914,7 +914,18 @@ export async function completeWithdrawalOrder(params: {
         const playerSnap = await transaction.get(playerRef)
         if (playerSnap.exists) {
           const currentEscrow = Number(playerSnap.data()?.escrowLockedCoins || 0)
-          const newEscrow = Math.max(0, currentEscrow - amountCoins)
+          const currentCoins = Number(playerSnap.data()?.coins || 0)
+          let newEscrow = Math.max(0, currentEscrow - amountCoins)
+          let newCoins = currentCoins
+
+          // Candado Defensivo Anti-Rebote:
+          // Si el saldo no estaba completamente retenido en escrow, debitar el déficit directamente de coins
+          if (currentEscrow < amountCoins) {
+            const deficit = amountCoins - currentEscrow
+            newCoins = Math.max(0, currentCoins - deficit)
+            newEscrow = 0
+          }
+
           const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
           const updatedHistory = existingHistory.map((tx: any) => {
             if (tx.description && tx.description.includes(orderId.slice(0, 8)) && tx.description.includes('(Pendiente)')) {
@@ -927,6 +938,7 @@ export async function completeWithdrawalOrder(params: {
           })
 
           transaction.update(playerRef, {
+            coins: newCoins,
             escrowLockedCoins: newEscrow,
             walletHistory: updatedHistory,
             lastActiveAt: now
@@ -1051,7 +1063,9 @@ export async function completeWithdrawalOrder(params: {
       if (userSnap.exists()) {
         const uData = userSnap.data() || {}
         const currentEscrow = Number(uData.escrowLockedCoins || 0)
-        const newEscrow = Math.max(0, currentEscrow - amountCoins)
+        const currentCoins = Number(uData.coins ?? 0)
+        let newEscrow = Math.max(0, currentEscrow - amountCoins)
+        let newCoins = currentCoins
 
         const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
         let matched = false
@@ -1074,11 +1088,22 @@ export async function completeWithdrawalOrder(params: {
           }
         }
 
-        await updateDoc(userDocRef, {
+        const userUpdates: any = {
           escrowLockedCoins: newEscrow,
           walletHistory: cleanHistory.slice(0, 50),
           lastActiveAt: now
-        })
+        }
+
+        // Candado Defensivo Anti-Rebote:
+        // Si el saldo no estaba completamente retenido en escrow, debitar el déficit directamente de coins
+        if (currentEscrow < amountCoins) {
+          const deficit = amountCoins - currentEscrow
+          newCoins = Math.max(0, currentCoins - deficit)
+          userUpdates.coins = newCoins
+          userUpdates.escrowLockedCoins = 0
+        }
+
+        await updateDoc(userDocRef, userUpdates)
         escrowReleasedInCloud = true
       }
     } catch (userErr: any) {

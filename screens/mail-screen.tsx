@@ -38,6 +38,7 @@ import {
   claimMailReward, 
   claimAllRewards, 
   markMailAsRead,
+  markAllMailsAsRead,
   replySupportMail,
   deleteMailsBatch,
   getHiddenMails,
@@ -143,12 +144,18 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     showToast('🧹 Buzón purgado completamente. Todos los registros marcados como leídos.')
   }
 
+  // Helper para normalizar categoría y evitar correos huérfanos invisibles
+  const normalizeMail = (m: any): MailItem => ({
+    ...m,
+    category: (m.category === 'rewards' || m.category === 'support') ? m.category : 'system'
+  })
+
   // Load real inbox
   const loadInbox = async () => {
     try {
       const inbox = await fetchUserInbox(user?.uid)
       const hidden = new Set(getHiddenMails())
-      const filtered = inbox.filter(m => !hidden.has(m.id))
+      const filtered = inbox.map(normalizeMail).filter(m => !hidden.has(m.id))
       setMailList(filtered.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)))
     } catch (e) {
       console.warn('Error loading inbox:', e)
@@ -165,20 +172,44 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
       setMailList((prev) => {
         const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
         const supportOrderIds = new Set(supportFromOrders.map(m => m.orderId).filter(Boolean))
-        const userMails = user.inbox!.filter((m: any) => 
-          !m.id.startsWith('mail_ord_sup_') && 
-          (!m.orderId || !supportOrderIds.has(m.orderId)) && 
-          !hidden.has(m.id)
-        )
+        const userMails = user.inbox!
+          .map(normalizeMail)
+          .filter((m: any) => 
+            !m.id.startsWith('mail_ord_sup_') && 
+            (!m.orderId || !supportOrderIds.has(m.orderId)) && 
+            !hidden.has(m.id)
+          )
         const combined = [...supportFromOrders, ...userMails]
         return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
       })
       if (selectedMail && !selectedMail.orderId) {
         const refreshed = user.inbox.find((m: any) => m.id === selectedMail.id)
-        if (refreshed) setSelectedMail(refreshed)
+        if (refreshed) setSelectedMail(normalizeMail(refreshed))
       }
     }
   }, [user?.inbox, selectedMail?.id])
+
+  // Auto-marcar mensajes de soporte de cajeros como leídos en Firestore al abrir la pestaña Soporte
+  useEffect(() => {
+    if (activeTab === 'support' && user?.uid && !user.uid.startsWith('dev_')) {
+      const unreadOrders = mailList.filter(m => m.category === 'support' && !m.isRead && m.orderId)
+      if (unreadOrders.length > 0) {
+        unreadOrders.forEach(async (m) => {
+          try {
+            const orderRef = doc(db, 'cashier_orders', m.orderId!)
+            await updateDoc(orderRef, {
+              playerReadAt: Date.now(),
+              hasUnreadCashierMessage: false
+            })
+          } catch {}
+        })
+        setMailList(prev => prev.map(m => (m.category === 'support' && !m.isRead) ? { ...m, isRead: true } : m))
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+        }
+      }
+    }
+  }, [activeTab, mailList.length, user?.uid])
 
   // 2. Escuchar mensajes de soporte P2P desde cashier_orders con limit(20) y pausa por visibilidad
   useEffect(() => {
@@ -494,11 +525,32 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
+  const handleMarkAllAsRead = async () => {
+    await markAllMailsAsRead(user?.uid)
+    if (user?.uid && !user.uid.startsWith('dev_')) {
+      mailList.filter(m => m.orderId).forEach(async (m) => {
+        try {
+          const orderRef = doc(db, 'cashier_orders', m.orderId!)
+          await updateDoc(orderRef, {
+            playerReadAt: Date.now(),
+            hasUnreadCashierMessage: false
+          })
+        } catch {}
+      })
+    }
+    setMailList(prev => prev.map(m => ({ ...m, isRead: true })))
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+    }
+    showToast('✔️ Todos los mensajes marcados como leídos.')
+  }
+
   const filteredMails = mailList
+    .map(normalizeMail)
     .filter(m => m.category === activeTab)
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
   const unreadRewardsCount = mailList.filter(m => m.category === 'rewards' && !m.claimed).length
-  const unreadSystemCount = mailList.filter(m => m.category === 'system' && !m.isRead).length
+  const unreadSystemCount = mailList.filter(m => normalizeMail(m).category === 'system' && !m.isRead).length
   const unreadSupportCount = mailList.filter(m => m.category === 'support' && !m.isRead).length
 
   return (
@@ -658,6 +710,18 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               >
                 <Trash2 className="size-3.5" />
                 <span>Eliminar ({selectedIds.length})</span>
+              </button>
+            )}
+
+            {!isSelectionMode && (
+              <button
+                onClick={handleMarkAllAsRead}
+                title="Marcar todos los mensajes como leídos"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-white/5 hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/20 transition-all cursor-pointer"
+              >
+                <CheckCheck className="size-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Marcar Leídos</span>
+                <span className="sm:hidden">Leídos</span>
               </button>
             )}
 

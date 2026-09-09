@@ -249,6 +249,20 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
         if (typeof window !== 'undefined') {
           localStorage.setItem('sugar_player_coins', String(newAvailable))
         }
+
+        const newPendingTx = {
+          id: `wit_${res.orderId.slice(4)}`,
+          orderId: res.orderId,
+          type: 'withdraw' as const,
+          amount: -coinsToDeduct,
+          description: isVipWithdraw ? `Solicitud de Retiro VIP (Pendiente) (#${res.orderId.slice(0, 10)})` : `Solicitud de Retiro (Pendiente) (#${res.orderId.slice(0, 10)})`,
+          timestamp: Date.now(),
+          dateStr: new Date().toLocaleDateString('es-ES', { 
+            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })
+        }
+        setTransactions(prev => [newPendingTx, ...prev.filter(t => t.orderId !== res.orderId)].slice(0, 50))
+
         setWithdrawAmount('')
         showNotification(`Solicitud de retiro enviada (-${coinsToDeduct} SC retenidos en espera de validación).`, 'success')
         refreshData()
