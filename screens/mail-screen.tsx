@@ -327,12 +327,12 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                   orderStatus: ord.status,
                   replies
                 })
-              } else if (ord.status === 'completed' && (ord.lastMessage || ord.receiptReferenceNumber || ord.payoutTxId)) {
+              } else if (ord.status === 'completed') {
                 // Fallback de resiliencia: Si la orden está completada pero supportMessages aún no se cargó
                 const fallbackTime = Number(ord.completedAt || ord.lastMessageTime || ord.createdAt || Date.now())
                 const isWithdraw = ord.type === 'withdraw'
                 const isUnread = ord.hasUnreadCashierMessage !== false && playerReadAt < fallbackTime
-                const msgText = ord.lastMessage || (isWithdraw ? `Retiro liquidado exitosamente. Referencia: ${ord.receiptReferenceNumber || ord.payoutTxId}` : `Depósito acreditado exitosamente.`)
+                const msgText = ord.lastMessage || (isWithdraw ? `Retiro liquidado exitosamente. Referencia: ${ord.receiptReferenceNumber || ord.payoutTxId || 'Liquidado'}` : `Depósito acreditado exitosamente. Referencia: ${ord.receiptReferenceNumber || ord.id}`)
 
                 orderSupportMails.push({
                   id: mailKey,

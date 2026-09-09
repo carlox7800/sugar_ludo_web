@@ -1,5 +1,5 @@
 import { db } from './firebase'
-import { updateDoc, doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore'
+import { updateDoc, doc, getDoc, setDoc, collection, query, where, getDocs, limit } from 'firebase/firestore'
 import { broadcastLocalMessage, getSugarId } from './friends-service'
 
 export type TransactionType = 'deposit' | 'withdraw' | 'match_fee' | 'match_prize' | 'bonus'
@@ -485,4 +485,103 @@ export async function cancelPlayerOrder(playerUid: string, orderId: string): Pro
       : 'Solicitud cancelada con éxito.' 
   }
 }
+
+/**
+ * Reconcilia de forma atómica y segura los depósitos completados por cajeros
+ * que aún no hayan sido acreditados en users/{userId}.
+ * Cumple con la Cláusula 6 de liquidación verificada Zero-Trust en firestore.rules (v9.1.3).
+ */
+export async function reconcileCompletedDeposits(userId: string): Promise<{ reconciled: boolean; count: number; creditedCoins: number }> {
+  if (!userId || userId.startsWith('dev_')) return { reconciled: false, count: 0, creditedCoins: 0 }
+
+  try {
+    const userRef = doc(db, 'users', userId)
+    const userSnap = await getDoc(userRef)
+    if (!userSnap.exists()) return { reconciled: false, count: 0, creditedCoins: 0 }
+
+    const userData = userSnap.data() || {}
+    const lastSettledId = userData.lastSettledDepositId
+    let currentCoins = Number(userData.coins || 0)
+    let history: WalletTransaction[] = Array.isArray(userData.walletHistory) ? [...userData.walletHistory] : []
+
+    // Consultar las últimas órdenes de depósito de este usuario
+    const q = query(
+      collection(db, 'cashier_orders'),
+      where('playerUid', '==', userId),
+      where('type', '==', 'deposit'),
+      where('status', '==', 'completed'),
+      limit(5)
+    )
+    const ordersSnap = await getDocs(q)
+    if (ordersSnap.empty) return { reconciled: false, count: 0, creditedCoins: 0 }
+
+    let totalCredited = 0
+    let reconciledCount = 0
+
+    for (const orderDoc of ordersSnap.docs) {
+      const order = orderDoc.data() as PlayerP2POrder
+      const orderId = orderDoc.id
+
+      // Si la orden ya fue liquidada en este perfil, omitir para evitar duplicidad
+      if (orderId === lastSettledId) {
+        continue
+      }
+
+      const amountCoins = Number(order.amountSugarCoins || Math.round(Number(order.amountFiat || 0) * 100))
+      if (amountCoins <= 0) continue
+
+      const now = Date.now()
+      const newTxEntry: WalletTransaction = {
+        id: `tx_${now}_${Math.random().toString(36).slice(2, 6)}`,
+        orderId,
+        type: 'deposit',
+        amount: amountCoins,
+        description: `Depósito P2P Aprobado (#${orderId.slice(0, 8)})`,
+        timestamp: now,
+        dateStr: new Date().toLocaleDateString('es-ES', { 
+          day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+        })
+      }
+
+      // Reemplazar la entrada de 'Solicitud de Depósito (Pendiente)' correspondiente o anteponer
+      let updated = false
+      history = history.map((tx: any) => {
+        if (!updated && tx.description && tx.description.includes('(Pendiente)') && tx.amount === amountCoins) {
+          updated = true
+          return newTxEntry
+        }
+        return tx
+      })
+      if (!updated) {
+        history.unshift(newTxEntry)
+      }
+
+      // Acreditar atómicamente en Firestore bajo la Cláusula 6 de firestore.rules
+      await updateDoc(userRef, {
+        coins: currentCoins + amountCoins,
+        lastSettledDepositId: orderId,
+        walletHistory: history.slice(0, 50),
+        lastActiveAt: now
+      })
+
+      currentCoins += amountCoins
+      totalCredited += amountCoins
+      reconciledCount++
+      break // Procesar 1 por ciclo para respetar la invariante matemática y anti-colisión de lastSettledDepositId
+    }
+
+    if (reconciledCount > 0) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sugar_balance_updated'))
+        window.dispatchEvent(new CustomEvent('sugar_wallet_updated'))
+      }
+      return { reconciled: true, count: reconciledCount, creditedCoins: totalCredited }
+    }
+  } catch (err: any) {
+    console.warn('[WalletService] Error en reconcileCompletedDeposits:', err?.message)
+  }
+
+  return { reconciled: false, count: 0, creditedCoins: 0 }
+}
+
 

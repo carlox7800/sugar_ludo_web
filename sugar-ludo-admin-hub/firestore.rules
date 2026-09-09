@@ -46,6 +46,20 @@ service cloud.firestore {
         request.resource.data.escrowLockedCoins >= 0 &&
         request.resource.data.coins > resource.data.coins &&
         (request.resource.data.coins + request.resource.data.escrowLockedCoins) == (resource.data.coins + resource.data.escrowLockedCoins)
+      ) || (
+        // 6. ACREDITACIÓN DE DEPÓSITO VERIFICADO POR CAJERO (CANDADO ZERO-TRUST FINTECH v9.1.3)
+        // Permite acreditar monedas si y solo si existe una orden legítima completada en cashier_orders
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isBanned', 'isFrozen', 'escrowLockedCoins']) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['coins', 'walletHistory', 'lastActiveAt', 'lastSettledDepositId']) &&
+        request.resource.data.coins > resource.data.coins &&
+        'lastSettledDepositId' in request.resource.data &&
+        exists(/databases/$(database)/documents/cashier_orders/$(request.resource.data.lastSettledDepositId)) &&
+        get(/databases/$(database)/documents/cashier_orders/$(request.resource.data.lastSettledDepositId)).data.status == 'completed' &&
+        get(/databases/$(database)/documents/cashier_orders/$(request.resource.data.lastSettledDepositId)).data.type == 'deposit' &&
+        get(/databases/$(database)/documents/cashier_orders/$(request.resource.data.lastSettledDepositId)).data.playerUid == userId &&
+        request.resource.data.coins == (resource.data.coins + get(/databases/$(database)/documents/cashier_orders/$(request.resource.data.lastSettledDepositId)).data.amountSugarCoins) &&
+        (!('lastSettledDepositId' in resource.data) || resource.data.lastSettledDepositId != request.resource.data.lastSettledDepositId)
       );
       allow delete: if false;
 

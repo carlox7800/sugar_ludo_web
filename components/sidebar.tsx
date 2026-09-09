@@ -46,6 +46,8 @@ let sharedUnsubOrders: (() => void) | null = null
 let sharedUnsubFriends: (() => void) | null = null
 let sharedUnsubChallenges: (() => void) | null = null
 let visibilityCleanup: (() => void) | null = null
+let inboxCleanup: (() => void) | null = null
+let cachedOrdersSnap: any = null
 const sharedListeners = new Set<(badges: { unreadSupportCount: number; friendsBadgeCount: number }) => void>()
 let sharedState = { unreadSupportCount: 0, friendsBadgeCount: 0 }
 
@@ -63,7 +65,9 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
     if (sharedUnsubOrders) { sharedUnsubOrders(); sharedUnsubOrders = null }
     if (sharedUnsubFriends) { sharedUnsubFriends(); sharedUnsubFriends = null }
     if (sharedUnsubChallenges) { sharedUnsubChallenges(); sharedUnsubChallenges = null }
+    if (inboxCleanup) { inboxCleanup(); inboxCleanup = null }
     sharedActiveUid = null
+    cachedOrdersSnap = null
     sharedRefCount = 1  // Resetear a 1 (el listener recién suscrito)
   }
 
@@ -71,6 +75,39 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
     sharedActiveUid = user.uid
     let pendingReqs = 0
     let pendingChallenges = 0
+
+    const recomputeSupportBadges = (snap = cachedOrdersSnap) => {
+      if (!snap) return
+      let supportUnread = 0
+      const hidden = new Set(getHiddenMails())
+      const lastPurgeAt = getLastPurgeTimestamp()
+      snap.forEach((d: any) => {
+        const ord = d.data() as any
+        const orderId = d.id
+        if (hidden.has(`mail_ord_sup_${orderId}`) || hidden.has(`mail_sup_${orderId}`) || hidden.has(orderId)) {
+          return
+        }
+        const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
+        if (msgs.length > 0) {
+          const lastMsg = msgs[msgs.length - 1]
+          if (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') return
+          if (ord.hasUnreadCashierMessage === false) return
+          const playerReadAt = Number(ord.playerReadAt || 0)
+          const msgTimestamp = Number(lastMsg.timestamp || 0)
+
+          // Candado de consistencia: Si el mensaje es previo a la última purga manual, no contar
+          if (lastPurgeAt > 0 && msgTimestamp <= lastPurgeAt) {
+            return
+          }
+
+          if (playerReadAt < msgTimestamp) {
+            supportUnread++
+          }
+        }
+      })
+      sharedState.unreadSupportCount = supportUnread
+      notifySharedBadges()
+    }
 
     const setupOrdersListener = () => {
       if (typeof document !== 'undefined' && document.hidden) return
@@ -83,35 +120,8 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
       )
 
       sharedUnsubOrders = onSnapshot(qOrders, (snap) => {
-        let supportUnread = 0
-        const hidden = new Set(getHiddenMails())
-        const lastPurgeAt = getLastPurgeTimestamp()
-        snap.forEach((d) => {
-          const ord = d.data() as any
-          const orderId = d.id
-          if (hidden.has(`mail_ord_sup_${orderId}`) || hidden.has(`mail_sup_${orderId}`) || hidden.has(orderId)) {
-            return
-          }
-          const msgs = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
-          if (msgs.length > 0) {
-            const lastMsg = msgs[msgs.length - 1]
-            if (lastMsg.senderUid === user.uid || lastMsg.senderRole === 'player') return
-            if (ord.hasUnreadCashierMessage === false) return
-            const playerReadAt = Number(ord.playerReadAt || 0)
-            const msgTimestamp = Number(lastMsg.timestamp || 0)
-
-            // Candado de consistencia: Si el mensaje es previo a la última purga manual, no contar
-            if (lastPurgeAt > 0 && msgTimestamp <= lastPurgeAt) {
-              return
-            }
-
-            if (playerReadAt < msgTimestamp) {
-              supportUnread++
-            }
-          }
-        })
-        sharedState.unreadSupportCount = supportUnread
-        notifySharedBadges()
+        cachedOrdersSnap = snap
+        recomputeSupportBadges(snap)
       }, () => {})
     }
 
@@ -130,6 +140,12 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibility)
       visibilityCleanup = () => document.removeEventListener('visibilitychange', handleVisibility)
+    }
+
+    if (typeof window !== 'undefined') {
+      const handleInboxEvt = () => recomputeSupportBadges()
+      window.addEventListener('sugar_inbox_updated', handleInboxEvt)
+      inboxCleanup = () => window.removeEventListener('sugar_inbox_updated', handleInboxEvt)
     }
 
     sharedUnsubFriends = subscribeToFriendRequests(user.uid, (received) => {
@@ -167,12 +183,25 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
         visibilityCleanup()
         visibilityCleanup = null
       }
+      if (inboxCleanup) {
+        inboxCleanup()
+        inboxCleanup = null
+      }
     }
   }
 }
 
 function useNavigationBadges(user: any) {
   const [badges, setBadges] = useState(sharedState)
+  const [inboxVersion, setInboxVersion] = useState(0)
+
+  useEffect(() => {
+    const handleUpdate = () => setInboxVersion((v) => v + 1)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('sugar_inbox_updated', handleUpdate)
+      return () => window.removeEventListener('sugar_inbox_updated', handleUpdate)
+    }
+  }, [])
 
   const unreadInboxCount = React.useMemo(() => {
     if (!user || !Array.isArray(user.inbox)) return 0
@@ -193,11 +222,8 @@ function useNavigationBadges(user: any) {
       }
       return !m.isRead || (!m.claimed && (m.rewardSC || 0) > 0)
     })
-    if (passing.length > 0) {
-      console.log('[DEBUG SIDEBAR INBOX] Elementos que generan el badge:', JSON.stringify(passing.map((m: any) => ({ id: m.id, category: m.category, isRead: m.isRead, claimed: m.claimed, rewardSC: m.rewardSC, orderId: m.orderId })), null, 2))
-    }
     return passing.length
-  }, [user?.inbox])
+  }, [user?.inbox, inboxVersion])
 
   useEffect(() => {
     if (!user?.uid || user.uid.startsWith('dev_')) return

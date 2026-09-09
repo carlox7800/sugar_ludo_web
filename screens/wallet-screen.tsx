@@ -19,7 +19,8 @@ import {
   cancelPlayerOrder,
   updateLocalOrderStatus,
   WalletTransaction,
-  PlayerP2POrder
+  PlayerP2POrder,
+  reconcileCompletedDeposits
 } from '@/lib/wallet-service'
 
 export function WalletScreen({ onBack }: { onBack: () => void }) {
@@ -33,7 +34,9 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
   
   const refreshData = () => {
     if (user?.uid) {
-      fetchWalletTransactions(user.uid).then(setTransactions)
+      reconcileCompletedDeposits(user.uid).finally(() => {
+        fetchWalletTransactions(user.uid).then(setTransactions)
+      })
     } else {
       const local = getStoredLocalOrders()
       setActiveOrders(local.filter(o => o.status !== 'completed' && o.status !== 'cancelled'))
@@ -82,12 +85,17 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                 const creditedKey = `sugar_notified_${orderId}`
                 const alreadyNotified = typeof window !== 'undefined' && localStorage.getItem(creditedKey)
                 
+                // Reconciliación automática v9.1.3: Si la orden fue completada pero aún no se acreditó en users/{uid}
+                if (user?.uid && (user as any).lastSettledDepositId !== orderId) {
+                  reconcileCompletedDeposits(user.uid)
+                }
+
                 if (!alreadyNotified) {
                   if (typeof window !== 'undefined') {
                     localStorage.setItem(creditedKey, 'true')
                   }
                   const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
-                  // El saldo se acredita atómicamente en el servidor en users/{uid}. 
+                  // El saldo se acredita atómicamente en el servidor o reconciliador en users/{uid}. 
                   // El cliente solo emite la notificación de éxito para evitar rebotes de mutaciones.
                   showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins.toLocaleString()} SC) ha sido validado y acreditado con éxito!`, 'success')
                 }
