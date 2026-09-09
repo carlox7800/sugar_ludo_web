@@ -76,20 +76,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const setCoins = async (amount: number) => {
     if (amount === coins) return
     setCoinsState(amount)
-    if (user && !user.isDev) {
-      const userRef = doc(db, 'users', user.uid)
-      await updateDoc(userRef, { coins: amount })
-    } else {
+    if (!user || user.isDev) {
       localStorage.setItem('sugar_player_coins', amount.toString())
     }
+    // Para usuarios en producción, el balance se actualiza automáticamente
+    // vía el listener en tiempo real de Firestore (onSnapshot) desde el servidor.
   }
 
   const setGems = async (amount: number) => {
     setGemsState(amount)
-    if (user && !user.isDev) {
-      const userRef = doc(db, 'users', user.uid)
-      await updateDoc(userRef, { diamonds: amount })
-    } else {
+    if (!user || user.isDev) {
       localStorage.setItem('sugar_player_gems', amount.toString())
     }
   }

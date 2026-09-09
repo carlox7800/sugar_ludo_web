@@ -2,16 +2,41 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    function isServerBackend() {
+      return request.auth != null && (
+        request.auth.token.role in ['super_admin', 'server_daemon'] ||
+        request.auth.uid == 'sugar_system_treasury_daemon' ||
+        request.auth.token.email == 'server-treasury@sugarludo.com'
+      );
+    }
+
     // 1. PERFIL DE USUARIOS Y CLASIFICACIÓN GLOBAL (LEADERBOARD)
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      // Creación permitida únicamente al registrarse con saldo inicial máximo de 200 monedas
+      allow create: if request.auth != null && request.auth.uid == userId && 
+                    (!('coins' in request.resource.data) || request.resource.data.coins <= 200) &&
+                    (!('escrowLockedCoins' in request.resource.data) || request.resource.data.escrowLockedCoins == 0) &&
+                    (!('role' in request.resource.data) || request.resource.data.role == 'player');
+      // Actualización: BLINDAJE ZERO-TRUST ABSOLUTO
+      // El jugador JAMÁS puede alterar su saldo (coins), saldo retenido (escrowLockedCoins),
+      // historial contable (walletHistory), rol, estado de baneo o congelamiento.
+      // Cualquier mutación financiera es rechazada si proviene del cliente.
+      allow update: if isServerBackend() || (
+        request.auth != null && request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['coins', 'escrowLockedCoins', 'walletHistory', 'role', 'isBanned', 'isFrozen'])
+      );
+      allow delete: if false;
       
       match /inbox/{mailId} {
-        allow read, write: if true;
+        allow read: if true;
+        allow write: if false;
       }
       
       match /match_history/{matchId} {
-        allow read, write: if true;
+        allow read: if true;
+        allow write: if request.auth != null && request.auth.uid == userId;
       }
     }
     
@@ -30,18 +55,28 @@ service cloud.firestore {
       allow read, write: if true;
     }
     
-    // 5. BILLETERAS Y TRANSACCIONES
+    // 5. BILLETERAS Y TRANSACCIONES (BLINDADAS: Solo backend Admin SDK)
     match /wallets/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
     
     match /transactions/{txId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
 
     // 6. SISTEMA DE CAJEROS P2P, CHAT Y AUDITORÍA
     match /cashier_orders/{orderId} {
-      allow read, write: if true;
+      allow read: if true;
+      // Creación de órdenes en pending por parte de jugadores
+      allow create: if request.resource.data.status == 'pending';
+      // Actualizaciones autorizadas: transiciones de ciclo de vida (pending, paid, verified, completed, cancelled, disputed),
+      // resoluciones de arbitraje o actualizaciones de mensajes y confirmaciones de lectura
+      allow update: if request.resource.data.status in ['pending', 'paid', 'verified', 'completed', 'cancelled', 'disputed', 'resolved_player', 'resolved_cashier'] ||
+                    request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'hasUnreadPlayerMessage', 'playerReadAt', 'payoutTxId', 'receiptReferenceNumber', 'verifiedAt', 'completedAt', 'disputeReason', 'resolutionNotes', 'resolvedBy', 'resolvedAt']);
+      allow delete: if false;
       
       match /messages/{messageId} {
         allow read, write: if true;
@@ -75,6 +110,25 @@ service cloud.firestore {
 
     match /dispute_cases/{disputeId} {
       allow read, write: if true;
+    }
+
+    // 8. COMUNICACIONES INTERNAS DE STAFF Y CHAT DUAL CON CAJEROS
+    match /staff_broadcast_messages/{msgId} {
+      allow read, write: if true;
+    }
+
+    match /staff_private_chats/{chatId} {
+      allow read, write: if true;
+
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+
+    // 9. TORNEOS Y EVENTOS COMPETITIVOS EN VIVO
+    match /tournaments/{tournamentId} {
+      allow read: if true;
+      allow write: if false;
     }
   }
 }

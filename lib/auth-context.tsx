@@ -355,17 +355,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return true
     } else {
       try {
-        const userRef = doc(db, 'users', user.uid)
-        await updateDoc(userRef, {
-          coins: (user.coins ?? 200) - amount
-        })
-        
-        await recordWalletTransaction(user.uid, {
-          type: 'match_fee',
-          amount: -amount,
-          description: 'Entrada Mesa Competitiva'
-        }, true) // skipCoinUpdate = true
-
+        // En cumplimiento de Zero-Trust, el cliente no muta directamente `coins` en Firestore.
+        // Actualizamos el estado reactivo local del usuario inmediatamente.
+        setUser((prev) => (prev ? { ...prev, coins: Math.max(0, (prev.coins ?? 200) - amount) } : null))
         return true
       } catch (error) {
         console.error('Error al debitar monedas:', error)

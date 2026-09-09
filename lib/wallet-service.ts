@@ -117,11 +117,8 @@ export async function recordWalletTransaction(userId: string, tx: Omit<WalletTra
 
     const updates: any = { walletHistory: history }
 
-    if (!skipCoinUpdate) {
-      const currentCoins = Number(userData.coins || 0)
-      updates.coins = currentCoins + tx.amount
-    }
-
+    // En cumplimiento de la regla Zero-Trust, el cliente no muta directamente `coins`.
+    // Las mutaciones de saldo ocurren exclusivamente a través del backend autoritativo.
     await updateDoc(userRef, updates)
   } catch (error) {
     console.error('Error saving wallet transaction:', error)
@@ -281,7 +278,9 @@ export async function createWithdrawOrder(params: {
     })
   } catch {}
 
-  // 2. Retener saldo en Escrow en el perfil del usuario (coins -> escrowLockedCoins) y registrar transacción pendiente
+  // 2. Validación de saldo en lectura (pre-chequeo defensivo)
+  // Nota: La retención formal y atómica del saldo en Escrow la realiza el Servidor Autoritativo
+  // a través de createWithdrawOrderWithEscrow, cumpliendo la regla Zero-Trust de Firestore.
   if (playerUid && !playerUid.startsWith('dev_')) {
     try {
       const userRef = doc(db, 'users', playerUid)
@@ -289,47 +288,14 @@ export async function createWithdrawOrder(params: {
       if (userSnap.exists()) {
         const userData = userSnap.data() || {}
         const currentCoins = Number(userData.coins ?? 200)
-        const currentEscrow = Number(userData.escrowLockedCoins ?? 0)
 
         if (currentCoins < amountSugarCoins) {
           throw new Error(`Saldo insuficiente de Sugar Coins (Disponibles: ${currentCoins} SC, Requeridos: ${amountSugarCoins} SC)`)
         }
-
-        const newCoins = Math.max(0, currentCoins - amountSugarCoins)
-        const newEscrow = currentEscrow + amountSugarCoins
-
-        const now = Date.now()
-        const pendingTx: WalletTransaction = {
-          id: `tx_wit_${now}_${Math.random().toString(36).substring(2, 6)}`,
-          orderId,
-          type: 'withdraw',
-          amount: -amountSugarCoins,
-          description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${orderId.slice(0, 8)})` : `Solicitud de Retiro (Pendiente) (#${orderId.slice(0, 8)})`,
-          timestamp: now,
-          dateStr: new Date(now).toLocaleDateString('es-ES', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          })
-        }
-
-        const existingHistory = Array.isArray(userData.walletHistory) ? userData.walletHistory : []
-        const alreadyHasTx = existingHistory.some((tx: any) => tx.orderId === orderId || (tx.description && tx.description.includes(orderId.slice(0, 8))))
-        const updatedHistory = alreadyHasTx ? existingHistory : [pendingTx, ...existingHistory].slice(0, 50)
-
-        await updateDoc(userRef, {
-          coins: newCoins,
-          escrowLockedCoins: newEscrow,
-          walletHistory: updatedHistory,
-          lastActiveAt: now
-        })
       }
-    } catch (escrowErr: any) {
-      console.warn('[WalletService] Error bloqueando escrow local en cliente:', escrowErr?.message)
-      if (escrowErr?.message?.includes('Saldo insuficiente')) {
-        throw escrowErr
+    } catch (checkErr: any) {
+      if (checkErr?.message?.includes('Saldo insuficiente')) {
+        throw checkErr
       }
     }
   }
@@ -476,56 +442,15 @@ export async function cancelPlayerOrder(playerUid: string, orderId: string): Pro
     })
   } catch {}
 
-  // Reembolsar saldo de Escrow hacia coins y actualizar historial del usuario para reflejar que la orden fue cancelada
-  try {
-    const userRef = doc(db, 'users', playerUid)
-    const userSnap = await getDoc(userRef)
-    if (userSnap.exists()) {
-      const userData = userSnap.data() || {}
-      const currentCoins = Number(userData.coins ?? 200)
-      const currentEscrow = Number(userData.escrowLockedCoins ?? 0)
+  // En cumplimiento de Zero-Trust, el reembolso de escrow y acreditación de saldo lo realiza
+  // exclusivamente el servidor autoritativo a través de cancelWithdrawOrderAtomics.
+  // El cliente no muta `coins` ni `escrowLockedCoins` directamente.
 
-      // Determinar monto a reembolsar
-      let refundAmount = 0
-      const stored = getStoredLocalOrders()
-      const targetOrder = stored.find(o => o.id === orderId)
-      if (targetOrder && targetOrder.type === 'withdraw') {
-        refundAmount = Number(targetOrder.amountSugarCoins || (targetOrder.amountFiat * 100))
-      }
-
-      const history: WalletTransaction[] = userData.walletHistory || []
-      let modified = false
-      const updatedHistory = history.map((tx) => {
-        if (!modified && tx.description && tx.description.includes(orderId.slice(0, 8)) && tx.description.includes('(Pendiente)')) {
-          modified = true
-          if (!refundAmount && tx.amount < 0) {
-            refundAmount = Math.abs(tx.amount)
-          }
-          return {
-            ...tx,
-            description: tx.description.replace('(Pendiente)', '(Cancelada)'),
-            amount: 0
-          }
-        }
-        return tx
-      })
-
-      const updates: any = {
-        walletHistory: updatedHistory,
-        lastActiveAt: Date.now()
-      }
-
-      if (refundAmount > 0) {
-        updates.coins = currentCoins + refundAmount
-        updates.escrowLockedCoins = Math.max(0, currentEscrow - refundAmount)
-      }
-
-      await updateDoc(userRef, updates)
-    }
-  } catch (histErr) {
-    console.warn('[WalletService] Error actualizando historial cancelado y reembolso:', histErr)
+  return { 
+    success: true, 
+    message: cancelledOnServer 
+      ? 'Solicitud cancelada con éxito y saldo liberado por el servidor.' 
+      : 'Solicitud cancelada con éxito.' 
   }
-
-  return { success: true, message: 'Solicitud cancelada con éxito' }
 }
 

@@ -2,18 +2,31 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    function isServerBackend() {
+      return request.auth != null && (
+        request.auth.token.role in ['super_admin', 'server_daemon'] ||
+        request.auth.uid == 'sugar_system_treasury_daemon' ||
+        request.auth.token.email == 'server-treasury@sugarludo.com'
+      );
+    }
+
     // 1. PERFIL DE USUARIOS Y CLASIFICACIÓN GLOBAL (LEADERBOARD)
     match /users/{userId} {
       allow read: if true;
-      // Creación permitida para el propio usuario con bono inicial máximo de 200 monedas
+      // Creación permitida únicamente al registrarse con saldo inicial máximo de 200 monedas
       allow create: if request.auth != null && request.auth.uid == userId && 
-                    (!('coins' in request.resource.data) || request.resource.data.coins <= 200);
-      // Actualización: Permitida para el usuario propio o actualizaciones de acreditación/retención financiera
-      allow update: if (request.auth != null && request.auth.uid == userId &&
-                        !request.resource.data.diff(resource.data).affectedKeys()
-                          .hasAny(['role', 'isBanned', 'isFrozen'])) ||
-                       (request.resource.data.diff(resource.data).affectedKeys()
-                          .hasOnly(['coins', 'escrowLockedCoins', 'walletHistory', 'lastActiveAt', 'inbox']));
+                    (!('coins' in request.resource.data) || request.resource.data.coins <= 200) &&
+                    (!('escrowLockedCoins' in request.resource.data) || request.resource.data.escrowLockedCoins == 0) &&
+                    (!('role' in request.resource.data) || request.resource.data.role == 'player');
+      // Actualización: BLINDAJE ZERO-TRUST ABSOLUTO
+      // El jugador JAMÁS puede alterar su saldo (coins), saldo retenido (escrowLockedCoins),
+      // historial contable (walletHistory), rol, estado de baneo o congelamiento.
+      // Cualquier mutación financiera es rechazada si proviene del cliente.
+      allow update: if isServerBackend() || (
+        request.auth != null && request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['coins', 'escrowLockedCoins', 'walletHistory', 'role', 'isBanned', 'isFrozen'])
+      );
       allow delete: if false;
       
       match /inbox/{mailId} {

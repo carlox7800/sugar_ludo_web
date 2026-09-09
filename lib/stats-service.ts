@@ -95,7 +95,9 @@ export async function recordMatchResult(userId: string, matchData: Omit<MatchRec
       history = history.slice(0, 30)
     }
 
-    // 2. Update user profile document in Firestore
+    // 2. Update user profile document in Firestore (stats, xp, level, rankPoints)
+    // Nota: Las monedas de premio se liquidan por el motor autoritativo de juego,
+    // respetando la prohibición Zero-Trust de mutación client-side de `coins`.
     await updateDoc(userRef, {
       xp: newXp,
       level: newLevel,
@@ -104,7 +106,6 @@ export async function recordMatchResult(userId: string, matchData: Omit<MatchRec
       totalGames: newGames,
       rankPoints: newRankPoints,
       winStreak: newWinStreak,
-      coins: newCoins,
       matchHistory: history,
     })
 

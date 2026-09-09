@@ -495,21 +495,22 @@ export async function purchaseCoinPackage(userId: string, packageId: string): Pr
   if (!pkg) return { success: false, coinsAdded: 0, message: 'Paquete no encontrado' }
 
   if (userId && !userId.startsWith('dev_')) {
-    await recordWalletTransaction(userId, {
-      type: 'deposit',
-      amount: pkg.totalCoins,
-      description: `Recarga de Monedas: ${pkg.name} ($${pkg.usdtCost} USDT)`
-    })
+    // Por motivos de seguridad y blindaje financiero Zero-Trust, las recargas de saldo
+    // se gestionan a través de la Billetera P2P con cajeros autorizados.
+    return {
+      success: false,
+      coinsAdded: 0,
+      message: 'Las compras y recargas de Sugar Coins se canalizan de forma segura a través de la Billetera P2P con nuestros cajeros verificados.'
+    }
   } else {
     // Local / Dev Fallback
     const current = parseInt(localStorage.getItem('sugar_player_coins') || '200', 10)
     localStorage.setItem('sugar_player_coins', (current + pkg.totalCoins).toString())
-  }
-
-  return {
-    success: true,
-    coinsAdded: pkg.totalCoins,
-    message: `¡Has adquirido ${pkg.totalCoins} Sugar Coins con éxito!`
+    return {
+      success: true,
+      coinsAdded: pkg.totalCoins,
+      message: `[MODO DEV] ¡Has adquirido ${pkg.totalCoins} Sugar Coins con éxito!`
+    }
   }
 }
 
