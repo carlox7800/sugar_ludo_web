@@ -39,32 +39,30 @@ import {
   claimAllRewards, 
   markMailAsRead,
   markAllMailsAsRead,
-  replySupportMail,
-  deleteMailsBatch,
-  getHiddenMails,
-  purgeOrphanInboxItems
+  replySupportMail
 } from '@/lib/mail-service'
 
 export function MailScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const { coins, setCoins } = usePlayer()
 
-  const [activeTab, setActiveTab] = useState<'all' | 'rewards' | 'system' | 'support'>('all')
+  const [activeTab, setActiveTab] = useState<'rewards' | 'system' | 'support'>('rewards')
   const [mailList, setMailList] = useState<MailItem[]>([])
   const [selectedMail, setSelectedMail] = useState<MailItem | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [isSelectionMode, setIsSelectionMode] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
-  const hasUserSwitchedTab = useRef(false)
-  // Ref para registrar órdenes ya marcadas como leídas en Firestore en esta sesión.
-  // Evita que Efecto B escriba repetidamente cuando el listener onSnapshot llega con datos idénticos.
-  const markedReadOrderIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     setIsMounted(true)
+    // Limpieza de claves obsoletas de localStorage de versiones anteriores
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('sugar_hidden_mails')
+        localStorage.removeItem('sugar_last_inbox_purge_at')
+      } catch {}
+    }
   }, [])
 
   // Auto-scroll to latest message when chat modal is open or new message arrives
@@ -82,71 +80,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     setTimeout(() => setToastMessage(null), 3500)
   }
 
-  const handleToggleSelect = (mailId: string, e?: React.MouseEvent) => {
-    e?.stopPropagation()
-    setSelectedIds((prev) =>
-      prev.includes(mailId) ? prev.filter((id) => id !== mailId) : [...prev, mailId]
-    )
-  }
-
-  const handleSelectAll = () => {
-    const currentTabMails = filteredMails.map((m) => m.id)
-    const allSelected = currentTabMails.length > 0 && currentTabMails.every((id) => selectedIds.includes(id))
-    if (allSelected) {
-      // Deseleccionar los de esta pestaña
-      setSelectedIds((prev) => prev.filter((id) => !currentTabMails.includes(id)))
-    } else {
-      // Seleccionar todos los de esta pestaña
-      const combined = Array.from(new Set([...selectedIds, ...currentTabMails]))
-      setSelectedIds(combined)
-    }
-  }
-
-  const handleDeleteSelected = async () => {
-    if (selectedIds.length === 0) return
-    const idsToDelete = [...selectedIds]
-    await deleteMailsBatch(user?.uid, idsToDelete)
-    setMailList((prev) => prev.filter((m) => !idsToDelete.includes(m.id)))
-    setSelectedIds([])
-    setIsSelectionMode(false)
-    showToast(`🗑️ ${idsToDelete.length} ${idsToDelete.length === 1 ? 'mensaje eliminado' : 'mensajes eliminados'}`)
-  }
-
-  const handleClearReadOrClaimed = async () => {
-    // Mails de la pestaña activa que ya están leídos o cobrados
-    const eligibleToDelete = filteredMails
-      .filter((m) => {
-        if (m.category === 'rewards') return m.claimed === true
-        return m.isRead === true
-      })
-      .map((m) => m.id)
-
-    if (eligibleToDelete.length === 0) {
-      showToast('No hay mensajes leídos o cobrados para limpiar en esta pestaña.')
-      return
-    }
-
-    await deleteMailsBatch(user?.uid, eligibleToDelete)
-    setMailList((prev) => prev.filter((m) => !eligibleToDelete.includes(m.id)))
-    setSelectedIds((prev) => prev.filter((id) => !eligibleToDelete.includes(id)))
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-    }
-    showToast(`🧹 Se limpiaron ${eligibleToDelete.length} ${eligibleToDelete.length === 1 ? 'mensaje archivado' : 'mensajes archivados'}`)
-  }
-
-  const handlePurgeOrphans = async () => {
-    // Purga agresiva: marca como leídos/reclamados TODOS los elementos de user.inbox en Firestore
-    // incluidos huérfanos invisibles que producen el badge fantasma
-    await purgeOrphanInboxItems(user?.uid)
-    setMailList([])
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-    }
-    showToast('🧹 Buzón purgado completamente. Todos los registros marcados como leídos.')
-  }
-
-  // Helper para normalizar categoría y evitar correos huérfanos invisibles
+  // Normalizar categoría de correo
   const normalizeMail = (m: any): MailItem => ({
     ...m,
     category: (m.category === 'rewards' || m.category === 'support') ? m.category : 'system'
@@ -156,10 +90,9 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   const loadInbox = async () => {
     try {
       const inbox = await fetchUserInbox(user?.uid)
-      const hidden = new Set(getHiddenMails())
-      const userMails = inbox.map(normalizeMail).filter(m => !hidden.has(m.id))
+      const userMails = inbox.map(normalizeMail)
       setMailList((prev) => {
-        const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
+        const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_'))
         const supportOrderIds = new Set(supportFromOrders.map(m => m.orderId).filter(Boolean))
         const nonOrderMails = userMails.filter(m => 
           !m.id.startsWith('mail_ord_sup_') && 
@@ -179,16 +112,14 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     if (!user?.uid || user?.uid.startsWith('dev_')) return
     if (Array.isArray(user.inbox)) {
-      const hidden = new Set(getHiddenMails())
       setMailList((prev) => {
-        const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
+        const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_'))
         const supportOrderIds = new Set(supportFromOrders.map(m => m.orderId).filter(Boolean))
         const userMails = user.inbox!
           .map(normalizeMail)
           .filter((m: any) => 
             !m.id.startsWith('mail_ord_sup_') && 
-            (!m.orderId || !supportOrderIds.has(m.orderId)) && 
-            !hidden.has(m.id)
+            (!m.orderId || !supportOrderIds.has(m.orderId))
           )
         const combined = [...supportFromOrders, ...userMails]
         return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
@@ -200,41 +131,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
   }, [user?.inbox, selectedMail?.id])
 
-  // Auto-marcar mensajes de soporte de cajeros como leídos en Firestore al estar en la pestaña Soporte o Todos.
-  // CANDADO ANTI-BUCLE: Ejecuta updateDoc fuera de setMailList para evitar efectos secundarios en React.
-  useEffect(() => {
-    if (!user?.uid || user.uid.startsWith('dev_')) return
-    if (activeTab !== 'support' && activeTab !== 'all') return
-
-    const unreadOrders = mailList.filter(
-      m => m.category === 'support' && !m.isRead && m.orderId
-          && !markedReadOrderIds.current.has(m.orderId)
-    )
-    if (unreadOrders.length === 0) return
-
-    const now = Date.now()
-    unreadOrders.forEach(m => markedReadOrderIds.current.add(m.orderId!))
-
-    // Actualizar estado local reactivo
-    setMailList(prev => prev.map(m => (m.category === 'support' && !m.isRead) ? { ...m, isRead: true } : m))
-
-    // Escritura asíncrona fire-and-forget en Firestore
-    const batch = unreadOrders.map(m => {
-      const orderRef = doc(db, 'cashier_orders', m.orderId!)
-      return updateDoc(orderRef, {
-        playerReadAt: now,
-        hasUnreadCashierMessage: false
-      }).catch(() => {})
-    })
-
-    Promise.all(batch).then(() => {
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-      }
-    })
-  }, [activeTab, user?.uid, mailList])
-
-  // 2. Escuchar mensajes de soporte P2P desde cashier_orders con limit(20) y pausa por visibilidad
+  // 2. Escuchar mensajes de soporte P2P y comprobantes desde cashier_orders con limit(20) y pausa por visibilidad
   useEffect(() => {
     loadInbox()
     if (!user?.uid || user?.uid.startsWith('dev_')) return
@@ -246,6 +143,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
       if (unsubOrders) return
 
       try {
+        const { limit } = require('firebase/firestore')
         const qOrders = query(
           collection(db, 'cashier_orders'),
           where('playerUid', '==', user.uid),
@@ -255,29 +153,11 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
           qOrders,
           (snapshot) => {
             const orderSupportMails: MailItem[] = []
-            const hidden = new Set(getHiddenMails())
 
             snapshot.forEach((docSnap) => {
               const ord = docSnap.data() as any
               const orderId = docSnap.id
               const mailKey = `mail_ord_sup_${orderId}`
-              const isHidden = hidden.has(mailKey) || hidden.has(`mail_sup_${orderId}`) || hidden.has(orderId)
-
-              // Auto-saneamiento: Si una orden está oculta o huérfana pero aún figura como no leída en Firestore, limpiarla.
-              // CANDADO: Solo si aún no fue procesada en esta sesión para evitar escrituras cíclicas.
-              if (isHidden && ord.hasUnreadCashierMessage !== false && !markedReadOrderIds.current.has(orderId)) {
-                markedReadOrderIds.current.add(orderId)
-                try {
-                  const orderRef = doc(db, 'cashier_orders', orderId)
-                  updateDoc(orderRef, {
-                    hasUnreadCashierMessage: false,
-                    playerReadAt: Date.now()
-                  }).catch(() => {})
-                } catch {}
-              }
-
-              if (isHidden) return
-
               const orderMessages = Array.isArray(ord.supportMessages) ? ord.supportMessages : []
               const playerReadAt = Number(ord.playerReadAt || 0)
 
@@ -328,7 +208,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                   replies
                 })
               } else if (ord.status === 'completed') {
-                // Fallback de resiliencia: Si la orden está completada pero supportMessages aún no se cargó
+                // Comprobante de orden completada
                 const fallbackTime = Number(ord.completedAt || ord.lastMessageTime || ord.createdAt || Date.now())
                 const isWithdraw = ord.type === 'withdraw'
                 const isUnread = ord.hasUnreadCashierMessage !== false && playerReadAt < fallbackTime
@@ -363,8 +243,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               const orderIdsInSupport = new Set(orderSupportMails.map(m => m.orderId).filter(Boolean))
               const nonOrderMails = prev.filter(m => 
                 !m.id.startsWith('mail_ord_sup_') && 
-                (!m.orderId || !orderIdsInSupport.has(m.orderId)) && 
-                !hidden.has(m.id)
+                (!m.orderId || !orderIdsInSupport.has(m.orderId))
               )
               const combined = [...orderSupportMails, ...nonOrderMails]
 
@@ -528,23 +407,13 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     showToast('✔️ Todos los mensajes marcados como leídos.')
   }
 
-  // Auto-selección inteligente de pestaña: Si hay soporte no leído y el usuario no ha cambiado manualmente, enfocar soporte
-  useEffect(() => {
-    if (hasUserSwitchedTab.current) return
-    const hasUnreadSupport = mailList.some(m => m.category === 'support' && !m.isRead)
-    if (hasUnreadSupport && activeTab !== 'support') {
-      setActiveTab('support')
-    }
-  }, [mailList, activeTab])
-
   const filteredMails = mailList
     .map(normalizeMail)
-    .filter(m => activeTab === 'all' ? true : m.category === activeTab)
+    .filter(m => m.category === activeTab)
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
   const unreadRewardsCount = mailList.filter(m => m.category === 'rewards' && !m.claimed).length
   const unreadSystemCount = mailList.filter(m => normalizeMail(m).category === 'system' && !m.isRead).length
   const unreadSupportCount = mailList.filter(m => m.category === 'support' && !m.isRead).length
-  const totalUnreadAll = unreadRewardsCount + unreadSystemCount + unreadSupportCount
 
   return (
     <section className="animate-slide-in mx-auto flex w-full max-w-5xl flex-col gap-5 p-2 sm:p-4">
@@ -576,49 +445,33 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
-        {/* Global Action Button */}
-        {(activeTab === 'rewards' || activeTab === 'all') && unreadRewardsCount > 0 && (
+        {/* Global Action Buttons */}
+        <div className="flex items-center gap-2">
+          {activeTab === 'rewards' && unreadRewardsCount > 0 && (
+            <button
+              onClick={handleClaimAll}
+              className="btn-3d flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#10b981,#059669)] px-4 py-2 font-display text-xs font-black text-white shadow-lg hover:scale-105 transition-all cursor-pointer"
+            >
+              <CheckCheck className="size-4" />
+              <span>Reclamar Todo ({unreadRewardsCount})</span>
+            </button>
+          )}
+
           <button
-            onClick={handleClaimAll}
-            className="btn-3d flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#10b981,#059669)] px-4 py-2 font-display text-xs font-black text-white shadow-lg hover:scale-105 transition-all cursor-pointer"
+            onClick={handleMarkAllAsRead}
+            title="Marcar todos como leídos"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-white/5 hover:bg-emerald-500/10 border border-border/50 transition-all cursor-pointer"
           >
-            <CheckCheck className="size-4" />
-            <span>Reclamar Todo ({unreadRewardsCount})</span>
+            <CheckCheck className="size-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Marcar Leídos</span>
           </button>
-        )}
+        </div>
       </div>
 
-      {/* Main Navigation Tabs: 4 TABS (Todos, Recompensas, Sistema, Soporte) */}
-      <div className="grid grid-cols-4 gap-1.5 sm:gap-2 rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/80">
+      {/* Main Navigation Tabs: 3 TABS (Recompensas, Avisos / Sistema, Soporte P2P) */}
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2 rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/80">
         <button
-          onClick={() => {
-            hasUserSwitchedTab.current = true
-            setActiveTab('all')
-            setSelectedIds([])
-          }}
-          className={cn(
-            "flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
-            activeTab === 'all'
-              ? "bg-[linear-gradient(145deg,var(--candy-magenta),oklch(0.6_0.25_350))] text-white shadow-lg shadow-[var(--candy-magenta)]/25"
-              : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
-          )}
-        >
-          <Mail className="size-4" />
-          <span className="hidden sm:inline">Todos</span>
-          <span className="sm:hidden">Todos</span>
-          {totalUnreadAll > 0 && (
-            <span className="size-4 sm:size-5 rounded-full bg-rose-500 text-[9px] sm:text-[10px] font-black text-white flex items-center justify-center shadow-md">
-              {totalUnreadAll}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => {
-            hasUserSwitchedTab.current = true
-            setActiveTab('rewards')
-            setSelectedIds([])
-          }}
+          onClick={() => setActiveTab('rewards')}
           className={cn(
             "flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'rewards'
@@ -637,11 +490,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         </button>
 
         <button
-          onClick={() => {
-            hasUserSwitchedTab.current = true
-            setActiveTab('system')
-            setSelectedIds([])
-          }}
+          onClick={() => setActiveTab('system')}
           className={cn(
             "flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'system'
@@ -660,11 +509,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         </button>
 
         <button
-          onClick={() => {
-            hasUserSwitchedTab.current = true
-            setActiveTab('support')
-            setSelectedIds([])
-          }}
+          onClick={() => setActiveTab('support')}
           className={cn(
             "flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'support'
@@ -683,88 +528,6 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         </button>
       </div>
 
-      {/* BARRA DE HERRAMIENTAS DE GESTIÓN Y LIMPIEZA */}
-      {filteredMails.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2.5 px-3 py-2 rounded-2xl bg-white/[0.02] border border-border/60">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                if (isSelectionMode) {
-                  setSelectedIds([])
-                  setIsSelectionMode(false)
-                } else {
-                  setIsSelectionMode(true)
-                }
-              }}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
-                isSelectionMode
-                  ? "bg-[var(--candy-magenta)] text-white shadow-md"
-                  : "bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white"
-              )}
-            >
-              <CheckSquare className="size-3.5" />
-              <span>{isSelectionMode ? 'Cancelar Selección' : 'Seleccionar Mensajes'}</span>
-            </button>
-
-            {isSelectionMode && (
-              <button
-                onClick={handleSelectAll}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 transition-all cursor-pointer"
-              >
-                <span>
-                  {filteredMails.every((m) => selectedIds.includes(m.id))
-                    ? 'Deseleccionar Todos'
-                    : 'Seleccionar Todos'}
-                </span>
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isSelectionMode && selectedIds.length > 0 && (
-              <button
-                onClick={handleDeleteSelected}
-                className="btn-3d flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black shadow-md shadow-rose-900/30 transition-all cursor-pointer animate-in zoom-in-95"
-              >
-                <Trash2 className="size-3.5" />
-                <span>Eliminar ({selectedIds.length})</span>
-              </button>
-            )}
-
-            {!isSelectionMode && (
-              <button
-                onClick={handleMarkAllAsRead}
-                title="Marcar todos los mensajes como leídos"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-white/5 hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/20 transition-all cursor-pointer"
-              >
-                <CheckCheck className="size-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">Marcar Leídos</span>
-                <span className="sm:hidden">Leídos</span>
-              </button>
-            )}
-
-            {!isSelectionMode && (
-              <button
-                onClick={handleClearReadOrClaimed}
-                title={
-                  activeTab === 'rewards'
-                    ? 'Limpiar recompensas ya cobradas'
-                    : 'Limpiar notificaciones ya leídas'
-                }
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-400 hover:text-rose-300 bg-white/5 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
-              >
-                <Trash2 className="size-3.5" />
-                <span className="hidden sm:inline">
-                  {activeTab === 'rewards' ? 'Limpiar Cobrados' : 'Limpiar Leídos'}
-                </span>
-                <span className="sm:hidden">Limpiar</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* LISTA DE MENSAJES */}
       <div className="flex flex-col gap-3 animate-in fade-in">
         {filteredMails.length === 0 ? (
@@ -773,58 +536,25 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
             <h3 className="font-display text-lg font-bold text-foreground">Tu buzón está vacío</h3>
             <p className="text-xs text-muted-foreground max-w-sm">
               {activeTab === 'support'
-                ? 'No tienes consultas o mensajes de cajeros pendientes. Las notificaciones de soporte aparecerán aquí.'
+                ? 'No tienes consultas o mensajes de cajeros pendientes. Las notificaciones de soporte y comprobantes aparecerán aquí.'
                 : 'No tienes mensajes nuevos en esta categoría. Las recompensas y anuncios aparecerán aquí.'}
             </p>
-            <button
-              onClick={handlePurgeOrphans}
-              className="mt-3 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all cursor-pointer"
-              title="Borrar todos los registros de inbox en Firestore para resetear el badge del menú lateral"
-            >
-              <Trash2 className="size-3.5" />
-              <span>Limpiar Todo (Resetear Badge)</span>
-            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
             {filteredMails.map((mail) => {
-              const isSelected = selectedIds.includes(mail.id)
               return (
                 <div
                   key={mail.id}
-                  onClick={() => {
-                    if (isSelectionMode) {
-                      handleToggleSelect(mail.id)
-                    } else {
-                      handleOpenMail(mail)
-                    }
-                  }}
+                  onClick={() => handleOpenMail(mail)}
                   className={cn(
                     "glass flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer shadow-md gap-4 relative",
-                    isSelected
-                      ? "border-[var(--candy-magenta)] bg-[var(--candy-magenta)]/10 ring-1 ring-[var(--candy-magenta)]/40"
-                      : !mail.isRead
+                    !mail.isRead
                       ? "border-[var(--candy-magenta)]/50 bg-[oklch(1_0_0/0.04)] shadow-[0_0_15px_rgba(255,34,119,0.1)]"
                       : "border-border/70 bg-[oklch(1_0_0/0.01)] opacity-80 hover:opacity-100"
                   )}
                 >
                   <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
-                    {/* Checkbox de Selección */}
-                    {isSelectionMode && (
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleSelect(mail.id, e)}
-                        className={cn(
-                          "size-6 rounded-lg border flex items-center justify-center transition-all shrink-0 cursor-pointer",
-                          isSelected
-                            ? "bg-[var(--candy-magenta)] border-[var(--candy-magenta)] text-white shadow-sm"
-                            : "border-slate-500 bg-white/5 hover:border-slate-300"
-                        )}
-                        aria-label="Seleccionar mensaje"
-                      >
-                        {isSelected && <Check className="size-4 stroke-[3]" />}
-                      </button>
-                    )}
 
                     <div className={cn(
                       "size-12 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-inner border",
@@ -904,7 +634,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                       </div>
                     )}
 
-                    {!mail.rewardSC && !isSelectionMode && (
+                    {!mail.rewardSC && (
                       <ChevronRight className="size-5 text-muted-foreground/60 hidden sm:block" />
                     )}
                   </div>

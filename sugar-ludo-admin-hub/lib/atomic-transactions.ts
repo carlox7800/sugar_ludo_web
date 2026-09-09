@@ -152,7 +152,6 @@ export async function approveDepositOrder(params: {
 
           transaction.update(playerRef, {
             coins: newPlayerCoins,
-            lastSettledDepositId: order.id,
             walletHistory: updatedHistory,
             lastActiveAt: now
           })
@@ -334,7 +333,6 @@ export async function approveDepositOrder(params: {
 
         await updateDoc(userDocRef, {
           coins: currentCoins + amountCoins,
-          lastSettledDepositId: orderData.id,
           walletHistory: updatedHistory.slice(0, 50),
           lastActiveAt: now
         })
