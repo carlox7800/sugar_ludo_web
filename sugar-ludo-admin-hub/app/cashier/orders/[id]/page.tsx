@@ -540,19 +540,29 @@ Hola ${order.playerName}, hemos enviado tus fondos a tu cuenta de destino:
 Conserva este mensaje como comprobante formal de la transacción.`
 
       await handleSendMessage(payoutNoticeText)
+
+      setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalPayoutRef } : null))
+      setIsPayoutModalOpen(false)
+      setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${finalPayoutRef}!`)
+      setTimeout(() => setNotification(null), 4000)
     } catch (e: any) {
       cashierLogger.error(`Error durante la liquidación de retiro #${order.id.slice(0, 8)}`, {
         code: e?.code,
         message: e?.message
       })
+      // REVERSIÓN: Si el backend rechazó la orden (ej: FLOAT_INSUFFICIENT), revertir optimistic update
+      OrdersCache.updateOrder(order)
+      if (typeof window !== 'undefined') {
+        const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
+        const reverted = localOrders.map((o) => (o.id === order.id ? order : o))
+        localStorage.setItem('sugar_cashier_orders', JSON.stringify(reverted))
+      }
+      setOrder(order)
+      setIsPayoutModalOpen(false)
+      setNotification({ message: `⛔ ERROR: ${e?.message || 'No se pudo liquidar la orden'}`, type: 'error' })
     } finally {
       setIsValidatingPayout(false)
     }
-
-    setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalPayoutRef } : null))
-    setIsPayoutModalOpen(false)
-    setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${finalPayoutRef}!`)
-    setTimeout(() => setNotification(null), 4000)
   }
 
   const handleCopyHash = (text: string) => {

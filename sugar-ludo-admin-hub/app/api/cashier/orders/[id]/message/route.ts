@@ -93,6 +93,49 @@ export async function POST(
       } catch {}
     }
 
+    // 4.1. Asegurar persistencia autoritativa del mensaje y flags en cashier_orders/{orderId}
+    try {
+      if (adminDb && adminDb.collection) {
+        const orderDocRef = adminDb.collection('cashier_orders').doc(orderId)
+        const orderSnap = await orderDocRef.get()
+        if (orderSnap.exists) {
+          const ordData = orderSnap.data() || {}
+          const curMsgs = Array.isArray(ordData.supportMessages) ? ordData.supportMessages : []
+          await orderDocRef.update({
+            supportMessages: [...curMsgs, {
+              id: msgId,
+              orderId,
+              senderUid: senderUid || 'csh_primary',
+              senderName: senderName || 'Cajero',
+              senderRole: senderRole || 'cashier',
+              message: message.trim(),
+              timestamp,
+              attachmentUrl: attachmentUrl || null
+            }],
+            lastMessage: message.trim(),
+            lastMessageTime: timestamp,
+            hasUnreadCashierMessage: true
+          })
+        }
+      } else {
+        // Fallback Firestore REST API para cashier_orders/{orderId}
+        const patchOrderUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/cashier_orders/${orderId}?updateMask.fieldPaths=lastMessage&updateMask.fieldPaths=lastMessageTime&updateMask.fieldPaths=hasUnreadCashierMessage`
+        fetch(patchOrderUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              lastMessage: { stringValue: message.trim() },
+              lastMessageTime: { integerValue: String(timestamp) },
+              hasUnreadCashierMessage: { booleanValue: true }
+            }
+          })
+        }).catch(() => {})
+      }
+    } catch (ordErr) {
+      console.warn('[MessageAPI] Error actualizando supportMessages en orden:', ordErr)
+    }
+
     // 5. Inyectar/actualizar correo en el inbox del jugador via Firestore REST y adminDb
     if (playerUid) {
       const replyItem: any = {
