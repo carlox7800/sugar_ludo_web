@@ -8,10 +8,20 @@ service cloud.firestore {
       // Creación permitida para el propio usuario con bono inicial máximo de 200 monedas
       allow create: if request.auth != null && request.auth.uid == userId && 
                     (!('coins' in request.resource.data) || request.resource.data.coins <= 200);
-      // Actualización: Permitida para el usuario propio (sin tocar escrowLockedCoins ni roles de baneo) o actualizaciones de acreditación financiera
+      // Actualización: Permitida para el usuario propio (incluyendo retención de saldo en Escrow donde la suma de coins y escrowLockedCoins se conserva estrictamente) o actualizaciones de acreditación financiera
       allow update: if (request.auth != null && request.auth.uid == userId &&
-                        !request.resource.data.diff(resource.data).affectedKeys()
-                          .hasAny(['escrowLockedCoins', 'role', 'isBanned', 'isFrozen'])) ||
+                        (
+                          // Caso 1: Actualizaciones estándar sin tocar roles ni campos restringidos
+                          (!request.resource.data.diff(resource.data).affectedKeys()
+                            .hasAny(['escrowLockedCoins', 'role', 'isBanned', 'isFrozen'])) ||
+                          // Caso 2: Retención legítima por retiro (Escrow Lock): Conservación matemática estricta del balance total
+                          (!request.resource.data.diff(resource.data).affectedKeys()
+                            .hasAny(['role', 'isBanned', 'isFrozen']) &&
+                           request.resource.data.coins >= 0 &&
+                           request.resource.data.escrowLockedCoins >= 0 &&
+                           (request.resource.data.coins + request.resource.data.escrowLockedCoins) == 
+                           (resource.data.coins + resource.data.escrowLockedCoins))
+                        )) ||
                        (request.resource.data.diff(resource.data).affectedKeys()
                           .hasOnly(['coins', 'walletHistory', 'lastActiveAt', 'inbox']));
       allow delete: if false;
@@ -58,9 +68,13 @@ service cloud.firestore {
       allow read: if true;
       // Creación de órdenes en pending por parte de jugadores
       allow create: if request.resource.data.status == 'pending';
-      // Cancelación de órdenes pendientes, liquidaciones autorizadas o actualizaciones de chat y lectura
+      // Cancelación de órdenes pendientes, liquidaciones autorizadas, o actualizaciones de orden propia / chat / lectura
       allow update: if (resource.data.status == 'pending' && (request.resource.data.status == 'cancelled' || request.resource.data.status == 'completed')) ||
                     request.resource.data.status == 'completed' ||
+                    (request.auth != null && resource.data.playerUid == request.auth.uid && resource.data.status == 'pending') ||
+                    (request.auth != null && resource.data.playerUid == request.auth.uid && 
+                     request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['playerReadAt', 'hasUnreadCashierMessage', 'supportMessages', 'messages', 'lastMessage', 'lastMessageTime'])) ||
                     request.resource.data.diff(resource.data).affectedKeys()
                       .hasOnly(['messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'playerReadAt']);
       allow delete: if false;
