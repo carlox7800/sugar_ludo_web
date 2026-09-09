@@ -323,12 +323,22 @@ export default function OrderDetailPage() {
         cleanMsg.attachmentUrl = attachmentUrl
       }
 
-      await updateDoc(orderDocRef, {
-        supportMessages: [...existingMsgs, cleanMsg],
-        lastMessage: text.trim(),
-        lastMessageTime: Date.now(),
-        hasUnreadCashierMessage: true
-      })
+      if (!orderSnap.exists()) {
+        await setDoc(orderDocRef, {
+          ...order,
+          supportMessages: [cleanMsg],
+          lastMessage: text.trim(),
+          lastMessageTime: Date.now(),
+          hasUnreadCashierMessage: true
+        }, { merge: true })
+      } else {
+        await updateDoc(orderDocRef, {
+          supportMessages: [...existingMsgs, cleanMsg],
+          lastMessage: text.trim(),
+          lastMessageTime: Date.now(),
+          hasUnreadCashierMessage: true
+        })
+      }
       cashierLogger.firestore(`Mensaje guardado exitosamente en cashier_orders/${order.id}`)
     } catch (fsErr: any) {
       cashierLogger.error(`Error guardando mensaje en cashier_orders/${order.id}`, {

@@ -109,17 +109,22 @@ service cloud.firestore {
         // b) Mensajería y Lecturas de Soporte: Jugador, Cajero o Soporte autenticado/cliente
         // Permite agregar mensajes a supportMessages, actualizar banderas de lectura y marcas de tiempo
         request.auth != null &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'coins', 'amountFiat', 'amountSugarCoins']) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'coins', 'amountFiat', 'amountSugarCoins', 'playerUid']) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['supportMessages', 'lastMessage', 'lastMessageTime',
                     'hasUnreadCashierMessage', 'hasUnreadPlayerMessage',
                     'playerReadAt', 'cashierReadAt',
                     'receiptUrl', 'receiptReferenceNumber', 'payoutTxId'])
       ) || (
-        // c) Transiciones legítimas de ciclo de vida (excluyendo 'completed', que es exclusivo del backend financiero)
-        request.auth != null &&
-        request.resource.data.status in ['pending', 'paid', 'verified', 'cancelled', 'disputed', 'resolved_player', 'resolved_cashier'] &&
-        resource.data.status != 'completed'
+        // c) Transiciones legítimas de ciclo de vida con estado válido y preservación estricta de saldo/monto
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins', 'amountFiat', 'amountSugarCoins', 'playerUid']) &&
+        request.resource.data.status in ['pending', 'paid', 'verified', 'completed', 'cancelled', 'disputed', 'resolved_player', 'resolved_cashier'] &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'receiptReferenceNumber', 'payoutTxId', 'completedAt', 'verifiedAt', 'cancelledAt',
+                    'isEscrowLocked', 'settledByCashierUid', 'netPayoutUSD', 'withdrawalFeeUSD',
+                    'supportMessages', 'lastMessage', 'lastMessageTime',
+                    'hasUnreadCashierMessage', 'hasUnreadPlayerMessage', 'playerReadAt', 'cashierReadAt',
+                    'receiptUrl', 'cancelledByUid', 'cancelledByRole'])
       ) || (
         // d) Arbitraje y Disputas: Registro de notas de disputa y escalación
         request.auth != null &&
@@ -128,7 +133,7 @@ service cloud.firestore {
       ) || (
         // e) Fallback de compatibilidad de mensajería para clientes sin sesión de auth Firebase activa
         // (cajeros operando en hub web con sesión local)
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'coins', 'amountFiat', 'amountSugarCoins']) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coins', 'amountFiat', 'amountSugarCoins', 'playerUid']) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'hasUnreadPlayerMessage', 'playerReadAt', 'cashierReadAt'])
       );

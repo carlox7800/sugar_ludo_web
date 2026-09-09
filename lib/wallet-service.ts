@@ -372,17 +372,15 @@ export async function createWithdrawOrder(params: {
     }
   }
 
-  // 4. Fallback en caso de que el Hub esté fuera de línea en entorno local
-  if (!serverProcessed) {
-    try {
-      const orderRef = doc(db, 'cashier_orders', orderId)
-      await Promise.race([
-        setDoc(orderRef, orderData),
-        new Promise((resolve) => setTimeout(resolve, 2500))
-      ])
-    } catch (err: any) {
-      console.warn('[WalletService] Firestore setDoc fallback notice:', err?.message)
-    }
+  // 4. Persistir siempre en Firestore de forma idempotente con setDoc (SDK oficial cliente autenticado)
+  try {
+    const orderRef = doc(db, 'cashier_orders', orderId)
+    await Promise.race([
+      setDoc(orderRef, orderData, { merge: true }),
+      new Promise((resolve) => setTimeout(resolve, 2500))
+    ])
+  } catch (err: any) {
+    console.warn('[WalletService] Firestore setDoc notice:', err?.message)
   }
 
   return { success: true, orderId }

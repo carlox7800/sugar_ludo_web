@@ -49,7 +49,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
   const { coins, setCoins } = usePlayer()
 
-  const [activeTab, setActiveTab] = useState<'rewards' | 'system' | 'support'>('rewards')
+  const [activeTab, setActiveTab] = useState<'all' | 'rewards' | 'system' | 'support'>('all')
   const [mailList, setMailList] = useState<MailItem[]>([])
   const [selectedMail, setSelectedMail] = useState<MailItem | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -58,6 +58,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const hasUserSwitchedTab = useRef(false)
   // Ref para registrar órdenes ya marcadas como leídas en Firestore en esta sesión.
   // Evita que Efecto B escriba repetidamente cuando el listener onSnapshot llega con datos idénticos.
   const markedReadOrderIds = useRef<Set<string>>(new Set())
@@ -151,13 +152,22 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     category: (m.category === 'rewards' || m.category === 'support') ? m.category : 'system'
   })
 
-  // Load real inbox
+  // Load real inbox preservando los mensajes de soporte P2P cargados por cashier_orders
   const loadInbox = async () => {
     try {
       const inbox = await fetchUserInbox(user?.uid)
       const hidden = new Set(getHiddenMails())
-      const filtered = inbox.map(normalizeMail).filter(m => !hidden.has(m.id))
-      setMailList(filtered.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)))
+      const userMails = inbox.map(normalizeMail).filter(m => !hidden.has(m.id))
+      setMailList((prev) => {
+        const supportFromOrders = prev.filter(m => m.id.startsWith('mail_ord_sup_') && !hidden.has(m.id))
+        const supportOrderIds = new Set(supportFromOrders.map(m => m.orderId).filter(Boolean))
+        const nonOrderMails = userMails.filter(m => 
+          !m.id.startsWith('mail_ord_sup_') && 
+          (!m.orderId || !supportOrderIds.has(m.orderId))
+        )
+        const combined = [...supportFromOrders, ...nonOrderMails]
+        return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+      })
     } catch (e) {
       console.warn('Error loading inbox:', e)
     } finally {
@@ -190,42 +200,39 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
   }, [user?.inbox, selectedMail?.id])
 
-  // Auto-marcar mensajes de soporte de cajeros como leídos en Firestore al abrir la pestaña Soporte.
-  // CANDADO ANTI-BUCLE: Dependencias reducidas a [activeTab, user?.uid] únicamente.
-  // El ref `markedReadOrderIds` evita que se generen escrituras duplicadas a Firestore
-  // cuando el listener onSnapshot llega con datos idénticos y actualiza mailList.
+  // Auto-marcar mensajes de soporte de cajeros como leídos en Firestore al estar en la pestaña Soporte o Todos.
+  // CANDADO ANTI-BUCLE: Ejecuta updateDoc fuera de setMailList para evitar efectos secundarios en React.
   useEffect(() => {
-    if (activeTab !== 'support' || !user?.uid || user.uid.startsWith('dev_')) return
+    if (!user?.uid || user.uid.startsWith('dev_')) return
+    if (activeTab !== 'support' && activeTab !== 'all') return
+
+    const unreadOrders = mailList.filter(
+      m => m.category === 'support' && !m.isRead && m.orderId
+          && !markedReadOrderIds.current.has(m.orderId)
+    )
+    if (unreadOrders.length === 0) return
+
     const now = Date.now()
-    // Leer mailList desde una copia puntual para no incluirlo en las dependencias
-    setMailList(prev => {
-      const unreadOrders = prev.filter(
-        m => m.category === 'support' && !m.isRead && m.orderId
-            && !markedReadOrderIds.current.has(m.orderId!)
-      )
-      if (unreadOrders.length > 0) {
-        // Registrar en el ref ANTES de escribir para que el próximo snapshot no re-dispare
-        unreadOrders.forEach(m => markedReadOrderIds.current.add(m.orderId!))
-        // Escritura lazy en Firestore (fire-and-forget, sin await que requenga re-render)
-        const batch = unreadOrders.map(m => {
-          const orderRef = doc(db, 'cashier_orders', m.orderId!)
-          return updateDoc(orderRef, {
-            playerReadAt: now,
-            hasUnreadCashierMessage: false
-          }).catch(() => {})
-        })
-        Promise.all(batch).then(() => {
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-          }
-        })
-        // Actualizar estado local sin tocar mailList.length innecesariamente
-        return prev.map(m => (m.category === 'support' && !m.isRead) ? { ...m, isRead: true } : m)
-      }
-      return prev
+    unreadOrders.forEach(m => markedReadOrderIds.current.add(m.orderId!))
+
+    // Actualizar estado local reactivo
+    setMailList(prev => prev.map(m => (m.category === 'support' && !m.isRead) ? { ...m, isRead: true } : m))
+
+    // Escritura asíncrona fire-and-forget en Firestore
+    const batch = unreadOrders.map(m => {
+      const orderRef = doc(db, 'cashier_orders', m.orderId!)
+      return updateDoc(orderRef, {
+        playerReadAt: now,
+        hasUnreadCashierMessage: false
+      }).catch(() => {})
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, user?.uid])
+
+    Promise.all(batch).then(() => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+      }
+    })
+  }, [activeTab, user?.uid, mailList])
 
   // 2. Escuchar mensajes de soporte P2P desde cashier_orders con limit(20) y pausa por visibilidad
   useEffect(() => {
@@ -360,13 +367,6 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                 !hidden.has(m.id)
               )
               const combined = [...orderSupportMails, ...nonOrderMails]
-
-              // Si el usuario tiene soporte sin leer y no tiene recompensas pendientes, redirigir automáticamente a la pestaña de Soporte
-              const hasUnreadSupport = orderSupportMails.some(m => !m.isRead)
-              const hasUnreadRewards = combined.some(m => m.category === 'rewards' && !m.claimed)
-              if (hasUnreadSupport && !hasUnreadRewards) {
-                setActiveTab((current) => current === 'rewards' ? 'support' : current)
-              }
 
               return combined.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
             })
@@ -528,13 +528,23 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     showToast('✔️ Todos los mensajes marcados como leídos.')
   }
 
+  // Auto-selección inteligente de pestaña: Si hay soporte no leído y el usuario no ha cambiado manualmente, enfocar soporte
+  useEffect(() => {
+    if (hasUserSwitchedTab.current) return
+    const hasUnreadSupport = mailList.some(m => m.category === 'support' && !m.isRead)
+    if (hasUnreadSupport && activeTab !== 'support') {
+      setActiveTab('support')
+    }
+  }, [mailList, activeTab])
+
   const filteredMails = mailList
     .map(normalizeMail)
-    .filter(m => m.category === activeTab)
+    .filter(m => activeTab === 'all' ? true : m.category === activeTab)
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
   const unreadRewardsCount = mailList.filter(m => m.category === 'rewards' && !m.claimed).length
   const unreadSystemCount = mailList.filter(m => normalizeMail(m).category === 'system' && !m.isRead).length
   const unreadSupportCount = mailList.filter(m => m.category === 'support' && !m.isRead).length
+  const totalUnreadAll = unreadRewardsCount + unreadSystemCount + unreadSupportCount
 
   return (
     <section className="animate-slide-in mx-auto flex w-full max-w-5xl flex-col gap-5 p-2 sm:p-4">
@@ -567,7 +577,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         </div>
 
         {/* Global Action Button */}
-        {activeTab === 'rewards' && unreadRewardsCount > 0 && (
+        {(activeTab === 'rewards' || activeTab === 'all') && unreadRewardsCount > 0 && (
           <button
             onClick={handleClaimAll}
             className="btn-3d flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#10b981,#059669)] px-4 py-2 font-display text-xs font-black text-white shadow-lg hover:scale-105 transition-all cursor-pointer"
@@ -578,15 +588,39 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {/* Main Navigation Tabs: 3 TABS (Rewards, System, Support) */}
-      <div className="grid grid-cols-3 gap-2 rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/80">
+      {/* Main Navigation Tabs: 4 TABS (Todos, Recompensas, Sistema, Soporte) */}
+      <div className="grid grid-cols-4 gap-1.5 sm:gap-2 rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/80">
         <button
           onClick={() => {
+            hasUserSwitchedTab.current = true
+            setActiveTab('all')
+            setSelectedIds([])
+          }}
+          className={cn(
+            "flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
+            activeTab === 'all'
+              ? "bg-[linear-gradient(145deg,var(--candy-magenta),oklch(0.6_0.25_350))] text-white shadow-lg shadow-[var(--candy-magenta)]/25"
+              : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
+          )}
+        >
+          <Mail className="size-4" />
+          <span className="hidden sm:inline">Todos</span>
+          <span className="sm:hidden">Todos</span>
+          {totalUnreadAll > 0 && (
+            <span className="size-4 sm:size-5 rounded-full bg-rose-500 text-[9px] sm:text-[10px] font-black text-white flex items-center justify-center shadow-md">
+              {totalUnreadAll}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => {
+            hasUserSwitchedTab.current = true
             setActiveTab('rewards')
             setSelectedIds([])
           }}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
+            "flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'rewards'
               ? "bg-[linear-gradient(145deg,var(--candy-magenta),oklch(0.6_0.25_350))] text-white shadow-lg shadow-[var(--candy-magenta)]/25"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
@@ -596,7 +630,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
           <span className="hidden sm:inline">Recompensas</span>
           <span className="sm:hidden">Regalos</span>
           {unreadRewardsCount > 0 && (
-            <span className="size-5 rounded-full bg-emerald-500 text-[10px] font-black text-white flex items-center justify-center shadow-md">
+            <span className="size-4 sm:size-5 rounded-full bg-emerald-500 text-[9px] sm:text-[10px] font-black text-white flex items-center justify-center shadow-md">
               {unreadRewardsCount}
             </span>
           )}
@@ -604,21 +638,22 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
         <button
           onClick={() => {
+            hasUserSwitchedTab.current = true
             setActiveTab('system')
             setSelectedIds([])
           }}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
+            "flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'system'
               ? "bg-[linear-gradient(145deg,var(--candy-magenta),oklch(0.6_0.25_350))] text-white shadow-lg shadow-[var(--candy-magenta)]/25"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
           )}
         >
           <Bell className="size-4" />
-          <span className="hidden sm:inline">Avisos del Sistema</span>
-          <span className="sm:hidden">Sistema</span>
+          <span className="hidden sm:inline">Avisos</span>
+          <span className="sm:hidden">Avisos</span>
           {unreadSystemCount > 0 && (
-            <span className="size-5 rounded-full bg-[var(--candy-cyan)] text-[10px] font-black text-black flex items-center justify-center shadow-md">
+            <span className="size-4 sm:size-5 rounded-full bg-[var(--candy-cyan)] text-[9px] sm:text-[10px] font-black text-black flex items-center justify-center shadow-md">
               {unreadSystemCount}
             </span>
           )}
@@ -626,21 +661,22 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
         <button
           onClick={() => {
+            hasUserSwitchedTab.current = true
             setActiveTab('support')
             setSelectedIds([])
           }}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
+            "flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl py-3 font-display text-xs sm:text-sm font-black transition-all relative cursor-pointer",
             activeTab === 'support'
               ? "bg-[linear-gradient(145deg,#06b6d4,#0891b2)] text-white shadow-lg shadow-cyan-500/25"
               : "text-muted-foreground hover:bg-[oklch(1_0_0/0.05)] hover:text-foreground"
           )}
         >
           <Headphones className="size-4" />
-          <span className="hidden sm:inline">Soporte & Cajeros</span>
+          <span className="hidden sm:inline">Soporte P2P</span>
           <span className="sm:hidden">Soporte</span>
           {unreadSupportCount > 0 && (
-            <span className="size-5 rounded-full bg-amber-500 text-[10px] font-black text-white flex items-center justify-center shadow-md">
+            <span className="size-4 sm:size-5 rounded-full bg-amber-500 text-[9px] sm:text-[10px] font-black text-white flex items-center justify-center shadow-md">
               {unreadSupportCount}
             </span>
           )}
