@@ -13,7 +13,7 @@ import { CashierLogPanel } from '../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../lib/cashier-logger'
 import { useAdminAuth } from '../../lib/admin-auth-context'
 import { db } from '../../lib/firebase'
-import { collection, onSnapshot, query, limit } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, limit } from 'firebase/firestore'
 import { OrdersCache } from '../../lib/orders-cache'
 import {
   subscribeToCashierChatMeta,
@@ -148,6 +148,39 @@ export default function CashierMainDeskPage() {
     }
   }, [cashierList])
 
+  const currentCashier = activeCashierSession || cashierList[0] || {
+    uid: 'csh_primary',
+    name: 'Cajero Autorizado',
+    floatBalanceCoins: 30000
+  }
+
+  // Escuchar actualizaciones de saldo flotante en tiempo real desde Firestore (cashier_profiles/{uid})
+  useEffect(() => {
+    if (!currentCashier?.uid) return
+    let unsubProfile: (() => void) | null = null
+    try {
+      const profileRef = doc(db, 'cashier_profiles', currentCashier.uid)
+      unsubProfile = onSnapshot(profileRef, (snap) => {
+        if (snap.exists()) {
+          const pData = snap.data()
+          const fUSDT = Number(pData.floatBalanceUSDT ?? (Number(pData.floatBalanceCoins || 0) / 100))
+          const fCoins = Number(pData.floatBalanceCoins ?? Math.round(fUSDT * 100))
+          setActiveCashierSession((prev: any) => ({
+            ...(prev || {}),
+            floatBalanceCoins: fCoins,
+            floatBalanceUSDT: fUSDT
+          }))
+        }
+      }, (err) => {
+        console.debug('[CashierMainDesk] Profile snapshot notice:', err?.message)
+      })
+    } catch {}
+
+    return () => {
+      if (unsubProfile) unsubProfile()
+    }
+  }, [currentCashier?.uid])
+
   // Escuchar actualizaciones de saldo flotante en tiempo real vía BroadcastChannel
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -173,12 +206,6 @@ export default function CashierMainDeskPage() {
       }
     } catch {}
   }, [])
-
-  const currentCashier = activeCashierSession || cashierList[0] || {
-    uid: 'csh_primary',
-    name: 'Cajero Autorizado',
-    floatBalanceCoins: 30000
-  }
 
   useEffect(() => {
     if (!currentCashier?.uid) return

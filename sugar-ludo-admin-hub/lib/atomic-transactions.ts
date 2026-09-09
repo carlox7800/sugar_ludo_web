@@ -1,6 +1,6 @@
 import { adminDb, admin, hasAdminCredentials } from './firebase-admin'
 import { db } from './firebase'
-import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, setDoc, increment } from 'firebase/firestore'
 import { CashierOrder, CashierProfile, DailyStats, AuditLog } from '../types/cashier'
 import fs from 'fs'
 import path from 'path'
@@ -175,6 +175,17 @@ export async function approveDepositOrder(params: {
             lastActiveAt: now
           })
         }
+
+        // Actualizar Custodia de Jugadores en global_ledger
+        const ledgerRef = adminDb.collection('system_treasury').doc('global_ledger')
+        transaction.set(ledgerRef, {
+          id: 'global_ledger',
+          playerCustodyCoins: admin.firestore.FieldValue.increment(amountCoins),
+          playerCustodyUSD: admin.firestore.FieldValue.increment(amountCoins / 100),
+          totalVaultSugarCoins: admin.firestore.FieldValue.increment(amountCoins),
+          totalVaultUSD: admin.firestore.FieldValue.increment(amountCoins / 100),
+          lastAuditedAt: now
+        }, { merge: true })
 
         // Registrar en disco
         updateDiskOrderStatus(orderId, 'completed', finalRef)
@@ -379,7 +390,22 @@ export async function approveDepositOrder(params: {
     console.warn('[approveDepositOrder Fallback] Error actualizando cajero:', cashierErr?.message)
   }
 
-  // 2.7. Guardar en disco local
+  // 2.7. Actualizar custodia en system_treasury/global_ledger
+  try {
+    const ledgerDocRef = doc(db, 'system_treasury', 'global_ledger')
+    await setDoc(ledgerDocRef, {
+      id: 'global_ledger',
+      playerCustodyCoins: increment(amountCoins),
+      playerCustodyUSD: increment(amountCoins / 100),
+      totalVaultSugarCoins: increment(amountCoins),
+      totalVaultUSD: increment(amountCoins / 100),
+      lastAuditedAt: now
+    }, { merge: true })
+  } catch (ledErr: any) {
+    console.warn('[approveDepositOrder Fallback] Error en ledger:', ledErr?.message)
+  }
+
+  // 2.8. Guardar en disco local
   updateDiskOrderStatus(orderId, 'completed', finalRef)
 
   return {
@@ -789,9 +815,14 @@ export async function resolveDisputeCaseAtomics(params: {
     }
   }
 
-  // Fallback simple SDK
+  // Fallback motor híbrido SDK
   try {
     const dispDocRef = doc(db, 'dispute_cases', disputeId)
+    const dispSnap = await getDoc(dispDocRef)
+    const dData = dispSnap.exists() ? dispSnap.data() : {}
+    const finalOrderId = dData.orderId || disputeId
+    const amountCoins = Number(dData.amountSugarCoins || 0)
+
     await setDoc(dispDocRef, {
       status: verdict === 'favor_player' ? 'resolved_player' : 'resolved_cashier',
       resolvedBy: adminName,
@@ -799,7 +830,33 @@ export async function resolveDisputeCaseAtomics(params: {
       resolvedAt: now,
       resolutionNotes: resolutionNotes || `Veredicto: ${verdict}`
     }, { merge: true })
-  } catch {}
+
+    const orderDocRef = doc(db, 'cashier_orders', finalOrderId)
+    await updateDoc(orderDocRef, {
+      status: verdict === 'favor_player' ? 'completed' : 'cancelled',
+      completedAt: now,
+      resolutionNotes: resolutionNotes || `Veredicto: ${verdict}`,
+      resolvedBy: adminName,
+      resolvedAt: now
+    }).catch(() => {})
+
+    if (verdict === 'favor_player' && dData.playerUid) {
+      const userRef = doc(db, 'users', dData.playerUid)
+      await updateDoc(userRef, {
+        coins: increment(amountCoins),
+        lastActiveAt: now
+      }).catch(() => {})
+    } else if (verdict === 'favor_cashier' && dData.cashierUid) {
+      const cRef = doc(db, 'cashier_profiles', dData.cashierUid)
+      await updateDoc(cRef, {
+        floatBalanceCoins: increment(amountCoins),
+        floatBalanceUSDT: increment(amountCoins / 100),
+        lastActiveAt: now
+      }).catch(() => {})
+    }
+  } catch (dispErr: any) {
+    console.warn('[resolveDisputeCaseAtomics Fallback] Error:', dispErr?.message)
+  }
 
   return { success: true, message: `Veredicto ejecutado: ${verdict}` }
 }
@@ -910,6 +967,20 @@ export async function completeWithdrawalOrder(params: {
           notes: `Liquidación de retiro #${orderId.slice(0, 8)}: Transferido neto $${netPayoutUSD.toFixed(2)} USDT (Fee: $${withdrawalFeeUSD.toFixed(2)} USDT)`,
           timestamp: now
         })
+
+        // Actualizar Bóveda y Comisiones de la Casa en global_ledger
+        const globalLedgerRef = adminDb.collection('system_treasury').doc('global_ledger')
+        const feeKey = isVip ? 'profitsBreakdown.vipWithdrawalFeesUSD' : 'profitsBreakdown.normalWithdrawalFeesUSD'
+        transaction.set(globalLedgerRef, {
+          id: 'global_ledger',
+          playerCustodyCoins: admin.firestore.FieldValue.increment(-amountCoins),
+          playerCustodyUSD: admin.firestore.FieldValue.increment(-amountCoins / 100),
+          houseNetProfitsUSD: admin.firestore.FieldValue.increment(withdrawalFeeUSD),
+          houseNetProfitsCoins: admin.firestore.FieldValue.increment(Math.round(withdrawalFeeUSD * 100)),
+          'profitsBreakdown.withdrawalFeesUSD': admin.firestore.FieldValue.increment(withdrawalFeeUSD),
+          [feeKey]: admin.firestore.FieldValue.increment(withdrawalFeeUSD),
+          lastAuditedAt: now
+        }, { merge: true })
 
         return { success: true, message: `Retiro #${orderId.slice(0, 8)} liquidado con éxito.` }
       })
@@ -1100,7 +1171,25 @@ export async function completeWithdrawalOrder(params: {
     })
   } catch {}
 
-  // 2.5. Actualizar en disco local
+  // 2.5. Actualizar Bóveda y Comisiones de la Casa en global_ledger
+  try {
+    const globalLedgerDocRef = doc(db, 'system_treasury', 'global_ledger')
+    const feeKey = isVip ? 'profitsBreakdown.vipWithdrawalFeesUSD' : 'profitsBreakdown.normalWithdrawalFeesUSD'
+    await setDoc(globalLedgerDocRef, {
+      id: 'global_ledger',
+      playerCustodyCoins: increment(-amountCoins),
+      playerCustodyUSD: increment(-amountCoins / 100),
+      houseNetProfitsUSD: increment(withdrawalFeeUSD),
+      houseNetProfitsCoins: increment(Math.round(withdrawalFeeUSD * 100)),
+      'profitsBreakdown.withdrawalFeesUSD': increment(withdrawalFeeUSD),
+      [feeKey]: increment(withdrawalFeeUSD),
+      lastAuditedAt: now
+    }, { merge: true })
+  } catch (ledErr: any) {
+    console.warn('[completeWithdrawalOrder Fallback] Error en ledger:', ledErr?.message)
+  }
+
+  // 2.6. Actualizar en disco local
   updateDiskOrderStatus(orderId, 'completed', payoutTxId)
 
   return {

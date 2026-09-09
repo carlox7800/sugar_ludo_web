@@ -58,11 +58,11 @@ service cloud.firestore {
       allow read: if true;
       // Creación de órdenes en pending por parte de jugadores
       allow create: if request.resource.data.status == 'pending';
-      // Cancelación de órdenes pendientes, liquidaciones autorizadas o actualizaciones de chat y lectura
-      allow update: if (resource.data.status == 'pending' && (request.resource.data.status == 'cancelled' || request.resource.data.status == 'completed')) ||
-                    request.resource.data.status == 'completed' ||
+      // Actualizaciones autorizadas: transiciones de ciclo de vida (pending, paid, verified, completed, cancelled, disputed),
+      // resoluciones de arbitraje o actualizaciones de mensajes y confirmaciones de lectura
+      allow update: if request.resource.data.status in ['pending', 'paid', 'verified', 'completed', 'cancelled', 'disputed', 'resolved_player', 'resolved_cashier'] ||
                     request.resource.data.diff(resource.data).affectedKeys()
-                      .hasOnly(['messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'hasUnreadPlayerMessage', 'playerReadAt']);
+                      .hasOnly(['messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'hasUnreadPlayerMessage', 'playerReadAt', 'payoutTxId', 'receiptReferenceNumber', 'verifiedAt', 'completedAt', 'disputeReason', 'resolutionNotes', 'resolvedBy', 'resolvedAt']);
       allow delete: if false;
       
       match /messages/{messageId} {

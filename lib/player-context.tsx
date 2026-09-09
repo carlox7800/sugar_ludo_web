@@ -74,6 +74,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [user])
 
   const setCoins = async (amount: number) => {
+    if (amount === coins) return
     setCoinsState(amount)
     if (user && !user.isDev) {
       const userRef = doc(db, 'users', user.uid)

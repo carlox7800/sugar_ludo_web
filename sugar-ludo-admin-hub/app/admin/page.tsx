@@ -220,7 +220,27 @@ export default function AdminDashboardPage() {
     setIsRefreshing(true)
     const startTime = Date.now()
     try {
-      // 1. Conteo real de usuarios registrados en Firestore (Spark $0.00)
+      // 1. Ejecutar Conciliación Patrimonial Autoritativa en el Backend (/api/admin/treasury/reconcile)
+      try {
+        const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            adminUid: adminUser?.uid || 'adm_super',
+            adminName: adminUser?.displayName || 'Super Admin'
+          })
+        })
+        if (reconcileRes.ok) {
+          const recData = await reconcileRes.json()
+          if (recData.ledger) {
+            setVault(recData.ledger)
+          }
+        }
+      } catch (recErr) {
+        console.warn('[AdminTreasury] Conciliación fallback local:', recErr)
+      }
+
+      // 2. Conteo real de usuarios registrados en Firestore (Spark $0.00)
       try {
         const userCountSnap = await getCountFromServer(collection(db, 'users'))
         const realCount = userCountSnap.data().count
@@ -233,7 +253,7 @@ export default function AdminDashboardPage() {
         console.warn('[AdminTelemetry] Error leyendo conteo de usuarios:', err)
       }
 
-      // 2. Ping de latencia y estado
+      // 3. Ping de latencia y estado
       const res = await fetch('/api/telemetry')
       const ping = Date.now() - startTime
       setServerPingMs(ping)
@@ -250,7 +270,7 @@ export default function AdminDashboardPage() {
         }
       }
 
-      // 2. Consolidación de saldos reales de cajeros y pasivos en custodia
+      // 4. Consolidación de saldos reales de cajeros y pasivos en custodia
       const totalCashierFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
       const totalCashierFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
 

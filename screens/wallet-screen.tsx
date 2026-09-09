@@ -40,16 +40,14 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
-  // 1. Sincronizar historial y balance directamente desde AuthContext ($0 Spark Plan)
+  // 1. Sincronizar historial directamente desde AuthContext ($0 Spark Plan)
+  // Nota: user.coins ya es administrado como única fuente de verdad por AuthContext y PlayerProvider.
   useEffect(() => {
     if (!user?.uid) return
     if (user.walletHistory && Array.isArray(user.walletHistory)) {
       setTransactions(user.walletHistory)
     }
-    if (typeof user.coins === 'number') {
-      setCoins(user.coins)
-    }
-  }, [user?.walletHistory, user?.coins])
+  }, [user?.walletHistory])
 
   // 2. Escuchar órdenes activas del jugador con limit(20) y pausa por visibilidad
   useEffect(() => {
@@ -89,13 +87,9 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                     localStorage.setItem(creditedKey, 'true')
                   }
                   const amountCoins = Number(ord.amountSugarCoins || (ord.amountFiat * 100))
-                  const currentBalance = typeof coins === 'number' ? coins : 0
-                  const updatedBalance = currentBalance + amountCoins
-                  setCoins(updatedBalance)
-                  if (typeof window !== 'undefined') {
-                    localStorage.setItem('sugar_player_coins', String(updatedBalance))
-                  }
-                  showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins} SC) ha sido validado y acreditado con éxito!`, 'success')
+                  // El saldo se acredita atómicamente en el servidor en users/{uid}. 
+                  // El cliente solo emite la notificación de éxito para evitar rebotes de mutaciones.
+                  showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins.toLocaleString()} SC) ha sido validado y acreditado con éxito!`, 'success')
                 }
               } else if (ord.type === 'withdraw') {
                 // Auto-saneamiento reactivo: Si el retiro ya fue completado, asegurar liberación de escrowLockedCoins
