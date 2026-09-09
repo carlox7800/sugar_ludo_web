@@ -1210,6 +1210,31 @@ Conserva este mensaje como comprobante formal de la transacción.`
     const currentFloatUSDT = Number(cData.floatBalanceUSDT ?? (Number(cData.floatBalanceCoins || 0) / 100))
     const currentFloatCoins = Number(cData.floatBalanceCoins ?? (currentFloatUSDT * 100))
 
+    // ================================================================
+    // HARD-STOP ANTI-SOBREGIRO: Validación de saldo flotante en fallback
+    // Si el motor Admin SDK no pudo validar (sin credenciales), este candado
+    // es la última línea de defensa antes de descontar el flotante del cajero.
+    // ================================================================
+    if (currentFloatUSDT < netPayoutUSD) {
+      // Revertir la escritura de status 'completed' que ya se hizo en el paso 2.1
+      // para dejar la orden en su estado anterior (no se puede garantizar rollback
+      // atómico en fallback, pero al menos no se quema el escrow del jugador).
+      try {
+        await setDoc(orderDocRef, {
+          status: 'pending',
+          completedAt: null,
+          isEscrowLocked: true,
+          settledByCashierUid: null
+        }, { merge: true })
+      } catch {}
+      throw new Error(
+        `FLOAT_INSUFFICIENT: Saldo flotante insuficiente ($${currentFloatUSDT.toFixed(2)} USDT disponibles). ` +
+        `Se requieren $${netPayoutUSD.toFixed(2)} USDT para este retiro. ` +
+        `Solicita recarga al Administrador antes de intentar liquidar.`
+      )
+    }
+    // ================================================================
+
     newFloatUSDT = Math.max(0, parseFloat((currentFloatUSDT - netPayoutUSD).toFixed(2)))
     newFloatCoins = Math.max(0, currentFloatCoins - netPayoutCoins)
 

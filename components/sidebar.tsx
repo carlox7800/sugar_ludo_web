@@ -41,6 +41,7 @@ interface SidebarProps {
 
 // Estado compartido (singleton) para evitar duplicación de listeners entre Sidebar y MobileNav (Spark $0/mes)
 let sharedRefCount = 0
+let sharedActiveUid: string | null = null  // Candado de UID: detecta cambio de usuario
 let sharedUnsubOrders: (() => void) | null = null
 let sharedUnsubFriends: (() => void) | null = null
 let sharedUnsubChallenges: (() => void) | null = null
@@ -57,7 +58,17 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
   callback({ ...sharedState })
   sharedRefCount++
 
+  // Si el UID cambió (logout + login sin recarga), forzar teardown completo de listeners del usuario anterior
+  if (sharedActiveUid && sharedActiveUid !== user?.uid) {
+    if (sharedUnsubOrders) { sharedUnsubOrders(); sharedUnsubOrders = null }
+    if (sharedUnsubFriends) { sharedUnsubFriends(); sharedUnsubFriends = null }
+    if (sharedUnsubChallenges) { sharedUnsubChallenges(); sharedUnsubChallenges = null }
+    sharedActiveUid = null
+    sharedRefCount = 1  // Resetear a 1 (el listener recién suscrito)
+  }
+
   if (sharedRefCount === 1 && user?.uid && !user.uid.startsWith('dev_')) {
+    sharedActiveUid = user.uid
     let pendingReqs = 0
     let pendingChallenges = 0
 
@@ -139,6 +150,7 @@ function subscribeToSharedBadges(user: any, callback: (badges: typeof sharedStat
     sharedRefCount--
     if (sharedRefCount <= 0) {
       sharedRefCount = 0
+      sharedActiveUid = null
       if (sharedUnsubOrders) {
         sharedUnsubOrders()
         sharedUnsubOrders = null

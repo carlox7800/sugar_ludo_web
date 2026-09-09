@@ -58,6 +58,9 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  // Ref para registrar órdenes ya marcadas como leídas en Firestore en esta sesión.
+  // Evita que Efecto B escriba repetidamente cuando el listener onSnapshot llega con datos idénticos.
+  const markedReadOrderIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     setIsMounted(true)
@@ -187,28 +190,42 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
   }, [user?.inbox, selectedMail?.id])
 
-  // Auto-marcar mensajes de soporte de cajeros como leídos en Firestore al abrir la pestaña Soporte
+  // Auto-marcar mensajes de soporte de cajeros como leídos en Firestore al abrir la pestaña Soporte.
+  // CANDADO ANTI-BUCLE: Dependencias reducidas a [activeTab, user?.uid] únicamente.
+  // El ref `markedReadOrderIds` evita que se generen escrituras duplicadas a Firestore
+  // cuando el listener onSnapshot llega con datos idénticos y actualiza mailList.
   useEffect(() => {
-    if (activeTab === 'support' && user?.uid && !user.uid.startsWith('dev_')) {
-      const now = Date.now()
-      const unreadOrders = mailList.filter(m => m.category === 'support' && !m.isRead && m.orderId)
+    if (activeTab !== 'support' || !user?.uid || user.uid.startsWith('dev_')) return
+    const now = Date.now()
+    // Leer mailList desde una copia puntual para no incluirlo en las dependencias
+    setMailList(prev => {
+      const unreadOrders = prev.filter(
+        m => m.category === 'support' && !m.isRead && m.orderId
+            && !markedReadOrderIds.current.has(m.orderId!)
+      )
       if (unreadOrders.length > 0) {
-        unreadOrders.forEach(async (m) => {
-          try {
-            const orderRef = doc(db, 'cashier_orders', m.orderId!)
-            await updateDoc(orderRef, {
-              playerReadAt: now,
-              hasUnreadCashierMessage: false
-            })
-          } catch {}
+        // Registrar en el ref ANTES de escribir para que el próximo snapshot no re-dispare
+        unreadOrders.forEach(m => markedReadOrderIds.current.add(m.orderId!))
+        // Escritura lazy en Firestore (fire-and-forget, sin await que requenga re-render)
+        const batch = unreadOrders.map(m => {
+          const orderRef = doc(db, 'cashier_orders', m.orderId!)
+          return updateDoc(orderRef, {
+            playerReadAt: now,
+            hasUnreadCashierMessage: false
+          }).catch(() => {})
         })
-        setMailList(prev => prev.map(m => (m.category === 'support' && !m.isRead) ? { ...m, isRead: true } : m))
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
-        }
+        Promise.all(batch).then(() => {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('sugar_inbox_updated'))
+          }
+        })
+        // Actualizar estado local sin tocar mailList.length innecesariamente
+        return prev.map(m => (m.category === 'support' && !m.isRead) ? { ...m, isRead: true } : m)
       }
-    }
-  }, [activeTab, mailList.length, user?.uid])
+      return prev
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, user?.uid])
 
   // 2. Escuchar mensajes de soporte P2P desde cashier_orders con limit(20) y pausa por visibilidad
   useEffect(() => {
@@ -239,8 +256,10 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
               const mailKey = `mail_ord_sup_${orderId}`
               const isHidden = hidden.has(mailKey) || hidden.has(`mail_sup_${orderId}`) || hidden.has(orderId)
 
-              // Auto-saneamiento: Si una orden está oculta o huérfana pero aún figura como no leída en Firestore, limpiarla
-              if (isHidden && ord.hasUnreadCashierMessage !== false) {
+              // Auto-saneamiento: Si una orden está oculta o huérfana pero aún figura como no leída en Firestore, limpiarla.
+              // CANDADO: Solo si aún no fue procesada en esta sesión para evitar escrituras cíclicas.
+              if (isHidden && ord.hasUnreadCashierMessage !== false && !markedReadOrderIds.current.has(orderId)) {
+                markedReadOrderIds.current.add(orderId)
                 try {
                   const orderRef = doc(db, 'cashier_orders', orderId)
                   updateDoc(orderRef, {
@@ -400,18 +419,21 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
     }
   }, [user?.uid, selectedMail?.id])
 
-  // Sync real-time read timestamp to Firestore whenever chat modal is open
+  // Sync real-time read timestamp to Firestore whenever chat modal is open.
+  // CANDADO ANTI-BUCLE: Solo escribe si la orden aún tiene hasUnreadCashierMessage !== false,
+  // para no generar escrituras redundantes que reactiven onSnapshot en bucle.
   useEffect(() => {
-    if (selectedMail && selectedMail.orderId) {
-      try {
+    if (selectedMail?.orderId && selectedMail.isRead === false) {
+      if (!markedReadOrderIds.current.has(selectedMail.orderId)) {
+        markedReadOrderIds.current.add(selectedMail.orderId)
         const orderRef = doc(db, 'cashier_orders', selectedMail.orderId)
         updateDoc(orderRef, {
           playerReadAt: Date.now(),
           hasUnreadCashierMessage: false
         }).catch(() => {})
-      } catch {}
+      }
     }
-  }, [selectedMail?.id, selectedMail?.replies?.length])
+  }, [selectedMail?.id])
 
   const handleOpenMail = async (mail: MailItem) => {
     markMailAsRead(user?.uid, mail.id)
@@ -419,6 +441,8 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
       markMailAsRead(user?.uid, `mail_sup_${mail.orderId}`)
       markMailAsRead(user?.uid, `mail_ord_sup_${mail.orderId}`)
       markMailAsRead(user?.uid, mail.orderId)
+      // Registrar en ref para que Efecto C no duplique la escritura
+      markedReadOrderIds.current.add(mail.orderId)
     }
     setMailList(prev => prev.map(m => (m.id === mail.id || (mail.orderId && m.orderId === mail.orderId)) ? { ...m, isRead: true } : m))
     setSelectedMail(mail)
