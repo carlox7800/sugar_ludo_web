@@ -25,6 +25,8 @@ export default function OrderDetailPage() {
   const orderId = (routeParams?.id as string) || ''
   const { cashierList, updateCashierFloat } = useAdminAuth()
 
+  const [liveCashierProfile, setLiveCashierProfile] = useState<{ floatBalanceCoins: number; floatBalanceUSDT: number } | null>(null)
+
   const [currentCashierSession, setCurrentCashierSession] = useState<{ uid: string; name: string; email?: string }>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -46,10 +48,18 @@ export default function OrderDetailPage() {
           const parsed = JSON.parse(saved)
           if (parsed && parsed.uid) {
             const live = cashierList.find(c => c.uid === parsed.uid || (parsed.email && c.email.toLowerCase() === parsed.email.toLowerCase()))
-            setCurrentCashierSession(live || parsed)
+            setCurrentCashierSession((prev: any) => ({
+              ...(live || parsed),
+              floatBalanceCoins: prev?.floatBalanceCoins || (live || parsed)?.floatBalanceCoins || 0,
+              floatBalanceUSDT: prev?.floatBalanceUSDT !== undefined ? prev.floatBalanceUSDT : (live || parsed)?.floatBalanceUSDT
+            }))
           }
         } else if (cashierList.length > 0) {
-          setCurrentCashierSession(cashierList[0])
+          setCurrentCashierSession((prev: any) => ({
+            ...cashierList[0],
+            floatBalanceCoins: prev?.floatBalanceCoins || cashierList[0].floatBalanceCoins || 0,
+            floatBalanceUSDT: prev?.floatBalanceUSDT !== undefined ? prev.floatBalanceUSDT : cashierList[0].floatBalanceUSDT
+          }))
         }
       } catch {}
     }
@@ -65,7 +75,11 @@ export default function OrderDetailPage() {
         if (snap.exists()) {
           const pData = snap.data()
           const fUSDT = Number(pData.floatBalanceUSDT ?? (Number(pData.floatBalanceCoins || 0) / 100))
-          const fCoins = Number(pData.floatBalanceCoins ?? Math.round(fUSDT * 100))
+          const fCoins = Number(pData.floatBalanceCoins ? pData.floatBalanceCoins : Math.round(fUSDT * 100))
+          setLiveCashierProfile({
+            floatBalanceCoins: fCoins,
+            floatBalanceUSDT: fUSDT
+          })
           setCurrentCashierSession((prev: any) => ({
             ...(prev || {}),
             floatBalanceCoins: fCoins,
@@ -292,9 +306,14 @@ export default function OrderDetailPage() {
   const isTerminated = isCompleted || isCancelled
   const isWithdraw = order.type === 'withdraw'
 
-  // Saldo flotante real de trabajo del cajero activo (prioriza listener en vivo)
-  const cashierFloatCoins = Number((currentCashierSession as any).floatBalanceCoins ?? (cashierList.find(c => c.uid === currentCashierSession.uid)?.floatBalanceCoins ?? 0))
-  const cashierFloatUSDT = Number((currentCashierSession as any).floatBalanceUSDT ?? (cashierList.find(c => c.uid === currentCashierSession.uid)?.floatBalanceUSDT ?? (cashierFloatCoins / 100)))
+  // Saldo flotante real de trabajo del cajero activo (prioriza listener en vivo liveCashierProfile)
+  const cashierFloatUSDT = liveCashierProfile?.floatBalanceUSDT
+    ?? Number((currentCashierSession as any).floatBalanceUSDT
+    ?? (cashierList.find(c => c.uid === currentCashierSession.uid)?.floatBalanceUSDT
+    ?? (((currentCashierSession as any).floatBalanceCoins || 0) / 100)))
+  const cashierFloatCoins = liveCashierProfile?.floatBalanceCoins
+    ?? Number((currentCashierSession as any).floatBalanceCoins
+    ?? Math.round(cashierFloatUSDT * 100))
 
   const slaInfo = getWithdrawalSla(order)
   const totalFiatRequestedUSD = Number(order.amountFiat || (Number(order.amountSugarCoins || 0) / 100))
@@ -532,11 +551,18 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       }
 
       // 2.1. Actualizar estado reactivo local del cajero y persistir globalmente
-      const cashierTarget = cashierList.find(c => c.uid === currentCashierSession.uid) || currentCashierSession
-      const currentCoins = (cashierTarget as any).floatBalanceCoins ?? 30000
-      const currentUSDT = (cashierTarget as any).floatBalanceUSDT ?? (currentCoins / 100)
-      const newCoins = Math.max(0, currentCoins - netPayoutCoins)
-      const newUSDT = Math.max(0, parseFloat((currentUSDT - netPayoutUSD).toFixed(2)))
+      const newUSDT = Math.max(0, parseFloat((cashierFloatUSDT - netPayoutUSD).toFixed(2)))
+      const newCoins = Math.round(newUSDT * 100)
+
+      setLiveCashierProfile({
+        floatBalanceCoins: newCoins,
+        floatBalanceUSDT: newUSDT
+      })
+      setCurrentCashierSession((prev: any) => ({
+        ...(prev || {}),
+        floatBalanceCoins: newCoins,
+        floatBalanceUSDT: newUSDT
+      }))
 
       try {
         await updateCashierFloat(currentCashierSession.uid, newCoins, newUSDT, netPayoutUSD)

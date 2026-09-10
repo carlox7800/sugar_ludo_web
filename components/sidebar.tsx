@@ -152,7 +152,11 @@ function useNavigationBadges(user: any) {
   const unreadInboxCount = React.useMemo(() => {
     if (!user || !Array.isArray(user.inbox)) return 0
     return user.inbox.filter((m: any) => 
-      m.category !== 'support' && !m.orderId && (!m.isRead || (!m.claimed && (m.rewardSC || 0) > 0))
+      m.category !== 'support' && 
+      !m.orderId && 
+      !m.id?.startsWith('mail_sup_') && 
+      !m.id?.startsWith('mail_ord_sup_') && 
+      (!m.isRead || (!m.claimed && (m.rewardSC || 0) > 0))
     ).length
   }, [user?.inbox])
 

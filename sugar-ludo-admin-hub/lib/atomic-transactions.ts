@@ -1208,7 +1208,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
     const cashierSnap = await getDoc(cashierDocRef)
     const cData = cashierSnap.exists() ? cashierSnap.data() : {}
     const currentFloatUSDT = Number(cData.floatBalanceUSDT ?? (Number(cData.floatBalanceCoins || 0) / 100))
-    const currentFloatCoins = Number(cData.floatBalanceCoins ?? (currentFloatUSDT * 100))
+    const currentFloatCoins = Number(cData.floatBalanceCoins ? cData.floatBalanceCoins : Math.round(currentFloatUSDT * 100))
 
     // ================================================================
     // HARD-STOP ANTI-SOBREGIRO: Validación de saldo flotante en fallback
@@ -1236,7 +1236,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
     // ================================================================
 
     newFloatUSDT = Math.max(0, parseFloat((currentFloatUSDT - netPayoutUSD).toFixed(2)))
-    newFloatCoins = Math.max(0, currentFloatCoins - netPayoutCoins)
+    newFloatCoins = Math.round(newFloatUSDT * 100)
 
     await setDoc(cashierDocRef, {
       uid: cashierUid,

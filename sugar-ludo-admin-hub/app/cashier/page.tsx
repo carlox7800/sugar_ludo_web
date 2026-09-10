@@ -164,7 +164,7 @@ export default function CashierMainDeskPage() {
         if (snap.exists()) {
           const pData = snap.data()
           const fUSDT = Number(pData.floatBalanceUSDT ?? (Number(pData.floatBalanceCoins || 0) / 100))
-          const fCoins = Number(pData.floatBalanceCoins ?? Math.round(fUSDT * 100))
+          const fCoins = Number(pData.floatBalanceCoins ? pData.floatBalanceCoins : Math.round(fUSDT * 100))
           setActiveCashierSession((prev: any) => ({
             ...(prev || {}),
             floatBalanceCoins: fCoins,
@@ -447,7 +447,7 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
                   ${((currentCashier as any).floatBalanceUSDT ?? (currentCashier.floatBalanceCoins / 100)).toFixed(2)} USDT
                 </span>
                 <span className="text-[10px] font-bold text-slate-400 font-mono" suppressHydrationWarning>
-                  ({currentCashier.floatBalanceCoins.toLocaleString()} SC)
+                  {(((currentCashier as any).floatBalanceCoins && (currentCashier as any).floatBalanceCoins > 0) ? (currentCashier as any).floatBalanceCoins : Math.round(((currentCashier as any).floatBalanceUSDT || 0) * 100)).toLocaleString()} SC
                 </span>
               </div>
             </div>
