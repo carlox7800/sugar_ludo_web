@@ -550,6 +550,12 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
         throw new Error(result.error || 'Error al liquidar el retiro en el servidor')
       }
 
+      // Cerrar modal inmediatamente tras confirmación del backend para evitar alertas espurias
+      setIsPayoutModalOpen(false)
+      setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalPayoutRef } : null))
+      setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${finalPayoutRef}!`)
+      setTimeout(() => setNotification(null), 4000)
+
       // 2.1. Actualizar estado reactivo local del cajero y persistir globalmente
       const newUSDT = Math.max(0, parseFloat((cashierFloatUSDT - netPayoutUSD).toFixed(2)))
       const newCoins = Math.round(newUSDT * 100)
@@ -602,11 +608,6 @@ Hola ${order.playerName}, hemos enviado tus fondos a tu cuenta de destino:
 Conserva este mensaje como comprobante formal de la transacción.`
 
       await handleSendMessage(payoutNoticeText)
-
-      setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalPayoutRef } : null))
-      setIsPayoutModalOpen(false)
-      setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${finalPayoutRef}!`)
-      setTimeout(() => setNotification(null), 4000)
     } catch (e: any) {
       cashierLogger.error(`Error durante la liquidación de retiro #${order.id.slice(0, 8)}`, {
         code: e?.code,
@@ -1163,7 +1164,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
               })()}
 
               {/* Alerta roja de Saldo Insuficiente en Modal */}
-              {!hasSufficientFloat && (
+              {!hasSufficientFloat && !isValidatingPayout && (
                 <div className="p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-rose-300 text-xs space-y-1.5 shadow-lg animate-in fade-in">
                   <div className="flex items-center gap-2 font-black text-rose-400">
                     <AlertCircle className="size-4 shrink-0 text-rose-400" />
@@ -1182,7 +1183,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 <input
                   type="text"
                   required
-                  disabled={!hasSufficientFloat}
+                  disabled={!hasSufficientFloat || isValidatingPayout}
                   value={payoutTxId}
                   onChange={(e) => setPayoutTxId(e.target.value)}
                   placeholder={hasSufficientFloat ? "Ej. 0x8f9c2a... o REF-9928172" : "Bloqueado por saldo insuficiente"}
@@ -1223,7 +1224,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 }}
                 disabled={!hasSufficientFloat || !payoutTxId.trim() || isValidatingPayout}
                 className={`flex-1 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
-                  !hasSufficientFloat || !payoutTxId.trim()
+                  (!hasSufficientFloat || !payoutTxId.trim()) && !isValidatingPayout
                     ? 'bg-slate-800 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed shadow-none'
                     : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 shadow-[0_0_15px_rgba(236,72,153,0.3)] cursor-pointer'
                 }`}

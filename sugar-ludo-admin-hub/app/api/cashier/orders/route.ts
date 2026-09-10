@@ -162,6 +162,8 @@ export async function GET(request: Request) {
 }
 
 import { createWithdrawOrderWithEscrow } from '@/lib/atomic-transactions'
+import { db } from '@/lib/firebase'
+import { doc, setDoc } from 'firebase/firestore'
 
 export async function POST(request: Request) {
   const corsHeaders = {
@@ -200,8 +202,32 @@ export async function POST(request: Request) {
       isVipWithdraw: isVip
     }
 
-    // 1. Si es RETIRO, ejecutar validación y bloqueo atómico en Escrow en el backend
+    // 1. Si es RETIRO, ejecutar validación y bloqueo atómico en Escrow si no fue bloqueado previamente
     if (orderData.type === 'withdraw') {
+      // Candado Anti-Doble Débito: Si el cliente autenticado YA ejecutó la retención de Escrow, no volver a debitar
+      const alreadyLocked = Boolean(body.isEscrowLocked || (body as any).escrowLocked)
+      if (alreadyLocked) {
+        orderData.isEscrowLocked = true
+        orderData.escrowLockedAt = body.escrowLockedAt || Date.now()
+        saveDiskOrder(orderData)
+
+        if (adminDb && adminDb.collection) {
+          try {
+            await adminDb.collection('cashier_orders').doc(orderData.id).set(orderData, { merge: true })
+          } catch {}
+        }
+
+        try {
+          const orderDocRef = doc(db, 'cashier_orders', orderData.id)
+          await setDoc(orderDocRef, orderData, { merge: true })
+        } catch {}
+
+        return NextResponse.json(
+          { success: true, order: orderData, orderId: orderData.id },
+          { headers: corsHeaders }
+        )
+      }
+
       try {
         const withdrawRes = await createWithdrawOrderWithEscrow({
           orderId: orderData.id,

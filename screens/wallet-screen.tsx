@@ -92,17 +92,39 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
                   showNotification(`✨ ¡Tu depósito de ${ord.amountFiat} ${ord.currency} (+${amountCoins.toLocaleString()} SC) ha sido validado y acreditado con éxito!`, 'success')
                 }
               } else if (ord.type === 'withdraw') {
-                // Auto-saneamiento reactivo: Si el retiro ya fue completado, asegurar liberación de escrowLockedCoins
-                if (user?.uid && Number(user?.escrowLockedCoins || 0) > 0) {
-                  try {
-                    const userRef = doc(db, 'users', user.uid)
-                    updateDoc(userRef, { escrowLockedCoins: 0, lastActiveAt: Date.now() }).catch(() => {})
-                  } catch {}
+                const notifiedKey = `sugar_notified_wit_${orderId}`
+                const alreadyNotified = typeof window !== 'undefined' && localStorage.getItem(notifiedKey)
+                if (!alreadyNotified) {
+                  if (typeof window !== 'undefined') localStorage.setItem(notifiedKey, 'true')
+                  showNotification(`💸 ¡Tu retiro de $${ord.amountFiat} ${ord.currency} ha sido liquidado y transferido con éxito!`, 'success')
                 }
               }
             }
           }
           setActiveOrders(liveActive)
+
+          // Principio de Doble Entrada y Conservación Contable:
+          // Si no hay retiros pendientes en cola, cualquier saldo residual en escrowLockedCoins
+          // se restaura a coins disponibles (Saldo = Coins + EscrowLockedCoins)
+          if (user?.uid && !user.uid.startsWith('dev_')) {
+            const pendingWithdrawals = liveActive.filter(o => o.type === 'withdraw')
+            const totalPendingWithdrawalCoins = pendingWithdrawals.reduce((acc, o) => acc + (o.amountSugarCoins || 0), 0)
+            const currentEscrow = Number(user?.escrowLockedCoins || 0)
+            
+            if (currentEscrow > totalPendingWithdrawalCoins) {
+              const orphanedEscrow = currentEscrow - totalPendingWithdrawalCoins
+              try {
+                const userRef = doc(db, 'users', user.uid)
+                const currentCoins = Number(user.coins ?? 0)
+                const correctedCoins = currentCoins + orphanedEscrow
+                updateDoc(userRef, {
+                  coins: correctedCoins,
+                  escrowLockedCoins: totalPendingWithdrawalCoins,
+                  lastActiveAt: Date.now()
+                }).catch(() => {})
+              } catch {}
+            }
+          }
         }, (err) => {
           console.debug('[WalletScreen] Orders snapshot notice:', err?.message)
         })
