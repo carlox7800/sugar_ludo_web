@@ -477,6 +477,7 @@ export default function AdminDashboardPage() {
         const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
         const newVaultUSD = Math.max(0, vault.totalVaultUSD - vault.houseNetProfitsUSD)
         await setDoc(ledgerRef, {
+          hardResetAt: now,
           totalVaultUSD: newVaultUSD,
           totalVaultSugarCoins: Math.round(newVaultUSD * 100),
           houseNetProfitsUSD: 0,
@@ -484,10 +485,25 @@ export default function AdminDashboardPage() {
           profitsBreakdown: {
             tableRakeUSD: 0,
             storeSalesUSD: 0,
-            withdrawalFeesUSD: 0
+            withdrawalFeesUSD: 0,
+            normalWithdrawalFeesUSD: 0,
+            vipWithdrawalFeesUSD: 0,
+            normalWithdrawalFeesCoins: 0,
+            vipWithdrawalFeesCoins: 0
           },
           lastAuditedAt: now
         }, { merge: true })
+
+        setProfits((prev) => ({
+          ...prev,
+          withdrawalFeesUSD: 0,
+          normalWithdrawalFeesUSD: 0,
+          vipWithdrawalFeesUSD: 0,
+          normalWithdrawalFeesCoins: 0,
+          vipWithdrawalFeesCoins: 0,
+          totalProfitUSD: 0,
+          totalProfitCoins: 0
+        }))
 
         try {
           const statsSnap = await getDocs(query(collection(db, 'daily_stats'), limit(50)))
@@ -502,6 +518,7 @@ export default function AdminDashboardPage() {
         const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
         await setDoc(ledgerRef, {
           id: 'global_ledger',
+          hardResetAt: now,
           totalVaultUSD: 0.0,
           totalVaultSugarCoins: 0,
           playerCustodyUSD: 0.0,
@@ -513,9 +530,30 @@ export default function AdminDashboardPage() {
           profitsBreakdown: {
             tableRakeUSD: 0,
             storeSalesUSD: 0,
-            withdrawalFeesUSD: 0
+            withdrawalFeesUSD: 0,
+            normalWithdrawalFeesUSD: 0,
+            vipWithdrawalFeesUSD: 0,
+            normalWithdrawalFeesCoins: 0,
+            vipWithdrawalFeesCoins: 0
           },
           lastAuditedAt: now
+        })
+
+        setProfits({
+          tableRakeUSD: 0,
+          tableRakeCoins: 0,
+          storeSalesUSD: 0,
+          storeSalesCoins: 0,
+          tournamentMarginUSD: 0,
+          tournamentMarginCoins: 0,
+          cashierOperationsUSD: 0,
+          cashierOperationsCoins: 0,
+          normalWithdrawalFeesUSD: 0,
+          normalWithdrawalFeesCoins: 0,
+          vipWithdrawalFeesUSD: 0,
+          vipWithdrawalFeesCoins: 0,
+          totalProfitUSD: 0,
+          totalProfitCoins: 0
         })
 
         const resetAccounts = cashierList.map((c) => ({
@@ -601,9 +639,8 @@ export default function AdminDashboardPage() {
               const batch = writeBatch(db)
               ordSnap.forEach((oDoc) => {
                 batch.update(oDoc.ref, {
-                  status: 'cancelled',
                   reconcileExcluded: true,
-                  cancelledAt: now
+                  excludedAt: now
                 })
               })
               await batch.commit()

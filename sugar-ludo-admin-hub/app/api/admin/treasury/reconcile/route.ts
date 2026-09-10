@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminDb, hasAdminCredentials } from '@/lib/firebase-admin'
 import { db } from '@/lib/firebase'
-import { collection, getDocs, doc, setDoc } from 'firebase/firestore'
+import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore'
 
 export async function POST(request: Request) {
   try {
@@ -36,12 +36,23 @@ export async function POST(request: Request) {
         totalCashierFloatCoins += fCoins
       })
 
-      // Sumar comisiones de retiros liquidados en cashier_orders
+      // Leer desglose previo y hardResetAt
+      const ledgerSnap = await adminDb.collection('system_treasury').doc('global_ledger').get()
+      const prevData = ledgerSnap.exists ? (ledgerSnap.data() || {}) : {}
+      const hardResetAt = Number(prevData.hardResetAt || 0)
+      const prevProfits = prevData.profitsBreakdown || {}
+      const tableRakeUSD = Number(prevProfits.tableRakeUSD || 0)
+      const storeSalesUSD = Number(prevProfits.storeSalesUSD || 0)
+      const tournamentMarginUSD = Number(prevProfits.tournamentMarginUSD || 0)
+      houseNetProfitsUSD += tableRakeUSD + storeSalesUSD + tournamentMarginUSD
+
+      // Sumar comisiones de retiros liquidados posteriores al hardResetAt
       const ordersSnap = await adminDb.collection('cashier_orders').where('status', '==', 'completed').get()
       totalCompletedOrders = ordersSnap.size
       ordersSnap.forEach((d: any) => {
         const o = d.data() || {}
-        if (o.type === 'withdraw' && !o.reconcileExcluded) {
+        const orderCompletedAt = Number(o.completedAt || o.createdAt || 0)
+        if (o.type === 'withdraw' && !o.reconcileExcluded && orderCompletedAt > hardResetAt) {
           const isVip = Boolean(o.isVip || o.isVipWithdraw || o.paymentMethod === 'usdt_bep20' || o.paymentMethod === 'usdt_trc20_vip')
           const amountFiat = Number(o.amountFiat || (Number(o.amountSugarCoins || 0) / 100))
           const feePercent = isVip ? 0.10 : 0.05
@@ -55,15 +66,6 @@ export async function POST(request: Request) {
         }
       })
 
-      // Leer desglose adicional previo si existe (rake, tienda, etc.)
-      const ledgerSnap = await adminDb.collection('system_treasury').doc('global_ledger').get()
-      const prevData = ledgerSnap.exists ? (ledgerSnap.data() || {}) : {}
-      const prevProfits = prevData.profitsBreakdown || {}
-      const tableRakeUSD = Number(prevProfits.tableRakeUSD || 0)
-      const storeSalesUSD = Number(prevProfits.storeSalesUSD || 0)
-      const tournamentMarginUSD = Number(prevProfits.tournamentMarginUSD || 0)
-      houseNetProfitsUSD += tableRakeUSD + storeSalesUSD + tournamentMarginUSD
-
       const playerCustodyUSD = parseFloat((totalPlayerCoins / 100).toFixed(2))
       const houseNetProfitsCoins = Math.round(houseNetProfitsUSD * 100)
       const totalVaultUSD = parseFloat((playerCustodyUSD + houseNetProfitsUSD).toFixed(2))
@@ -71,6 +73,7 @@ export async function POST(request: Request) {
 
       const updatedLedger = {
         id: 'global_ledger',
+        hardResetAt,
         totalVaultUSD,
         totalVaultSugarCoins,
         playerCustodyUSD,
@@ -122,10 +125,22 @@ export async function POST(request: Request) {
       totalCashierFloatCoins += fCoins
     })
 
+    // Leer desglose previo y hardResetAt en motor híbrido
+    const ledgerDocRef = doc(db, 'system_treasury', 'global_ledger')
+    const ledgerSnap = await getDoc(ledgerDocRef)
+    const prevData = ledgerSnap.exists() ? (ledgerSnap.data() || {}) : {}
+    const hardResetAt = Number(prevData.hardResetAt || 0)
+    const prevProfits = prevData.profitsBreakdown || {}
+    const tableRakeUSD = Number(prevProfits.tableRakeUSD || 0)
+    const storeSalesUSD = Number(prevProfits.storeSalesUSD || 0)
+    const tournamentMarginUSD = Number(prevProfits.tournamentMarginUSD || 0)
+    houseNetProfitsUSD += tableRakeUSD + storeSalesUSD + tournamentMarginUSD
+
     const ordersSnap = await getDocs(collection(db, 'cashier_orders'))
     ordersSnap.forEach((d) => {
       const o = d.data() || {}
-      if (o.status === 'completed' && o.type === 'withdraw' && !o.reconcileExcluded) {
+      const orderCompletedAt = Number(o.completedAt || o.createdAt || 0)
+      if (o.status === 'completed' && o.type === 'withdraw' && !o.reconcileExcluded && orderCompletedAt > hardResetAt) {
         totalCompletedOrders++
         const isVip = Boolean(o.isVip || o.isVipWithdraw || o.paymentMethod === 'usdt_bep20' || o.paymentMethod === 'usdt_trc20_vip')
         const amountFiat = Number(o.amountFiat || (Number(o.amountSugarCoins || 0) / 100))
@@ -147,6 +162,7 @@ export async function POST(request: Request) {
 
     const updatedLedger = {
       id: 'global_ledger',
+      hardResetAt,
       totalVaultUSD,
       totalVaultSugarCoins,
       playerCustodyUSD,
@@ -159,9 +175,9 @@ export async function POST(request: Request) {
         withdrawalFeesUSD: parseFloat((normalWithdrawalFeesUSD + vipWithdrawalFeesUSD).toFixed(2)),
         normalWithdrawalFeesUSD: parseFloat(normalWithdrawalFeesUSD.toFixed(2)),
         vipWithdrawalFeesUSD: parseFloat(vipWithdrawalFeesUSD.toFixed(2)),
-        tableRakeUSD: 0,
-        storeSalesUSD: 0,
-        tournamentMarginUSD: 0
+        tableRakeUSD,
+        storeSalesUSD,
+        tournamentMarginUSD
       },
       lastAuditedAt: now,
       lastAuditedBy: adminName || adminUid || 'Super Admin'

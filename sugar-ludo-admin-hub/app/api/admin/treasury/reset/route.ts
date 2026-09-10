@@ -51,6 +51,7 @@ export async function POST(request: Request) {
       const newVaultUSD = Math.max(0, currentVaultUSD - currentHouseProfitsUSD)
 
       await ledgerRef.set({
+        hardResetAt: now,
         totalVaultUSD: newVaultUSD,
         totalVaultSugarCoins: Math.round(newVaultUSD * 100),
         houseNetProfitsUSD: 0,
@@ -147,6 +148,7 @@ export async function POST(request: Request) {
     if (scope === 'total_hard_reset') {
       await ledgerRef.set({
         id: 'global_ledger',
+        hardResetAt: now,
         totalVaultUSD: 0.0,
         totalVaultSugarCoins: 0,
         playerCustodyUSD: 0.0,
@@ -160,7 +162,9 @@ export async function POST(request: Request) {
           storeSalesUSD: 0,
           withdrawalFeesUSD: 0,
           normalWithdrawalFeesUSD: 0,
-          vipWithdrawalFeesUSD: 0
+          vipWithdrawalFeesUSD: 0,
+          normalWithdrawalFeesCoins: 0,
+          vipWithdrawalFeesCoins: 0
         },
         lastAuditedAt: now
       })
@@ -283,6 +287,7 @@ export async function POST(request: Request) {
   // 1. REINICIO DE TESORERÍA SOLAMENTE
   if (scope === 'treasury_only') {
     await setDoc(ledgerRef, {
+      hardResetAt: now,
       houseNetProfitsUSD: 0,
       houseNetProfitsCoins: 0,
       profitsBreakdown: {
@@ -353,6 +358,7 @@ export async function POST(request: Request) {
   if (scope === 'total_hard_reset') {
     await setDoc(ledgerRef, {
       id: 'global_ledger',
+      hardResetAt: now,
       totalVaultUSD: 0.0,
       totalVaultSugarCoins: 0,
       playerCustodyUSD: 0.0,
@@ -366,7 +372,9 @@ export async function POST(request: Request) {
         storeSalesUSD: 0,
         withdrawalFeesUSD: 0,
         normalWithdrawalFeesUSD: 0,
-        vipWithdrawalFeesUSD: 0
+        vipWithdrawalFeesUSD: 0,
+        normalWithdrawalFeesCoins: 0,
+        vipWithdrawalFeesCoins: 0
       },
       lastAuditedAt: now
     })
@@ -415,9 +423,8 @@ export async function POST(request: Request) {
           const batch = writeBatch(db)
           ordersSnap.forEach((oDoc) => {
             batch.update(oDoc.ref, {
-              status: 'cancelled',
               reconcileExcluded: true,
-              cancelledAt: now
+              excludedAt: now
             })
           })
           await batch.commit()
