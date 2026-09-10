@@ -263,6 +263,25 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
         }
         setTransactions(prev => [newPendingTx, ...prev.filter(t => t.orderId !== res.orderId)].slice(0, 50))
 
+        const newActiveOrder: PlayerP2POrder = {
+          id: res.orderId,
+          type: 'withdraw',
+          status: 'pending',
+          playerUid: user.uid,
+          playerId: user.uid.slice(0, 8),
+          playerName: user.nickname || user.displayName || 'Jugador',
+          amountFiat: amount,
+          currency: 'USDT',
+          amountSugarCoins: coinsToDeduct,
+          paymentMethod: isVipWithdraw ? 'usdt_trc20_vip' : 'usdt_trc20',
+          receiptReferenceNumber: targetWalletAddress,
+          createdAt: Date.now(),
+          isVip: Boolean(isVipWithdraw),
+          isVipWithdraw: Boolean(isVipWithdraw),
+          isEscrowLocked: true
+        }
+        setActiveOrders(prev => [newActiveOrder, ...prev.filter(o => o.id !== res.orderId)])
+
         setWithdrawAmount('')
         showNotification(`Solicitud de retiro enviada (-${coinsToDeduct} SC retenidos en espera de validación).`, 'success')
         refreshData()

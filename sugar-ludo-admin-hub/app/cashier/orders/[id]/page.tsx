@@ -55,6 +55,33 @@ export default function OrderDetailPage() {
     }
   }, [cashierList])
 
+  // Escuchar saldo flotante real de trabajo desde Firestore (cashier_profiles/{uid})
+  useEffect(() => {
+    if (!currentCashierSession?.uid) return
+    let unsubProfile: (() => void) | null = null
+    try {
+      const profileRef = doc(db, 'cashier_profiles', currentCashierSession.uid)
+      unsubProfile = onSnapshot(profileRef, (snap) => {
+        if (snap.exists()) {
+          const pData = snap.data()
+          const fUSDT = Number(pData.floatBalanceUSDT ?? (Number(pData.floatBalanceCoins || 0) / 100))
+          const fCoins = Number(pData.floatBalanceCoins ?? Math.round(fUSDT * 100))
+          setCurrentCashierSession((prev: any) => ({
+            ...(prev || {}),
+            floatBalanceCoins: fCoins,
+            floatBalanceUSDT: fUSDT
+          }))
+        }
+      }, (err) => {
+        console.debug('[OrderDetailPage] Profile snapshot notice:', err?.message)
+      })
+    } catch {}
+
+    return () => {
+      if (unsubProfile) unsubProfile()
+    }
+  }, [currentCashierSession?.uid])
+
   const [order, setOrder] = useState<CashierOrder | null>(() => {
     const cached = OrdersCache.get()
     return cached?.find((o) => o.id === orderId) || null
@@ -265,10 +292,9 @@ export default function OrderDetailPage() {
   const isTerminated = isCompleted || isCancelled
   const isWithdraw = order.type === 'withdraw'
 
-  // Saldo flotante real de trabajo del cajero activo
-  const cashierTarget = cashierList.find(c => c.uid === currentCashierSession.uid || (currentCashierSession.email && c.email.toLowerCase() === currentCashierSession.email.toLowerCase())) || currentCashierSession
-  const cashierFloatCoins = Number((cashierTarget as any).floatBalanceCoins ?? 0)
-  const cashierFloatUSDT = Number((cashierTarget as any).floatBalanceUSDT ?? (cashierFloatCoins / 100))
+  // Saldo flotante real de trabajo del cajero activo (prioriza listener en vivo)
+  const cashierFloatCoins = Number((currentCashierSession as any).floatBalanceCoins ?? (cashierList.find(c => c.uid === currentCashierSession.uid)?.floatBalanceCoins ?? 0))
+  const cashierFloatUSDT = Number((currentCashierSession as any).floatBalanceUSDT ?? (cashierList.find(c => c.uid === currentCashierSession.uid)?.floatBalanceUSDT ?? (cashierFloatCoins / 100)))
 
   const slaInfo = getWithdrawalSla(order)
   const totalFiatRequestedUSD = Number(order.amountFiat || (Number(order.amountSugarCoins || 0) / 100))
