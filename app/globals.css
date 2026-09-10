@@ -521,4 +521,11 @@
 .animate-voice-bar-2 { animation: voice-bar-pulse-2 0.35s ease-in-out infinite; }
 .animate-voice-bar-3 { animation: voice-bar-pulse-3 0.45s ease-in-out infinite; }
 
+/* SAFE AREA INSETS (Móvil / Notch / Dynamic Island) - 0px en Desktop Web */
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pl-safe { padding-left: env(safe-area-inset-left, 0px); }
+.pr-safe { padding-right: env(safe-area-inset-right, 0px); }
+
+
 

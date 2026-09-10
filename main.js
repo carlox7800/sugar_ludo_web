@@ -1,6 +1,15 @@
-const { app, BrowserWindow, protocol, net } = require('electron');
+const { app, BrowserWindow, protocol, net, shell } = require('electron');
 const path = require('path');
 const url = require('url');
+
+// Bloqueo de instancia única para evitar múltiples ventanas concurrentes y conflictos de audio/sockets
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+  process.exit(0);
+}
+
+let mainWindow = null;
 
 // 1. Registrar esquema 'app' como privilegiado ANTES de que la app esté lista
 protocol.registerSchemesAsPrivileged([
@@ -17,7 +26,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
     fullscreen: true,
@@ -27,6 +36,18 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true
+    }
+  });
+
+  // Atajo de teclado F11 para alternar pantalla completa y Escape para salir
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F11' && input.type === 'keyDown') {
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+      event.preventDefault();
+    }
+    if (input.key === 'Escape' && input.type === 'keyDown' && mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false);
+      event.preventDefault();
     }
   });
 
@@ -47,9 +68,20 @@ function createWindow() {
     };
   });
 
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
   // Next.js static export produce un index.html que cargamos directamente
   mainWindow.loadURL('app://localhost/index.html');
 }
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
 
 app.whenReady().then(() => {
   // Configurar User-Agent limpio para evitar bloqueo de Google ("disallowed_useragent")

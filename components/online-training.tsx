@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, Zap, Key, PlusCircle, LogIn, Copy, Check, Sparkles, Loader2, Wifi, WifiOff, BookOpen, Swords } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, copyToClipboardSilently } from '@/lib/utils'
 import { useSocket } from '@/lib/useSocket'
 import { useAuth } from '@/lib/auth-context'
 import { useVoiceChat } from '@/lib/voice-context'
@@ -252,9 +252,10 @@ export function OnlineTraining({
 
   const handleCopyCode = () => {
     if (createdRoomCode) {
-      navigator.clipboard.writeText(createdRoomCode)
-      setCopiedCode(true)
-      setTimeout(() => setCopiedCode(false), 2000)
+      copyToClipboardSilently(createdRoomCode).then(() => {
+        setCopiedCode(true)
+        setTimeout(() => setCopiedCode(false), 2000)
+      })
     }
   }
 
@@ -735,9 +736,10 @@ export function OnlineTraining({
                   </span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(lobbyData.roomId)
-                      setCopiedCode(true)
-                      setTimeout(() => setCopiedCode(false), 2000)
+                      copyToClipboardSilently(lobbyData.roomId).then(() => {
+                        setCopiedCode(true)
+                        setTimeout(() => setCopiedCode(false), 2000)
+                      })
                     }}
                     className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[oklch(1_0_0/0.1)] hover:bg-[var(--candy-cyan)] hover:text-black transition-all text-foreground shadow-md active:scale-95"
                     title="Copiar código"

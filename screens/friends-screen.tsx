@@ -20,7 +20,7 @@ import {
   MessageSquare,
   AlertCircle
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, copyToClipboardSilently } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { PRESET_AVATARS } from '@/components/avatar-selector-modal'
 import { getSocket } from '@/lib/socket'
@@ -144,10 +144,11 @@ export function FriendsScreen({
   }, [activeChallengeId, challengingFriend, duelRoomCode, onStartDuel])
 
   const handleCopyId = () => {
-    navigator.clipboard.writeText(myFriendId)
-    setCopiedMyId(true)
-    setTimeout(() => setCopiedMyId(false), 2000)
-    showToast('📋 ¡ID de amigo copiado al portapapeles!')
+    copyToClipboardSilently(myFriendId).then(() => {
+      setCopiedMyId(true)
+      setTimeout(() => setCopiedMyId(false), 2000)
+      showToast('📋 ¡ID de amigo copiado al portapapeles!')
+    })
   }
 
   const handleAcceptRequest = async (req: FriendRequestItem) => {
