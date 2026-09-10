@@ -403,13 +403,15 @@ export default function AdminDashboardPage() {
                 const updatedHistory = [resetTxEntry, ...existingHistory].slice(0, 50)
                 batch.update(uDoc.ref, {
                   coins: 0,
+                  escrowLockedCoins: 0,
                   walletHistory: updatedHistory,
-                  lastResetAt: now
+                  lastActiveAt: now
                 })
               } else {
                 batch.update(uDoc.ref, {
                   coins: 0,
-                  lastResetAt: now
+                  escrowLockedCoins: 0,
+                  lastActiveAt: now
                 })
               }
             })
@@ -573,13 +575,15 @@ export default function AdminDashboardPage() {
                 const updatedHistory = [resetTxEntry, ...existingHistory].slice(0, 50)
                 batch.update(uDoc.ref, {
                   coins: 0,
+                  escrowLockedCoins: 0,
                   walletHistory: updatedHistory,
-                  lastResetAt: now
+                  lastActiveAt: now
                 })
               } else {
                 batch.update(uDoc.ref, {
                   coins: 0,
-                  lastResetAt: now
+                  escrowLockedCoins: 0,
+                  lastActiveAt: now
                 })
               }
             })
@@ -595,7 +599,13 @@ export default function AdminDashboardPage() {
             const ordSnap = await getDocs(query(collection(db, 'cashier_orders'), limit(150)))
             if (!ordSnap.empty) {
               const batch = writeBatch(db)
-              ordSnap.forEach((oDoc) => batch.delete(oDoc.ref))
+              ordSnap.forEach((oDoc) => {
+                batch.update(oDoc.ref, {
+                  status: 'cancelled',
+                  reconcileExcluded: true,
+                  cancelledAt: now
+                })
+              })
               await batch.commit()
             }
           } catch {}

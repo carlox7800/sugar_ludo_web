@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       totalCompletedOrders = ordersSnap.size
       ordersSnap.forEach((d: any) => {
         const o = d.data() || {}
-        if (o.type === 'withdraw') {
+        if (o.type === 'withdraw' && !o.reconcileExcluded) {
           const isVip = Boolean(o.isVip || o.isVipWithdraw || o.paymentMethod === 'usdt_bep20' || o.paymentMethod === 'usdt_trc20_vip')
           const amountFiat = Number(o.amountFiat || (Number(o.amountSugarCoins || 0) / 100))
           const feePercent = isVip ? 0.10 : 0.05
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
     const ordersSnap = await getDocs(collection(db, 'cashier_orders'))
     ordersSnap.forEach((d) => {
       const o = d.data() || {}
-      if (o.status === 'completed' && o.type === 'withdraw') {
+      if (o.status === 'completed' && o.type === 'withdraw' && !o.reconcileExcluded) {
         totalCompletedOrders++
         const isVip = Boolean(o.isVip || o.isVipWithdraw || o.paymentMethod === 'usdt_bep20' || o.paymentMethod === 'usdt_trc20_vip')
         const amountFiat = Number(o.amountFiat || (Number(o.amountSugarCoins || 0) / 100))

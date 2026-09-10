@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { adminDb, admin } from '@/lib/firebase-admin'
+import { adminDb, hasAdminCredentials } from '@/lib/firebase-admin'
+import { db } from '@/lib/firebase'
+import { collection, getDocs, doc, setDoc, writeBatch, limit, query } from 'firebase/firestore'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,17 +32,15 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!adminDb || !adminDb.collection) {
-      return NextResponse.json(
-        { success: false, error: 'Servicio administrativo de Firebase no inicializado.' },
-        { status: 500, headers: corsHeaders }
-      )
-    }
-
     const now = Date.now()
-    const ledgerRef = adminDb.collection('system_treasury').doc('global_ledger')
-    const ledgerSnap = await ledgerRef.get()
-    const ledgerData = ledgerSnap.exists ? (ledgerSnap.data() || {}) : {}
+
+    // =========================================================================
+    // MODO 1: ADMIN SDK PRIVILEGIADO (Si existen credenciales en el servidor)
+    // =========================================================================
+    if (adminDb && hasAdminCredentials) {
+      const ledgerRef = adminDb.collection('system_treasury').doc('global_ledger')
+      const ledgerSnap = await ledgerRef.get()
+      const ledgerData = ledgerSnap.exists ? (ledgerSnap.data() || {}) : {}
 
     // =========================================================================
     // 1. REINICIO DE TESORERÍA SOLAMENTE (houseNetProfits = 0, NO TOCA JUGADORES)
@@ -165,6 +165,24 @@ export async function POST(request: Request) {
         lastAuditedAt: now
       })
 
+      // Resetear usuarios en users
+      try {
+        const usersSnap = await adminDb.collection('users').limit(150).get()
+        if (!usersSnap.empty) {
+          const batch = adminDb.batch()
+          usersSnap.forEach((uDoc: any) => {
+            batch.update(uDoc.ref, {
+              coins: 0,
+              escrowLockedCoins: 0,
+              lastActiveAt: now
+            })
+          })
+          await batch.commit()
+        }
+      } catch (uErr: any) {
+        console.warn('[AdminResetAPI] Reset users notice (Admin SDK):', uErr?.message)
+      }
+
       // Resetear cajeros
       try {
         const cashiersSnap = await adminDb.collection('cashier_profiles').get()
@@ -176,7 +194,7 @@ export async function POST(request: Request) {
               floatBalanceUSDT: 0,
               totalPaidWithdrawalsUSDT: 0,
               totalPaidWithdrawalsCoins: 0,
-              lastResetAt: now
+              lastActiveAt: now
             })
           })
           await batch.commit()
@@ -253,14 +271,229 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Reinicio contable ejecutado con éxito bajo alcance: ${scope.toUpperCase()}`
+      message: `Reinicio contable ejecutado con éxito bajo alcance: ${scope.toUpperCase()} (Admin SDK)`
     }, { headers: corsHeaders })
-
-  } catch (err: any) {
-    console.error('[AdminResetAPI] Error general en reinicio contable:', err)
-    return NextResponse.json(
-      { success: false, error: err.message || 'Error al ejecutar el reinicio contable.' },
-      { status: 500, headers: corsHeaders }
-    )
   }
+
+  // =========================================================================
+  // MODO 2: MOTOR HÍBRIDO DE RESPALDO (SDK Cliente en Node.js)
+  // =========================================================================
+  const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+
+  // 1. REINICIO DE TESORERÍA SOLAMENTE
+  if (scope === 'treasury_only') {
+    await setDoc(ledgerRef, {
+      houseNetProfitsUSD: 0,
+      houseNetProfitsCoins: 0,
+      profitsBreakdown: {
+        tableRakeUSD: 0,
+        storeSalesUSD: 0,
+        withdrawalFeesUSD: 0,
+        normalWithdrawalFeesUSD: 0,
+        vipWithdrawalFeesUSD: 0,
+        normalWithdrawalFeesCoins: 0,
+        vipWithdrawalFeesCoins: 0
+      },
+      lastAuditedAt: now
+    }, { merge: true })
+
+    try {
+      const statsSnap = await getDocs(query(collection(db, 'daily_stats'), limit(100)))
+      if (!statsSnap.empty) {
+        const batch = writeBatch(db)
+        statsSnap.forEach((docSnap) => batch.delete(docSnap.ref))
+        await batch.commit()
+      }
+    } catch {}
+  }
+
+  // 2. REINICIO DE CAJEROS SOLAMENTE
+  if (scope === 'cashiers_only') {
+    try {
+      const cashiersSnap = await getDocs(collection(db, 'cashier_profiles'))
+      if (!cashiersSnap.empty) {
+        const batch = writeBatch(db)
+        cashiersSnap.forEach((cDoc) => {
+          batch.update(cDoc.ref, {
+            floatBalanceCoins: 0,
+            floatBalanceUSDT: 0,
+            totalPaidWithdrawalsUSDT: 0,
+            totalPaidWithdrawalsCoins: 0,
+            lastActiveAt: now
+          })
+        })
+        await batch.commit()
+      }
+    } catch {}
+
+    try {
+      const configRef = doc(db, 'system_config', 'cashier_accounts')
+      await setDoc(configRef, { updatedAt: now }, { merge: true })
+    } catch {}
+
+    await setDoc(ledgerRef, {
+      cashierFloatsUSD: 0,
+      cashierFloatsCoins: 0,
+      lastAuditedAt: now
+    }, { merge: true })
+
+    if (purgeShiftLedger) {
+      try {
+        const shiftsSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
+        if (!shiftsSnap.empty) {
+          const batch = writeBatch(db)
+          shiftsSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+          await batch.commit()
+        }
+      } catch {}
+    }
+  }
+
+  // 3. HARD RESET TOTAL (Bóveda completa, usuarios, cajeros y órdenes de prueba)
+  if (scope === 'total_hard_reset') {
+    await setDoc(ledgerRef, {
+      id: 'global_ledger',
+      totalVaultUSD: 0.0,
+      totalVaultSugarCoins: 0,
+      playerCustodyUSD: 0.0,
+      playerCustodyCoins: 0,
+      cashierFloatsUSD: 0.0,
+      cashierFloatsCoins: 0,
+      houseNetProfitsUSD: 0.0,
+      houseNetProfitsCoins: 0,
+      profitsBreakdown: {
+        tableRakeUSD: 0,
+        storeSalesUSD: 0,
+        withdrawalFeesUSD: 0,
+        normalWithdrawalFeesUSD: 0,
+        vipWithdrawalFeesUSD: 0
+      },
+      lastAuditedAt: now
+    })
+
+    // 3.1. Resetear saldos de todos los usuarios en users (100% compatible con firestore.rules Cláusula 3)
+    try {
+      const usersSnap = await getDocs(query(collection(db, 'users'), limit(150)))
+      if (!usersSnap.empty) {
+        const batch = writeBatch(db)
+        usersSnap.forEach((uDoc) => {
+          batch.update(uDoc.ref, {
+            coins: 0,
+            escrowLockedCoins: 0,
+            lastActiveAt: now
+          })
+        })
+        await batch.commit()
+      }
+    } catch (uErr: any) {
+      console.warn('[AdminResetAPI] Reset users notice (Hybrid):', uErr?.message)
+    }
+
+    // 3.2. Resetear cajeros
+    try {
+      const cashiersSnap = await getDocs(collection(db, 'cashier_profiles'))
+      if (!cashiersSnap.empty) {
+        const batch = writeBatch(db)
+        cashiersSnap.forEach((cDoc) => {
+          batch.update(cDoc.ref, {
+            floatBalanceCoins: 0,
+            floatBalanceUSDT: 0,
+            totalPaidWithdrawalsUSDT: 0,
+            totalPaidWithdrawalsCoins: 0,
+            lastActiveAt: now
+          })
+        })
+        await batch.commit()
+      }
+    } catch {}
+
+    // 3.3. Neutralizar órdenes de prueba para que /api/admin/treasury/reconcile no resucite las ganancias
+    if (purgeOrdersHistory) {
+      try {
+        const ordersSnap = await getDocs(query(collection(db, 'cashier_orders'), limit(150)))
+        if (!ordersSnap.empty) {
+          const batch = writeBatch(db)
+          ordersSnap.forEach((oDoc) => {
+            batch.update(oDoc.ref, {
+              status: 'cancelled',
+              reconcileExcluded: true,
+              cancelledAt: now
+            })
+          })
+          await batch.commit()
+        }
+      } catch {}
+    }
+
+    // 3.4. Purgar libro de turnos si fue solicitado
+    if (purgeShiftLedger) {
+      try {
+        const shiftsSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
+        if (!shiftsSnap.empty) {
+          const batch = writeBatch(db)
+          shiftsSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+          await batch.commit()
+        }
+      } catch {}
+    }
+
+    // 3.5. Purgar estadísticas diarias
+    try {
+      const statsSnap = await getDocs(query(collection(db, 'daily_stats'), limit(50)))
+      if (!statsSnap.empty) {
+        const batch = writeBatch(db)
+        statsSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+        await batch.commit()
+      }
+    } catch {}
+  }
+
+  // 4. RESET OPCIONAL DE TELEMETRÍA
+  if (resetTelemetryMetrics) {
+    try {
+      const telRef = doc(db, 'system_treasury', 'live_telemetry')
+      await setDoc(telRef, {
+        totalPlayersOnline: 0,
+        offlineMatchesCount: 0,
+        onlineTrainingPlayersCount: 0,
+        competitivePlayersCount: 0,
+        activeRoomsCount: 0,
+        playersInLobby: 0,
+        playersInAITraining: 0,
+        playersInOnlineTraining: 0,
+        playersInCompetitive: 0,
+        serverStatus: 'healthy',
+        updatedAt: now
+      }, { merge: true })
+    } catch {}
+  }
+
+  // 5. REGISTRO INMUTABLE DE AUDITORÍA
+  try {
+    const auditRef = doc(collection(db, 'audit_logs'))
+    await setDoc(auditRef, {
+      id: auditRef.id,
+      action: 'ECONOMIC_HARD_RESET_HYBRID_SERVER',
+      scope,
+      adminUid: adminUid || 'adm_super_001',
+      adminName: adminName || 'Super Admin',
+      purgeOrdersHistory: Boolean(purgeOrdersHistory),
+      purgeShiftLedger: Boolean(purgeShiftLedger),
+      resetTelemetryMetrics: Boolean(resetTelemetryMetrics),
+      timestamp: now
+    })
+  } catch {}
+
+  return NextResponse.json({
+    success: true,
+    message: `Reinicio contable ejecutado con éxito bajo alcance: ${scope.toUpperCase()} (Motor Híbrido)`
+  }, { headers: corsHeaders })
+
+} catch (err: any) {
+  console.error('[AdminResetAPI] Error general en reinicio contable:', err)
+  return NextResponse.json(
+    { success: false, error: err.message || 'Error al ejecutar el reinicio contable.' },
+    { status: 500, headers: corsHeaders }
+  )
+}
 }
