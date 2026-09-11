@@ -356,7 +356,7 @@ export function CompetitiveTraining({
   const currentFriendsEconomy = economyMatrix[createPlayers] || DEFAULT_ECONOMY_MATRIX[createPlayers] || ECONOMY_MATRIX[createPlayers]
 
   return (
-    <section className="flex flex-col gap-3 md:gap-4 animate-slide-in">
+    <section className="flex flex-col gap-5 md:gap-7 animate-slide-in w-full md:my-auto">
       {/* Top navigation bar */}
       <div className="flex items-center justify-between gap-3">
         <button
@@ -392,7 +392,7 @@ export function CompetitiveTraining({
       </div>
 
       {/* Main Container Card */}
-      <article className="glass relative overflow-hidden rounded-3xl p-5 sm:p-6 border border-[var(--candy-gold)]/20 shadow-[0_0_40px_var(--candy-gold)]/10">
+      <article className="glass relative overflow-hidden rounded-3xl p-5 sm:p-6 md:p-8 border border-[var(--candy-gold)]/20 shadow-[0_0_40px_var(--candy-gold)]/10">
         {/* Glow Background Elements */}
         <div className="pointer-events-none absolute -right-12 -top-12 size-60 rounded-full bg-[var(--candy-gold)]/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-16 left-10 size-60 rounded-full bg-[var(--candy-orange)]/15 blur-3xl" />

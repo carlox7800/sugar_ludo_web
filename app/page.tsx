@@ -466,13 +466,13 @@ function PageContent() {
         )
       case 'training':
         return (
-          <div className="mx-auto w-full max-w-3xl flex-1">
+          <div className="mx-auto w-full max-w-3xl flex-1 flex flex-col justify-start md:justify-center my-auto">
             <AiTraining onBack={() => setScreenAndRef('lobby')} onStartGame={handleStartGame} />
           </div>
         )
       case 'online-training':
         return (
-          <div className="mx-auto w-full max-w-3xl flex-1">
+          <div className="mx-auto w-full max-w-3xl flex-1 flex flex-col justify-start md:justify-center my-auto">
             <OnlineTraining 
               onBack={() => {
                 setDuelAutoJoinCode(null)
@@ -488,7 +488,7 @@ function PageContent() {
         )
       case 'competitive':
         return (
-          <div className="mx-auto w-full max-w-3xl flex-1">
+          <div className="mx-auto w-full max-w-3xl flex-1 flex flex-col justify-start md:justify-center my-auto">
             <CompetitiveTraining 
               onBack={() => setScreenAndRef('lobby')} 
               onMatchFound={(data) => handleMatchFound(data, 'competitive')}

@@ -50,7 +50,7 @@ export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStar
   const activeDifficulty = DIFFICULTY_OPTIONS.find((d) => d.id === difficulty)!
 
   return (
-    <section className="flex flex-col gap-5 md:gap-6">
+    <section className="flex flex-col gap-5 md:gap-7 w-full md:my-auto">
       {/* Top navigation */}
       <div className="flex items-center justify-between gap-3">
         <button
@@ -68,7 +68,7 @@ export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStar
       </div>
 
       {/* Central container */}
-      <article className="glass relative overflow-hidden rounded-3xl p-5 sm:p-6">
+      <article className="glass relative overflow-hidden rounded-3xl p-5 sm:p-6 md:p-8">
         <div className="pointer-events-none absolute -right-12 -top-12 size-60 rounded-full bg-[oklch(0.7_0.27_350/0.28)] blur-3xl" />
         <div className="pointer-events-none absolute -bottom-16 left-10 size-60 rounded-full bg-[oklch(0.82_0.15_200/0.2)] blur-3xl" />
 

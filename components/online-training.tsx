@@ -355,7 +355,7 @@ export function OnlineTraining({
   }
 
   return (
-    <section className="flex flex-col gap-5 md:gap-6 animate-slide-in">
+    <section className="flex flex-col gap-5 md:gap-7 animate-slide-in w-full md:my-auto">
       {/* Top navigation bar */}
       <div className="flex items-center justify-between gap-3">
         <button
@@ -391,7 +391,7 @@ export function OnlineTraining({
       </div>
 
       {/* Main Container Card */}
-      <article className="glass relative overflow-hidden rounded-3xl p-6 sm:p-8">
+      <article className="glass relative overflow-hidden rounded-3xl p-6 sm:p-8 md:p-9">
         {/* Glow Background Elements */}
         <div className="pointer-events-none absolute -right-12 -top-12 size-60 rounded-full bg-[oklch(0.82_0.15_200/0.25)] blur-3xl" />
         <div className="pointer-events-none absolute -bottom-16 left-10 size-60 rounded-full bg-[oklch(0.7_0.27_350/0.25)] blur-3xl" />

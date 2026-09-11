@@ -1220,7 +1220,7 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
       )}
 
       {/* Main Core View Area */}
-      <main className="grow flex flex-col lg:flex-row items-center lg:items-start justify-center gap-6 px-4 py-6 w-full max-w-7xl mx-auto">
+      <main className="grow flex flex-col items-center justify-center gap-6 px-4 py-4 md:py-6 w-full max-w-7xl mx-auto">
         {isPlaying ? (
           config && (config.playerCount === 5 || config.playerCount === 6) ? (
             <HexGameView
@@ -1309,8 +1309,8 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
               {/* Minimalist Log Ticker */}
               {logs.length > 0 && (
-                <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full max-w-md text-center px-4">
-                  <span className="inline-block bg-card/90 sm:backdrop-blur-md border border-border px-4 py-1.5 rounded-full text-foreground text-xs font-black tracking-wide shadow-md">
+                <div className="absolute bottom-20 md:bottom-24 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full max-w-md text-center px-4 transition-all duration-300">
+                  <span className="inline-block bg-[#0f172a]/90 sm:backdrop-blur-md border border-[var(--candy-cyan)]/30 px-5 py-2 rounded-full text-white text-xs sm:text-sm font-extrabold tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
                     {logs[logs.length - 1].message}
                   </span>
                 </div>

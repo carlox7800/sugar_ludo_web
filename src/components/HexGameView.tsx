@@ -1055,8 +1055,8 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
 
         {/* Minimalist Log Ticker */}
         {gameState.logs.length > 0 && (
-          <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full text-center px-4">
-            <span className="text-white/50 text-[10px] font-medium tracking-widest uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] animate-pulse">
+          <div className="absolute bottom-20 md:bottom-24 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none w-full max-w-md text-center px-4 transition-all duration-300">
+            <span className="inline-block bg-[#0f172a]/90 sm:backdrop-blur-md border border-[var(--candy-cyan)]/30 px-5 py-2 rounded-full text-white text-xs sm:text-sm font-extrabold tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
               {gameState.logs[gameState.logs.length - 1].message}
             </span>
           </div>
