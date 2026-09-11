@@ -1,8 +1,17 @@
-const { app, BrowserWindow, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, protocol, net, shell, ipcMain } = require('electron');
 const path = require('path');
 const url = require('url');
 
-// Bloqueo de instancia única para evitar múltiples ventanas concurrentes y conflictos de audio/sockets
+// Registro de protocolo personalizado para Deep Linking OAuth (sugarludo://)
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('sugarludo', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('sugarludo');
+}
+
+// Bloqueo de instancia única para evitar múltiples ventanas concurrentes y capturar deep links en Windows
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
@@ -10,6 +19,21 @@ if (!gotTheLock) {
 }
 
 let mainWindow = null;
+
+function handleDeepLinkUrl(incomingUrl) {
+  if (!incomingUrl || typeof incomingUrl !== 'string') return;
+  if (!incomingUrl.startsWith('sugarludo://')) return;
+
+  try {
+    const parsed = new URL(incomingUrl);
+    const idToken = parsed.searchParams.get('idToken');
+    if (idToken && mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('auth-deep-link', { idToken });
+    }
+  } catch (e) {
+    console.error('Error procesando deep link:', e);
+  }
+}
 
 // 1. Registrar esquema 'app' como privilegiado ANTES de que la app esté lista
 protocol.registerSchemesAsPrivileged([
@@ -33,6 +57,7 @@ function createWindow() {
     frame: false,
     autoHideMenuBar: true,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true
@@ -51,8 +76,12 @@ function createWindow() {
     }
   });
 
-  // Permitir y configurar popups para inicio de sesión de Google (OAuth / Firebase)
+  // Permitir y configurar popups o redirigir enlaces externos al navegador del sistema
   mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    if (targetUrl.startsWith('http://') || targetUrl.startsWith('https://')) {
+      shell.openExternal(targetUrl);
+      return { action: 'deny' };
+    }
     return {
       action: 'allow',
       overrideBrowserWindowOptions: {
@@ -74,12 +103,39 @@ function createWindow() {
 
   // Next.js static export produce un index.html que cargamos directamente
   mainWindow.loadURL('app://localhost/index.html');
+
+  // Si la aplicación se inició directamente con un argumento sugarludo:// (arranque en frío)
+  const coldUrl = process.argv.find(arg => arg.startsWith('sugarludo://'));
+  if (coldUrl) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      handleDeepLinkUrl(coldUrl);
+    });
+  }
 }
 
-app.on('second-instance', () => {
+// Captura de Deep Link en Windows cuando ya hay una instancia abierta
+app.on('second-instance', (event, commandLine) => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
+
+    const deepUrl = commandLine.find(arg => typeof arg === 'string' && arg.startsWith('sugarludo://'));
+    if (deepUrl) {
+      handleDeepLinkUrl(deepUrl);
+    }
+  }
+});
+
+// Captura de Deep Link en macOS
+app.on('open-url', (event, targetUrl) => {
+  event.preventDefault();
+  handleDeepLinkUrl(targetUrl);
+});
+
+// IPC Handler para abrir URLs en el navegador predeterminado del sistema operativo
+ipcMain.on('open-external-url', (event, targetUrl) => {
+  if (targetUrl && (targetUrl.startsWith('https://') || targetUrl.startsWith('http://'))) {
+    shell.openExternal(targetUrl);
   }
 });
 

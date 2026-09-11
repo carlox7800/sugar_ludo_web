@@ -13,6 +13,14 @@
   "build": {
     "appId": "com.sugarludo.app",
     "productName": "Sugar Ludo",
+    "protocols": [
+      {
+        "name": "Sugar Ludo Protocol",
+        "schemes": [
+          "sugarludo"
+        ]
+      }
+    ],
     "directories": {
       "output": "dist"
     },
@@ -21,7 +29,8 @@
     },
     "files": [
       "out/**/*",
-      "main.js"
+      "main.js",
+      "preload.js"
     ]
   },
   "dependencies": {

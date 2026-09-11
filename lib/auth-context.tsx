@@ -49,6 +49,7 @@ export interface User {
 
 interface AuthState {
   user: User | null
+  isLoaded: boolean
   loginWithGoogle: () => Promise<void>
   loginDev: () => void
   logout: () => Promise<void>
@@ -175,6 +176,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribeAuth()
   }, [])
 
+  // Listener para captura de Deep Linking OAuth en Desktop Electron (sugarludo://auth?idToken=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const electronAuth = (window as any).electronAuth
+    if (electronAuth && electronAuth.onDeepLinkToken) {
+      electronAuth.onDeepLinkToken(async (data: { idToken: string }) => {
+        if (!data?.idToken) return
+        try {
+          console.log('[Auth Electron] Deep Link recibido con idToken. Rehidratando sesión...')
+          const credential = GoogleAuthProvider.credential(data.idToken)
+          const userCredential = await signInWithCredential(auth, credential)
+          const firebaseUser = userCredential.user
+
+          if (firebaseUser) {
+            const userRef = doc(db, 'users', firebaseUser.uid)
+            const docSnap = await getDoc(userRef)
+            if (!docSnap.exists()) {
+              const newUserData = {
+                nickname: null,
+                nicknameUpdatedAt: null,
+                photoURL: '1',
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                createdAt: serverTimestamp(),
+                coins: 200,
+                diamonds: 0,
+                level: 1,
+                xp: 0,
+                unlockedSkins: ['classic'],
+                selectedSkin: 'classic',
+                totalWins: 0,
+                totalLosses: 0,
+                totalGames: 0,
+                rankPoints: 0,
+              }
+              await setDoc(userRef, newUserData)
+            }
+            localStorage.removeItem('sugar_auth_user')
+            console.log('[Auth Electron] Sesión rehidratada con éxito en local:', firebaseUser.uid)
+          }
+        } catch (err) {
+          console.error('[Auth Electron] Error rehidratando credencial desde deep link:', err)
+        }
+      })
+    }
+  }, [])
+
   const saveDevUser = (newUser: User | null) => {
     setUser(newUser)
     if (newUser) {
@@ -186,12 +234,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGoogle = async () => {
     try {
-      const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform()
+      const isNativeCapacitor = typeof window !== 'undefined' && Capacitor.isNativePlatform()
+      const isElectron = typeof window !== 'undefined' && (
+        !!(window as any).electronAuth || 
+        window.navigator.userAgent.includes('Electron') || 
+        window.location.protocol === 'app:'
+      )
 
       let firebaseUser: FirebaseUser | null = null
 
-      if (isNative) {
-        // En Android/iOS nativo: Abre el selector de cuentas del sistema operativo
+      if (isNativeCapacitor) {
+        // En Android/iOS nativo: Abre el selector de cuentas del sistema operativo mediante Capacitor
         console.log('[Auth] Ejecutando FirebaseAuthentication.signInWithGoogle() nativo...')
         const result = await FirebaseAuthentication.signInWithGoogle()
         console.log('[Auth] Resultado recibido de FirebaseAuthentication:', JSON.stringify(result))
@@ -203,8 +256,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           throw new Error(`Google Nativo no devolvió idToken (Resultado: ${JSON.stringify(result)})`)
         }
+      } else if (isElectron) {
+        // En Desktop Electron: Estándar AAA Deep Linking (sugarludo://)
+        // Abrimos el navegador predeterminado del sistema operativo apuntando a la ruta segura de producción
+        console.log('[Auth] Modo Desktop Electron detectado: Abriendo navegador del sistema para Deep Linking OAuth...')
+        const authDesktopUrl = 'https://sugar-ludo-web.onrender.com/auth-desktop'
+        const electronAuth = (window as any).electronAuth
+        if (electronAuth && electronAuth.openExternalUrl) {
+          electronAuth.openExternalUrl(authDesktopUrl)
+        } else {
+          window.open(authDesktopUrl, '_blank')
+        }
+        return
       } else {
-        // En Web / Desktop
+        // En Web Browser tradicional
         const result = await signInWithPopup(auth, googleProvider)
         firebaseUser = result.user
       }
@@ -366,12 +431,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (!isLoaded) return null
-
   return (
     <AuthContext.Provider
       value={{
         user,
+        isLoaded,
         loginWithGoogle,
         loginDev,
         logout,

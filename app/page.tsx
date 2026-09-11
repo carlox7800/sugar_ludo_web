@@ -13,7 +13,7 @@ import { SettingsModal } from '@/components/settings-modal'
 import GameEngine from '@/src/GameEngine'
 import { GameConfig } from '@/src/types'
 import { OnlineGameEngine, OnlineGameData } from '@/screens/online-game-engine'
-import { LogIn } from 'lucide-react'
+import { LogIn, Loader2, Sparkles } from 'lucide-react'
 
 // Screens
 import { WalletScreen } from '@/screens/wallet-screen'
@@ -60,7 +60,7 @@ export type Screen =
   | 'coleccion'
 
 function PageContent() {
-  const { user, loginWithGoogle, loginDev, setNickname } = useAuth()
+  const { user, isLoaded, loginWithGoogle, loginDev, setNickname } = useAuth()
   const { leaveVoiceRoom } = useVoiceChat()
   const [isNative, setIsNative] = useState(false)
   
@@ -293,6 +293,37 @@ function PageContent() {
 
   const handleNicknameConfirm = (nickname: string) => {
     setNickname(nickname)
+  }
+
+  // 0. SPLASH SCREEN DE ARRANQUE LIMPIO (Mientras Firebase Auth resuelve la sesión inicial)
+  if (!isLoaded) {
+    return (
+      <main className="cyber-bg min-h-screen w-full flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden relative">
+        {/* Glow de fondo */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-72 bg-[var(--candy-magenta)]/20 rounded-full blur-[90px] pointer-events-none" />
+
+        <div className="flex flex-col items-center max-w-sm w-full z-10 animate-in fade-in zoom-in-95 duration-500">
+          {/* Logo Animado con Pulso */}
+          <div className="relative mb-6">
+            <div className="flex size-20 items-center justify-center rounded-3xl bg-[var(--candy-magenta)] shadow-[0_0_35px_rgba(255,34,119,0.7)] animate-pulse">
+              <span className="font-display text-5xl font-extrabold text-white drop-shadow-md">S</span>
+            </div>
+            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[var(--candy-cyan)] to-[var(--candy-magenta)] opacity-30 blur-sm -z-10 animate-spin" />
+          </div>
+
+          <h1 className="font-display text-3xl font-extrabold text-white tracking-tight mb-2">
+            SUGAR <span className="text-[var(--candy-cyan)] drop-shadow-[0_0_15px_rgba(34,221,221,0.6)]">LUDO</span>
+          </h1>
+
+          <div className="flex items-center gap-2 mt-4 px-4 py-1.5 rounded-full border border-white/10 bg-black/40 backdrop-blur-md">
+            <Loader2 className="size-4 text-[var(--candy-cyan)] animate-spin" />
+            <span className="text-xs font-bold text-white/80 uppercase tracking-widest">
+              Iniciando Arena...
+            </span>
+          </div>
+        </div>
+      </main>
+    )
   }
 
   // Si está logueado pero falta el nick, forzamos esa pantalla por encima de todo
