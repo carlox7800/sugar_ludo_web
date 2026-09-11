@@ -22,7 +22,6 @@ import { StoreScreen } from '@/screens/store-screen'
 import { EventsScreen } from '@/screens/events-screen'
 import { MailScreen } from '@/screens/mail-screen'
 import { CollectionScreen } from '@/screens/collection-screen'
-import { LandingPage } from '@/screens/landing-page'
 
 // Contexts, Hooks & Modals
 import { PlayerProvider } from '@/lib/player-context'
@@ -45,7 +44,6 @@ import {
 import { initPresenceTracker, updatePlayerTelemetryState, mapScreenToTelemetryState } from '@/lib/presence-service'
 
 export type Screen =
-  | 'landing'
   | 'lobby'
   | 'training'
   | 'online-training'
@@ -117,13 +115,13 @@ function PageContent() {
       } else {
         document.documentElement.classList.remove('theme-sugar')
       }
-      initPresenceTracker('landing')
+      initPresenceTracker('lobby')
     }
   }, [])
   
   // Decide initial screen based on PWA environment and Auth
-  const [screen, setScreen] = useState<Screen>('landing')
-  const screenRef = useRef<Screen>('landing')
+  const [screen, setScreen] = useState<Screen>('lobby')
+  const screenRef = useRef<Screen>('lobby')
   const [config, setConfig] = useState<GameConfig | null>(null)
   const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
   const [onlineGameOrigin, setOnlineGameOrigin] = useState<Screen>('lobby')
@@ -185,13 +183,6 @@ function PageContent() {
     }
   }, [])
 
-  const [forceWebMode, setForceWebMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('sugar_force_web_mode') === 'true'
-    }
-    return false
-  })
-
   // Register on social WebSocket & initialize stream once per user
   useEffect(() => {
     if (!user?.uid) return
@@ -249,33 +240,21 @@ function PageContent() {
     }
   }, [user])
 
-  // Auth & Native routing logic
+  // Auth routing logic
   useEffect(() => {
-    // CORTAFUEGOS DE PARTIDA: Durante una partida activa, NUNCA redirigir a landing ni a lobby
+    // CORTAFUEGOS DE PARTIDA: Durante una partida activa, NUNCA redirigir
     if (screen === 'online-game' || screen === 'game') {
       return
     }
 
-    // REGLA 1: Si se está accediendo desde un navegador web normal y no se ha activado modo web, se fuerza la Landing Page informativa
-    if (!isNative && !forceWebMode) {
-      setScreenAndRef('landing')
-      return
-    }
-
-    // REGLA 2: Si es la App Instalada (Standalone PWA) o Modo Web Forzado
     if (user) {
       if (user.nickname) {
-        // Usuario logueado con nickname -> Ir al Lobby (salvo que ya esté en partida o pantalla específica)
-        if (screen === 'landing') {
-          setScreenAndRef('lobby')
-        }
         setIsLoginModalOpen(false)
       }
     } else {
-      // Usuario no logueado en App instalada o Modo Web -> Abrir inmediatamente el modal de Login
       setIsLoginModalOpen(true)
     }
-  }, [user, screen, isNative, forceWebMode])
+  }, [user, screen])
 
   const handleStartGame = (gameConfig: GameConfig) => {
     globalLogger.log('GAME-FLOW', `Iniciando partida offline clásica (${gameConfig.playerCount} jugadores)`, gameConfig)
@@ -435,21 +414,6 @@ function PageContent() {
     return <NicknameSetupModal onConfirm={handleNicknameConfirm} />
   }
 
-  // Render web-browser portal strictly if NOT native and NOT forceWebMode
-  if (!isNative && !forceWebMode) {
-    return <LandingPage onContinueInBrowser={() => {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('sugar_force_web_mode', 'true')
-      }
-      setForceWebMode(true)
-      setScreenAndRef('lobby')
-    }} />
-  }
-
-  const handleNavigateToLanding = () => {
-    setScreenAndRef('landing')
-  }
-
   // Render the active screen (Lobby-related)
   const renderScreen = () => {
     switch (screen) {
@@ -544,8 +508,8 @@ function PageContent() {
     )
   }
 
-  // Native App / Web Mode Screen for Non-Logged User
-  if (!user && (isNative || forceWebMode)) {
+  // Login Screen for Non-Logged User (Web and Native)
+  if (!user) {
     return (
       <main className="cyber-bg min-h-screen w-full flex flex-col items-center justify-center p-6 text-center pt-safe pb-safe select-none">
         <div className="flex flex-col items-center max-w-md w-full glass rounded-3xl p-8 border border-[var(--candy-cyan)]/30 shadow-[0_0_40px_rgba(34,221,221,0.15)] animate-in fade-in zoom-in-95">
@@ -640,7 +604,6 @@ function PageContent() {
         <SettingsModal 
           isOpen={isSettingsOpen} 
           onClose={() => setIsSettingsOpen(false)} 
-          onNavigateToLanding={handleNavigateToLanding}
         />
         <LoginModal 
           isOpen={isLoginModalOpen} 
