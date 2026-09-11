@@ -16,10 +16,34 @@ export default function AuthDesktopPage() {
     try {
       const result = await signInWithPopup(auth, googleProvider)
       const credential = GoogleAuthProvider.credentialFromResult(result)
-      const googleIdToken = credential?.idToken || ''
-      const googleAccessToken = credential?.accessToken || ''
+      const tokenResponse = (result as any)?._tokenResponse
 
-      const targetDeepLink = `sugarludo://auth?idToken=${encodeURIComponent(googleIdToken)}&accessToken=${encodeURIComponent(googleAccessToken)}`
+      // Extraer el access token de Google OAuth (ya29...)
+      const googleAccessToken = credential?.accessToken || tokenResponse?.oauthAccessToken || tokenResponse?.oauthToken || ''
+      
+      // Extraer idToken solo si es un OpenID token de Google (accounts.google.com), nunca el de Firebase
+      let googleIdToken = credential?.idToken || tokenResponse?.oauthIdToken || ''
+      if (googleIdToken) {
+        try {
+          const parts = googleIdToken.split('.')
+          if (parts.length >= 2) {
+            const payload = JSON.parse(atob(parts[1]))
+            if (payload.iss && payload.iss.includes('securetoken.google.com')) {
+              // Es el token interno de Firebase, descartarlo para no generar auth/invalid-credential en local
+              googleIdToken = ''
+            }
+          }
+        } catch {
+          googleIdToken = ''
+        }
+      }
+
+      if (!googleAccessToken && !googleIdToken) {
+        throw new Error('No se recibió credencial OAuth válida de Google. Por favor, reintenta.')
+      }
+
+      // Construir Deep Link priorizando accessToken
+      const targetDeepLink = `sugarludo://auth?accessToken=${encodeURIComponent(googleAccessToken)}&idToken=${encodeURIComponent(googleIdToken)}`
       setDeepLinkUrl(targetDeepLink)
       setStatus('success')
 

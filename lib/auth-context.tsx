@@ -187,13 +187,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let accessToken: string | null = null
 
       if (typeof data === 'string') {
-        idToken = data
+        // En caso de que se reciba la URL cruda o solo un token
+        if (data.includes('accessToken=') || data.includes('idToken=')) {
+          const params = new URLSearchParams(data.includes('?') ? data.split('?')[1] : data)
+          accessToken = params.get('accessToken')
+          idToken = params.get('idToken')
+        } else {
+          idToken = data
+        }
       } else if (data && typeof data === 'object') {
         idToken = data.idToken || null
         accessToken = data.accessToken || null
       }
 
-      if (!idToken && !accessToken) return
+      // Sanitizar comillas o barras diagonales
+      if (idToken) idToken = idToken.replace(/\/+$/, '').trim()
+      if (accessToken) accessToken = accessToken.replace(/\/+$/, '').trim()
+
+      // Candado de seguridad: Descartar si idToken es un JWT de Firebase (securetoken.google.com)
+      if (idToken) {
+        try {
+          const parts = idToken.split('.')
+          if (parts.length >= 2) {
+            const payload = JSON.parse(atob(parts[1]))
+            if (payload.iss && payload.iss.includes('securetoken.google.com')) {
+              console.warn('[Auth Electron] idToken es interno de Firebase. Descartado para usar accessToken de Google exclusivamente.')
+              idToken = null
+            }
+          }
+        } catch {
+          idToken = null
+        }
+      }
+
+      if (!idToken && !accessToken) {
+        console.error('[Auth Electron] No se recibieron credenciales válidas de Google OAuth')
+        return
+      }
 
       try {
         console.log('[Auth Electron] Rehidratando credenciales de Google...', {
