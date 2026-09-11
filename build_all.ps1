@@ -7,7 +7,7 @@ cmd.exe /c "npm run build"
 Write-Host "2. Syncing Capacitor (Clean sync before adding large binaries to out/)..."
 cmd.exe /c "npx cap sync android"
 
-Write-Host "3. Building Electron EXE (v9.2.7)..."
+Write-Host "3. Building Electron EXE (v9.2.8)..."
 cmd.exe /c "npx electron-builder --win --x64"
 
 Write-Host "4. Storing EXE in releases folder..."
