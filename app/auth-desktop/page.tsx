@@ -57,29 +57,33 @@ export default function AuthDesktopPage() {
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center p-6 cyber-bg text-foreground">
-      <div className="flex flex-col items-center max-w-md w-full glass rounded-3xl p-8 border border-[var(--candy-cyan)]/30 text-center shadow-2xl animate-in fade-in zoom-in-95">
+    <div className="min-h-screen w-full flex flex-col items-center justify-center p-6 bg-[#0c051a] text-white relative overflow-hidden select-none">
+      {/* Glows ambientales de fondo */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 size-96 bg-[#ff2277]/20 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 translate-y-1/2 size-96 bg-[#22dddd]/20 rounded-full blur-[120px] pointer-events-none" />
+
+      <div className="relative z-10 flex flex-col items-center max-w-md w-full rounded-3xl p-8 sm:p-10 border border-cyan-500/30 bg-slate-900/80 backdrop-blur-xl text-center shadow-[0_0_50px_rgba(0,255,255,0.15)] animate-in fade-in zoom-in-95">
         
         {/* Logo Sugar Ludo */}
-        <div className="flex size-16 items-center justify-center rounded-2xl bg-[var(--candy-magenta)] shadow-[0_0_25px_rgba(255,34,119,0.6)] mb-6">
-          <span className="font-display text-4xl font-extrabold text-white">S</span>
+        <div className="flex size-16 items-center justify-center rounded-2xl bg-[#ff2277] shadow-[0_0_25px_rgba(255,34,119,0.7)] mb-5">
+          <span className="font-display text-4xl font-black text-white">S</span>
         </div>
 
-        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
-          SUGAR <span className="text-[var(--candy-cyan)]">LUDO</span>
+        <h1 className="font-display text-3xl font-black text-white tracking-tight mb-1">
+          SUGAR <span className="text-cyan-400 drop-shadow-[0_0_12px_rgba(34,221,221,0.6)]">LUDO</span>
         </h1>
-        <p className="text-xs uppercase tracking-widest font-extrabold text-white/60 mb-6">
+        <p className="text-xs uppercase tracking-widest font-extrabold text-white/50 mb-6">
           Autenticación Oficial Desktop
         </p>
 
         {status === 'idle' && (
-          <div className="flex flex-col items-center py-4 gap-5 w-full animate-in fade-in">
-            <p className="text-sm font-medium text-white/80">
-              Haz clic abajo para iniciar sesión con tu cuenta de Google y volver automáticamente al juego.
+          <div className="flex flex-col items-center py-3 gap-5 w-full animate-in fade-in">
+            <p className="text-sm font-medium text-white/80 leading-relaxed">
+              Haz clic en el botón para iniciar sesión con tu cuenta de Google y transferir tu partida a la app de escritorio.
             </p>
             <button
               onClick={handleLogin}
-              className="btn-3d w-full flex items-center justify-center gap-3 rounded-2xl bg-white text-neutral-900 py-3.5 px-4 font-display text-sm font-bold shadow-lg hover:bg-neutral-100 transition-all cursor-pointer"
+              className="w-full flex items-center justify-center gap-3 rounded-2xl bg-white text-neutral-900 py-3.5 px-4 font-bold text-sm shadow-[0_4px_20px_rgba(255,255,255,0.25)] hover:bg-neutral-100 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
             >
               <svg className="size-5 shrink-0" viewBox="0 0 24 24">
                 <path
@@ -105,23 +109,25 @@ export default function AuthDesktopPage() {
         )}
 
         {status === 'authenticating' && (
-          <div className="flex flex-col items-center py-6 gap-4">
-            <Loader2 className="size-10 text-[var(--candy-cyan)] animate-spin" />
+          <div className="flex flex-col items-center py-6 gap-4 animate-in fade-in">
+            <Loader2 className="size-10 text-cyan-400 animate-spin drop-shadow-[0_0_10px_rgba(34,221,221,0.6)]" />
             <p className="text-sm font-semibold text-white/90">
               Conectando con tu cuenta de Google...
             </p>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-white/50">
               Por favor completa la autenticación en la ventana emergente.
             </span>
           </div>
         )}
 
         {status === 'success' && (
-          <div className="flex flex-col items-center py-4 gap-4 animate-in fade-in zoom-in-95">
-            <CheckCircle2 className="size-12 text-emerald-400" />
+          <div className="flex flex-col items-center py-4 gap-4 w-full animate-in fade-in zoom-in-95">
+            <div className="rounded-full bg-emerald-500/10 p-3 ring-1 ring-emerald-500/30">
+              <CheckCircle2 className="size-12 text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.5)]" />
+            </div>
             <div>
               <h2 className="text-lg font-bold text-white">¡Sesión Iniciada con Éxito!</h2>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-xs text-white/60 mt-1">
                 Redirigiendo a Sugar Ludo Desktop en tu equipo...
               </p>
             </div>
@@ -129,31 +135,33 @@ export default function AuthDesktopPage() {
             {deepLinkUrl && (
               <a
                 href={deepLinkUrl}
-                className="btn-3d w-full mt-3 flex items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(135deg,var(--candy-cyan),#0088ff)] py-3.5 font-display text-sm font-extrabold text-white shadow-lg cursor-pointer"
+                className="w-full mt-2 flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 py-3.5 px-4 font-display text-sm font-extrabold text-white shadow-[0_0_25px_rgba(6,182,212,0.5)] no-underline hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
               >
                 <span>VOLVER A LA APP DESKTOP</span>
                 <ArrowRight className="size-4" />
               </a>
             )}
             <span className="text-[11px] text-white/50">
-              Ya puedes cerrar esta pestaña del navegador.
+              Si el juego no abre automáticamente, presiona el botón de arriba. Ya puedes cerrar esta pestaña.
             </span>
           </div>
         )}
 
         {status === 'error' && (
-          <div className="flex flex-col items-center py-4 gap-4 animate-in fade-in zoom-in-95">
-            <AlertCircle className="size-12 text-rose-500" />
+          <div className="flex flex-col items-center py-4 gap-4 w-full animate-in fade-in zoom-in-95">
+            <div className="rounded-full bg-rose-500/10 p-3 ring-1 ring-rose-500/30">
+              <AlertCircle className="size-12 text-rose-500 drop-shadow-[0_0_12px_rgba(244,63,94,0.5)]" />
+            </div>
             <div>
               <h2 className="text-lg font-bold text-white">Fallo al Iniciar Sesión</h2>
-              <p className="text-xs text-rose-300/80 mt-1 break-words font-mono">
+              <p className="text-xs text-rose-300/80 mt-1 break-words font-mono bg-rose-950/40 p-3 rounded-xl border border-rose-500/20">
                 {errorMessage}
               </p>
             </div>
 
             <button
               onClick={handleLogin}
-              className="btn-3d w-full mt-3 flex items-center justify-center gap-3 rounded-2xl bg-[linear-gradient(135deg,var(--candy-magenta),#ff0077)] py-3.5 font-display text-sm font-extrabold text-white shadow-lg cursor-pointer"
+              className="w-full mt-2 flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-[#ff2277] to-[#ff0055] py-3.5 px-4 font-display text-sm font-extrabold text-white shadow-[0_0_20px_rgba(255,34,119,0.5)] hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>REINTENTAR ACCESO</span>
             </button>
