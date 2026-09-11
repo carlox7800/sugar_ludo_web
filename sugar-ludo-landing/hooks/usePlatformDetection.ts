@@ -17,6 +17,7 @@ export interface PlatformInfo {
   isAndroid: boolean;
   isMobile: boolean;
   isDesktop: boolean;
+  mounted: boolean;
   primaryCTA: {
     title: string;
     subtext: string;
@@ -29,9 +30,10 @@ export interface PlatformInfo {
 
 export function usePlatformDetection(): PlatformInfo {
   const [os, setOs] = useState<OperatingSystem>('unknown');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    setMounted(true);
     const ua = window.navigator.userAgent.toLowerCase();
 
     if (/android/i.test(ua)) {
@@ -50,22 +52,22 @@ export function usePlatformDetection(): PlatformInfo {
   const isWindows = os === 'windows';
   const isAndroid = os === 'android';
   const isMobile = isAndroid || os === 'ios';
-  const isDesktop = isWindows || os === 'mac' || os === 'linux' || os === 'unknown';
+  const isDesktop = isWindows || os === 'mac' || os === 'linux';
 
   const primaryCTA = isAndroid
     ? {
-        title: 'Descargar para Android',
-        subtext: `APK Oficial v${APP_VERSION} • ${ANDROID_FILE_SIZE}`,
+        title: 'DESCARGAR ANDROID',
+        subtext: `APK • 47 MB`,
         target: 'android' as const,
-        badge: 'Detectado para tu Dispositivo',
+        badge: 'Detectado para tu equipo',
         downloadUrl: ANDROID_DOWNLOAD_URL,
         size: ANDROID_FILE_SIZE,
       }
     : {
-        title: 'Descargar para PC (Windows)',
-        subtext: `Instalador Oficial v${APP_VERSION} • ${PC_FILE_SIZE}`,
+        title: 'DESCARGAR PC',
+        subtext: `Windows • 248 MB`,
         target: 'windows' as const,
-        badge: isWindows ? 'Recomendado para tu PC' : 'Edición de Escritorio',
+        badge: 'Detectado para tu equipo',
         downloadUrl: PC_DOWNLOAD_URL,
         size: PC_FILE_SIZE,
       };
@@ -76,6 +78,7 @@ export function usePlatformDetection(): PlatformInfo {
     isAndroid,
     isMobile,
     isDesktop,
+    mounted,
     primaryCTA,
   };
 }

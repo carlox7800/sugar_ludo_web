@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { 
-  Laptop, 
+  Monitor, 
   Smartphone, 
   Globe, 
   Sparkles, 
@@ -30,7 +30,7 @@ import {
 } from '@/lib/constants';
 
 export default function LandingPage() {
-  const { isAndroid, primaryCTA } = usePlatformDetection();
+  const { isWindows, isAndroid, isDesktop, mounted } = usePlatformDetection();
   const [modalPlatform, setModalPlatform] = useState<'windows' | 'android' | null>(null);
 
   const openInstallGuide = (platform: 'windows' | 'android') => {
@@ -102,33 +102,27 @@ export default function LandingPage() {
           Instala la aplicación nativa en tu PC o Android para disfrutar de partidas a 60 FPS, chat de voz sin lag y retiros instantáneos.
         </p>
 
-        {/* Controles CTA Dinámicos */}
-        <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 w-full max-w-xl">
-          {/* Botón Principal (Detecta el sistema operativo) */}
+        {/* Controles CTA Simétricos (1:1) de Alto Impacto */}
+        <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-6 w-full max-w-2xl">
+          {/* Botón Windows PC */}
           <GamerCTAButton
-            onClick={() => openInstallGuide(primaryCTA.target)}
-            variant={primaryCTA.target === 'windows' ? 'cyan' : 'magenta'}
-            size="xl"
-            icon={primaryCTA.target === 'windows' ? <Laptop className="size-6" /> : <Smartphone className="size-6" />}
-            badge={primaryCTA.badge}
-            subtext={primaryCTA.subtext}
-            className="w-full sm:w-auto min-w-[280px]"
-          >
-            {primaryCTA.title}
-          </GamerCTAButton>
+            onClick={() => openInstallGuide('windows')}
+            variant="cyan"
+            icon={<Monitor className="size-8" />}
+            title="DESCARGAR PC"
+            subtext="Windows • 248 MB"
+            badge={mounted && (isWindows || (!isAndroid && isDesktop)) ? 'Detectado para tu equipo' : undefined}
+          />
 
-          {/* Botón Alternativo (Para el otro sistema operativo) */}
+          {/* Botón Android APK */}
           <GamerCTAButton
-            onClick={() => openInstallGuide(isAndroid ? 'windows' : 'android')}
-            variant={isAndroid ? 'cyan' : 'magenta'}
-            size="xl"
-            icon={isAndroid ? <Laptop className="size-6" /> : <Smartphone className="size-6" />}
-            badge={isAndroid ? 'Para tu Computadora' : 'Para tu Teléfono'}
-            subtext={isAndroid ? `Instalador PC • ${PC_FILE_SIZE}` : `Paquete APK • ${ANDROID_FILE_SIZE}`}
-            className="w-full sm:w-auto min-w-[280px]"
-          >
-            {isAndroid ? 'Descargar para PC' : 'Descargar APK Android'}
-          </GamerCTAButton>
+            onClick={() => openInstallGuide('android')}
+            variant="magenta"
+            icon={<Smartphone className="size-8" />}
+            title="DESCARGAR ANDROID"
+            subtext="APK • 47 MB"
+            badge={mounted && isAndroid ? 'Detectado para tu equipo' : undefined}
+          />
         </div>
 
         {/* Botón Secundario: Jugar en Navegador sin Descargar */}
