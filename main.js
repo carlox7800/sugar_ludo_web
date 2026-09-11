@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol, net, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, protocol, net, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const url = require('url');
 
@@ -19,7 +19,7 @@ if (!gotTheLock) {
 }
 
 let mainWindow = null;
-let pendingDeepLinkToken = null;
+let pendingDeepLinkData = null;
 
 function handleDeepLinkUrl(rawIncomingUrl) {
   if (!rawIncomingUrl || typeof rawIncomingUrl !== 'string') return;
@@ -29,35 +29,45 @@ function handleDeepLinkUrl(rawIncomingUrl) {
   if (!cleanUrl.startsWith('sugarludo://')) return;
 
   try {
-    let token = null;
-    // Si la URL es válida estándar
+    let idToken = null;
+    let accessToken = null;
+
     if (cleanUrl.includes('?')) {
       const queryString = cleanUrl.split('?')[1];
       const params = new URLSearchParams(queryString);
-      token = params.get('idToken');
+      idToken = params.get('idToken');
+      accessToken = params.get('accessToken');
     }
     
-    if (!token) {
+    if (!idToken && !accessToken) {
       const parsed = new URL(cleanUrl);
-      token = parsed.searchParams.get('idToken');
+      idToken = parsed.searchParams.get('idToken');
+      accessToken = parsed.searchParams.get('accessToken');
     }
 
-    if (token) {
-      console.log('[Main Process] Token de Deep Link capturado correctamente');
-      pendingDeepLinkToken = token;
+    // Sanitización de posibles barras diagonales finales o caracteres pegados por Windows
+    if (idToken) idToken = idToken.replace(/\/+$/, '').trim();
+    if (accessToken) accessToken = accessToken.replace(/\/+$/, '').trim();
+
+    if (idToken || accessToken) {
+      console.log('[Main Process] Credenciales de Deep Link capturadas correctamente');
+      pendingDeepLinkData = { idToken, accessToken };
       if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('auth-deep-link', { idToken: token });
+        mainWindow.webContents.send('auth-deep-link', { idToken, accessToken });
       }
     }
   } catch (e) {
     console.error('Error parseando deep link:', e, 'URL cruda:', rawIncomingUrl);
     // Fallback de extracción regex directa
-    const match = cleanUrl.match(/[?&]idToken=([^&]+)/);
-    if (match && match[1]) {
-      const token = decodeURIComponent(match[1]);
-      pendingDeepLinkToken = token;
+    const idMatch = cleanUrl.match(/[?&]idToken=([^&]+)/);
+    const accessMatch = cleanUrl.match(/[?&]accessToken=([^&]+)/);
+    const idToken = idMatch && idMatch[1] ? decodeURIComponent(idMatch[1]).replace(/\/+$/, '').trim() : null;
+    const accessToken = accessMatch && accessMatch[1] ? decodeURIComponent(accessMatch[1]).replace(/\/+$/, '').trim() : null;
+
+    if (idToken || accessToken) {
+      pendingDeepLinkData = { idToken, accessToken };
       if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('auth-deep-link', { idToken: token });
+        mainWindow.webContents.send('auth-deep-link', { idToken, accessToken });
       }
     }
   }
@@ -92,15 +102,29 @@ function createWindow() {
     }
   });
 
-  // Atajo de teclado F11 para alternar pantalla completa y Escape para salir
+  // Atajo de teclado F11 para alternar pantalla completa y Escape para confirmar salida
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.key === 'F11' && input.type === 'keyDown') {
       mainWindow.setFullScreen(!mainWindow.isFullScreen());
       event.preventDefault();
     }
-    if (input.key === 'Escape' && input.type === 'keyDown' && mainWindow.isFullScreen()) {
-      mainWindow.setFullScreen(false);
+    if (input.key === 'Escape' && input.type === 'keyDown') {
       event.preventDefault();
+      dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['Cancelar', 'Salir del Juego'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Sugar Ludo',
+        message: '¿Estás seguro de que deseas salir de Sugar Ludo?',
+        detail: 'Cualquier partida o acción no guardada podría interrumpirse.'
+      }).then(({ response }) => {
+        if (response === 1) {
+          app.quit();
+        }
+      }).catch(err => {
+        console.error('Error en cuadro de diálogo de salida:', err);
+      });
     }
   });
 
@@ -163,9 +187,9 @@ app.on('open-url', (event, targetUrl) => {
 
 // IPC Handler para que el cliente consulte si hay un token de autenticación pendiente
 ipcMain.handle('get-pending-auth-token', () => {
-  const token = pendingDeepLinkToken;
-  pendingDeepLinkToken = null; // Consumir una sola vez
-  return token;
+  const data = pendingDeepLinkData;
+  pendingDeepLinkData = null; // Consumir una sola vez
+  return data;
 });
 
 // IPC Handler para abrir URLs en el navegador predeterminado del sistema operativo

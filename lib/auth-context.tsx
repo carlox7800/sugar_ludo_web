@@ -176,17 +176,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribeAuth()
   }, [])
 
-  // Listener para captura de Deep Linking OAuth en Desktop Electron (sugarludo://auth?idToken=...)
+  // Listener para captura de Deep Linking OAuth en Desktop Electron (sugarludo://auth?idToken=...&accessToken=...)
   useEffect(() => {
     if (typeof window === 'undefined') return
     const electronAuth = (window as any).electronAuth
     if (!electronAuth) return
 
-    const processAuthToken = async (idToken: string) => {
-      if (!idToken) return
+    const processAuthToken = async (data: { idToken?: string | null; accessToken?: string | null } | string) => {
+      let idToken: string | null = null
+      let accessToken: string | null = null
+
+      if (typeof data === 'string') {
+        idToken = data
+      } else if (data && typeof data === 'object') {
+        idToken = data.idToken || null
+        accessToken = data.accessToken || null
+      }
+
+      if (!idToken && !accessToken) return
+
       try {
-        console.log('[Auth Electron] Procesando idToken de Deep Link...', idToken.slice(0, 15) + '...')
-        const credential = GoogleAuthProvider.credential(idToken)
+        console.log('[Auth Electron] Rehidratando credenciales de Google...', {
+          hasIdToken: !!idToken,
+          hasAccessToken: !!accessToken,
+        })
+        const credential = GoogleAuthProvider.credential(idToken || null, accessToken || null)
         const userCredential = await signInWithCredential(auth, credential)
         const firebaseUser = userCredential.user
 
@@ -224,18 +238,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // 1. Escucha de eventos IPC
     if (electronAuth.onDeepLinkToken) {
-      electronAuth.onDeepLinkToken((data: { idToken: string }) => {
-        if (data?.idToken) {
-          processAuthToken(data.idToken)
+      electronAuth.onDeepLinkToken((data: any) => {
+        if (data) {
+          processAuthToken(data)
         }
       })
     }
 
     // 2. Consulta de token pendiente almacenado en búfer al montar
     if (electronAuth.getPendingAuthToken) {
-      electronAuth.getPendingAuthToken().then((pendingToken: string | null) => {
-        if (pendingToken) {
-          processAuthToken(pendingToken)
+      electronAuth.getPendingAuthToken().then((pendingData: any) => {
+        if (pendingData) {
+          processAuthToken(pendingData)
         }
       })
     }
@@ -243,9 +257,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 3. Consulta de token cuando la ventana recupera el foco
     const handleWindowFocus = () => {
       if (electronAuth.getPendingAuthToken) {
-        electronAuth.getPendingAuthToken().then((pendingToken: string | null) => {
-          if (pendingToken) {
-            processAuthToken(pendingToken)
+        electronAuth.getPendingAuthToken().then((pendingData: any) => {
+          if (pendingData) {
+            processAuthToken(pendingData)
           }
         })
       }

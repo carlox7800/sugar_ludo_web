@@ -288,7 +288,7 @@ export function MobileNav({ currentScreen = 'lobby', onNavigate }: SidebarProps)
   return (
     <nav
       aria-label="Menú principal"
-      className="fixed inset-x-2 bottom-2 z-40 flex items-center justify-between gap-0.5 rounded-2xl border border-border bg-card px-1 py-1.5 shadow-[inset_0_1px_0_oklch(1_0_0/0.12),0_-4px_24px_oklch(0_0_0/0.5)] md:hidden"
+      className="fixed inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom,0px))] z-40 flex items-center justify-between gap-0.5 rounded-2xl border border-border bg-card px-1 py-1.5 shadow-[inset_0_1px_0_oklch(1_0_0/0.12),0_-4px_24px_oklch(0_0_0/0.5)] md:hidden"
     >
       {navItems.map((item) => {
         const Icon = item.icon
