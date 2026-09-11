@@ -1134,9 +1134,9 @@ export default function GameEngine({ initialConfig, onExit }: { initialConfig: G
 
 
   return (
-    <div className={`min-h-screen w-full flex flex-col font-sans cyber-bg ${appTheme === 'sugar' ? 'theme-sugar' : ''}`}>
+    <div className={`min-h-screen w-full flex flex-col font-sans cyber-bg ${appTheme === 'sugar' ? 'theme-sugar' : ''} pb-safe`}>
       {/* Upper Navigation & Sound controls */}
-      <header className="w-full bg-card/95 sm:bg-card/85 sm:backdrop-blur-md border-b border-border px-4 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm">
+      <header className="w-full bg-card/95 sm:bg-card/85 sm:backdrop-blur-md border-b border-border px-4 py-3 pt-safe flex items-center justify-between sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-2">
           <button 
             onClick={() => {

@@ -19,19 +19,47 @@ if (!gotTheLock) {
 }
 
 let mainWindow = null;
+let pendingDeepLinkToken = null;
 
-function handleDeepLinkUrl(incomingUrl) {
-  if (!incomingUrl || typeof incomingUrl !== 'string') return;
-  if (!incomingUrl.startsWith('sugarludo://')) return;
+function handleDeepLinkUrl(rawIncomingUrl) {
+  if (!rawIncomingUrl || typeof rawIncomingUrl !== 'string') return;
+  
+  // Limpieza de comillas y caracteres añadidos por Windows/Chromium shell
+  let cleanUrl = rawIncomingUrl.trim().replace(/^["']|["']$/g, '');
+  if (!cleanUrl.startsWith('sugarludo://')) return;
 
   try {
-    const parsed = new URL(incomingUrl);
-    const idToken = parsed.searchParams.get('idToken');
-    if (idToken && mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('auth-deep-link', { idToken });
+    let token = null;
+    // Si la URL es válida estándar
+    if (cleanUrl.includes('?')) {
+      const queryString = cleanUrl.split('?')[1];
+      const params = new URLSearchParams(queryString);
+      token = params.get('idToken');
+    }
+    
+    if (!token) {
+      const parsed = new URL(cleanUrl);
+      token = parsed.searchParams.get('idToken');
+    }
+
+    if (token) {
+      console.log('[Main Process] Token de Deep Link capturado correctamente');
+      pendingDeepLinkToken = token;
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('auth-deep-link', { idToken: token });
+      }
     }
   } catch (e) {
-    console.error('Error procesando deep link:', e);
+    console.error('Error parseando deep link:', e, 'URL cruda:', rawIncomingUrl);
+    // Fallback de extracción regex directa
+    const match = cleanUrl.match(/[?&]idToken=([^&]+)/);
+    if (match && match[1]) {
+      const token = decodeURIComponent(match[1]);
+      pendingDeepLinkToken = token;
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('auth-deep-link', { idToken: token });
+      }
+    }
   }
 }
 
@@ -117,9 +145,10 @@ function createWindow() {
 app.on('second-instance', (event, commandLine) => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
     mainWindow.focus();
 
-    const deepUrl = commandLine.find(arg => typeof arg === 'string' && arg.startsWith('sugarludo://'));
+    const deepUrl = commandLine.find(arg => typeof arg === 'string' && (arg.includes('sugarludo://') || arg.startsWith('sugarludo://')));
     if (deepUrl) {
       handleDeepLinkUrl(deepUrl);
     }
@@ -130,6 +159,13 @@ app.on('second-instance', (event, commandLine) => {
 app.on('open-url', (event, targetUrl) => {
   event.preventDefault();
   handleDeepLinkUrl(targetUrl);
+});
+
+// IPC Handler para que el cliente consulte si hay un token de autenticación pendiente
+ipcMain.handle('get-pending-auth-token', () => {
+  const token = pendingDeepLinkToken;
+  pendingDeepLinkToken = null; // Consumir una sola vez
+  return token;
 });
 
 // IPC Handler para abrir URLs en el navegador predeterminado del sistema operativo

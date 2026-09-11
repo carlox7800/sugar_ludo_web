@@ -13,7 +13,7 @@ import { SettingsModal } from '@/components/settings-modal'
 import GameEngine from '@/src/GameEngine'
 import { GameConfig } from '@/src/types'
 import { OnlineGameEngine, OnlineGameData } from '@/screens/online-game-engine'
-import { LogIn, Loader2, Sparkles } from 'lucide-react'
+import { LogIn, Loader2, Sparkles, Dices, Trophy } from 'lucide-react'
 
 // Screens
 import { WalletScreen } from '@/screens/wallet-screen'
@@ -62,7 +62,40 @@ export type Screen =
 function PageContent() {
   const { user, isLoaded, loginWithGoogle, loginDev, setNickname } = useAuth()
   const { leaveVoiceRoom } = useVoiceChat()
-  const [isNative, setIsNative] = useState(false)
+  
+  // Detección síncrona inmediata de clientes nativos (Capacitor Android y Electron Desktop)
+  // Esto erradica el parpadeo de 1 frame de la Landing Page en clientes nativos
+  const [isNative, setIsNative] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    const capacitor = (window as any).Capacitor
+    const isCapacitor = capacitor && (
+      (capacitor.isNativePlatform && capacitor.isNativePlatform()) || 
+      (capacitor.getPlatform && capacitor.getPlatform() !== 'web')
+    )
+    const isElectron = !!(window as any).electronAuth || 
+      window.navigator.userAgent.includes('Electron') || 
+      window.location.protocol === 'file:' || 
+      window.location.protocol === 'app:'
+    return !!isCapacitor || !!isElectron
+  })
+
+  // Control de duración mínima del Splash Screen AAA (1.8 segundos con barra de progreso)
+  const [isSplashDone, setIsSplashDone] = useState(false)
+  const [splashProgress, setSplashProgress] = useState(15)
+
+  useEffect(() => {
+    const startTime = Date.now()
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const progress = Math.min(100, Math.floor((elapsed / 1800) * 100))
+      setSplashProgress(Math.max(15, progress))
+      if (elapsed >= 1800) {
+        clearInterval(interval)
+        setIsSplashDone(true)
+      }
+    }, 40)
+    return () => clearInterval(interval)
+  }, [])
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -74,7 +107,7 @@ function PageContent() {
         (capacitor.isNativePlatform && capacitor.isNativePlatform()) || 
         (capacitor.getPlatform && capacitor.getPlatform() !== 'web')
       );
-      const isElectron = window.navigator.userAgent.includes('Electron') || window.location.protocol === 'file:' || window.location.protocol === 'app:'
+      const isElectron = !!(window as any).electronAuth || window.navigator.userAgent.includes('Electron') || window.location.protocol === 'file:' || window.location.protocol === 'app:'
       setIsNative(!!isCapacitor || !!isElectron)
 
       // Restore Visual Theme
@@ -295,32 +328,64 @@ function PageContent() {
     setNickname(nickname)
   }
 
-  // 0. SPLASH SCREEN DE ARRANQUE LIMPIO (Mientras Firebase Auth resuelve la sesión inicial)
-  if (!isLoaded) {
+  // 0. SPLASH SCREEN AAA INTERACTIVO CON TEMÁTICA DE DADOS Y TABLERO
+  // Garantiza 1.8s de experiencia de marca y que Firebase Auth resuelva en segundo plano sin parpadeos
+  if (!isLoaded || !isSplashDone) {
     return (
-      <main className="cyber-bg min-h-screen w-full flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden relative">
-        {/* Glow de fondo */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-72 bg-[var(--candy-magenta)]/20 rounded-full blur-[90px] pointer-events-none" />
+      <main className="cyber-bg min-h-screen w-full flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden relative pt-safe pb-safe">
+        {/* Glows ambientales de fondo */}
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 size-80 bg-[var(--candy-magenta)]/25 rounded-full blur-[100px] pointer-events-none animate-pulse" />
+        <div className="absolute bottom-1/3 left-1/2 -translate-x-1/2 translate-y-1/2 size-72 bg-[var(--candy-cyan)]/20 rounded-full blur-[90px] pointer-events-none" />
 
         <div className="flex flex-col items-center max-w-sm w-full z-10 animate-in fade-in zoom-in-95 duration-500">
-          {/* Logo Animado con Pulso */}
-          <div className="relative mb-6">
-            <div className="flex size-20 items-center justify-center rounded-3xl bg-[var(--candy-magenta)] shadow-[0_0_35px_rgba(255,34,119,0.7)] animate-pulse">
-              <span className="font-display text-5xl font-extrabold text-white drop-shadow-md">S</span>
+          
+          {/* Emblema Central con Dados Flotantes 3D */}
+          <div className="relative mb-8">
+            <div className="flex size-24 items-center justify-center rounded-3xl bg-gradient-to-br from-[var(--candy-magenta)] via-[#ff0077] to-[var(--candy-cyan)] shadow-[0_0_40px_rgba(255,34,119,0.7)] transform hover:scale-105 transition-transform duration-500">
+              <span className="font-display text-6xl font-extrabold text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]">S</span>
             </div>
-            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-[var(--candy-cyan)] to-[var(--candy-magenta)] opacity-30 blur-sm -z-10 animate-spin" />
+            
+            {/* Ícono de Dados Flotante Decorativo */}
+            <div className="absolute -top-3 -right-3 size-10 rounded-2xl bg-[#1a0f2e] border border-[var(--candy-gold)]/60 flex items-center justify-center shadow-[0_0_15px_rgba(255,204,34,0.6)] animate-bounce duration-1000">
+              <Dices className="size-5 text-[var(--candy-gold)]" />
+            </div>
+
+            {/* Ícono de Trofeo Decorativo */}
+            <div className="absolute -bottom-2 -left-3 size-9 rounded-xl bg-[#1a0f2e] border border-[var(--candy-cyan)]/60 flex items-center justify-center shadow-[0_0_12px_rgba(34,221,221,0.5)]">
+              <Trophy className="size-4 text-[var(--candy-cyan)]" />
+            </div>
+            
+            <div className="absolute -inset-2 rounded-3xl bg-gradient-to-r from-[var(--candy-cyan)] via-[var(--candy-magenta)] to-[var(--candy-gold)] opacity-30 blur-md -z-10 animate-spin duration-3000" />
           </div>
 
-          <h1 className="font-display text-3xl font-extrabold text-white tracking-tight mb-2">
-            SUGAR <span className="text-[var(--candy-cyan)] drop-shadow-[0_0_15px_rgba(34,221,221,0.6)]">LUDO</span>
+          {/* Título de la Franquicia */}
+          <h1 className="font-display text-4xl sm:text-5xl font-extrabold text-white tracking-tight mb-2 drop-shadow-2xl">
+            SUGAR <span className="text-[var(--candy-cyan)] drop-shadow-[0_0_20px_rgba(34,221,221,0.7)]">LUDO</span>
           </h1>
 
-          <div className="flex items-center gap-2 mt-4 px-4 py-1.5 rounded-full border border-white/10 bg-black/40 backdrop-blur-md">
-            <Loader2 className="size-4 text-[var(--candy-cyan)] animate-spin" />
-            <span className="text-xs font-bold text-white/80 uppercase tracking-widest">
-              Iniciando Arena...
-            </span>
+          <p className="text-xs uppercase tracking-[0.25em] font-extrabold text-white/70 mb-8 flex items-center gap-2">
+            <Sparkles className="size-3 text-[var(--candy-gold)] animate-pulse" />
+            <span>Cyber Candy Arena</span>
+            <Sparkles className="size-3 text-[var(--candy-gold)] animate-pulse" />
+          </p>
+
+          {/* Barra de Progreso Temporizada (0% a 100%) */}
+          <div className="w-full max-w-xs flex flex-col items-center gap-2">
+            <div className="w-full h-2.5 rounded-full bg-white/10 border border-white/10 p-0.5 overflow-hidden backdrop-blur-md shadow-inner">
+              <div 
+                className="h-full rounded-full bg-gradient-to-r from-[var(--candy-magenta)] via-[var(--candy-cyan)] to-[var(--candy-gold)] transition-all duration-75 ease-out shadow-[0_0_10px_rgba(34,221,221,0.8)]"
+                style={{ width: `${splashProgress}%` }}
+              />
+            </div>
+            <div className="flex justify-between w-full px-1 text-[11px] font-mono text-white/60 font-semibold">
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="size-3 animate-spin text-[var(--candy-cyan)]" />
+                Cargando Arena...
+              </span>
+              <span>{splashProgress}%</span>
+            </div>
           </div>
+
         </div>
       </main>
     )

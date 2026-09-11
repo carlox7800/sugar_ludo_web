@@ -180,46 +180,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const electronAuth = (window as any).electronAuth
-    if (electronAuth && electronAuth.onDeepLinkToken) {
-      electronAuth.onDeepLinkToken(async (data: { idToken: string }) => {
-        if (!data?.idToken) return
-        try {
-          console.log('[Auth Electron] Deep Link recibido con idToken. Rehidratando sesión...')
-          const credential = GoogleAuthProvider.credential(data.idToken)
-          const userCredential = await signInWithCredential(auth, credential)
-          const firebaseUser = userCredential.user
+    if (!electronAuth) return
 
-          if (firebaseUser) {
-            const userRef = doc(db, 'users', firebaseUser.uid)
-            const docSnap = await getDoc(userRef)
-            if (!docSnap.exists()) {
-              const newUserData = {
-                nickname: null,
-                nicknameUpdatedAt: null,
-                photoURL: '1',
-                email: firebaseUser.email,
-                displayName: firebaseUser.displayName,
-                createdAt: serverTimestamp(),
-                coins: 200,
-                diamonds: 0,
-                level: 1,
-                xp: 0,
-                unlockedSkins: ['classic'],
-                selectedSkin: 'classic',
-                totalWins: 0,
-                totalLosses: 0,
-                totalGames: 0,
-                rankPoints: 0,
-              }
-              await setDoc(userRef, newUserData)
+    const processAuthToken = async (idToken: string) => {
+      if (!idToken) return
+      try {
+        console.log('[Auth Electron] Procesando idToken de Deep Link...', idToken.slice(0, 15) + '...')
+        const credential = GoogleAuthProvider.credential(idToken)
+        const userCredential = await signInWithCredential(auth, credential)
+        const firebaseUser = userCredential.user
+
+        if (firebaseUser) {
+          const userRef = doc(db, 'users', firebaseUser.uid)
+          const docSnap = await getDoc(userRef)
+          if (!docSnap.exists()) {
+            const newUserData = {
+              nickname: null,
+              nicknameUpdatedAt: null,
+              photoURL: '1',
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName,
+              createdAt: serverTimestamp(),
+              coins: 200,
+              diamonds: 0,
+              level: 1,
+              xp: 0,
+              unlockedSkins: ['classic'],
+              selectedSkin: 'classic',
+              totalWins: 0,
+              totalLosses: 0,
+              totalGames: 0,
+              rankPoints: 0,
             }
-            localStorage.removeItem('sugar_auth_user')
-            console.log('[Auth Electron] Sesión rehidratada con éxito en local:', firebaseUser.uid)
+            await setDoc(userRef, newUserData)
           }
-        } catch (err) {
-          console.error('[Auth Electron] Error rehidratando credencial desde deep link:', err)
+          localStorage.removeItem('sugar_auth_user')
+          console.log('[Auth Electron] Sesión rehidratada con éxito en local:', firebaseUser.uid)
+        }
+      } catch (err) {
+        console.error('[Auth Electron] Error rehidratando credencial desde deep link:', err)
+      }
+    }
+
+    // 1. Escucha de eventos IPC
+    if (electronAuth.onDeepLinkToken) {
+      electronAuth.onDeepLinkToken((data: { idToken: string }) => {
+        if (data?.idToken) {
+          processAuthToken(data.idToken)
         }
       })
+    }
+
+    // 2. Consulta de token pendiente almacenado en búfer al montar
+    if (electronAuth.getPendingAuthToken) {
+      electronAuth.getPendingAuthToken().then((pendingToken: string | null) => {
+        if (pendingToken) {
+          processAuthToken(pendingToken)
+        }
+      })
+    }
+
+    // 3. Consulta de token cuando la ventana recupera el foco
+    const handleWindowFocus = () => {
+      if (electronAuth.getPendingAuthToken) {
+        electronAuth.getPendingAuthToken().then((pendingToken: string | null) => {
+          if (pendingToken) {
+            processAuthToken(pendingToken)
+          }
+        })
+      }
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus)
     }
   }, [])
 

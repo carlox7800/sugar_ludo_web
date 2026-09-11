@@ -1726,7 +1726,7 @@ export function OnlineGameEngine({
   }
 
   return (
-    <div className="h-[100dvh] md:h-auto md:min-h-screen w-full flex flex-col font-sans cyber-bg text-foreground relative overflow-hidden items-center">
+    <div className="h-[100dvh] md:h-auto md:min-h-screen w-full flex flex-col font-sans cyber-bg text-foreground relative overflow-hidden items-center pb-safe">
       
       {/* Upper Navigation & Sound controls */}
       <header className="w-full bg-root/80 backdrop-blur-md border-b border-[var(--panel-header-border,oklch(0.82_0.15_200/0.2))] px-3 sm:px-4 py-2 sm:py-3 pt-safe flex items-center justify-between sticky top-0 z-50 cyber-game-panel shadow-[0_4px_30px_oklch(0.82_0.15_200/0.05)] shrink-0">
