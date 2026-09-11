@@ -10,5 +10,11 @@ contextBridge.exposeInMainWorld('electronAuth', {
   openExternalUrl: (url) => {
     ipcRenderer.send('open-external-url', url);
   },
+  onEscapePressed: (callback) => {
+    ipcRenderer.on('escape-pressed', () => callback());
+  },
+  quitApp: () => {
+    ipcRenderer.send('quit-app');
+  },
   isElectron: true
 });

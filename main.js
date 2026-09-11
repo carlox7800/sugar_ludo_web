@@ -102,7 +102,7 @@ function createWindow() {
     }
   });
 
-  // Atajo de teclado F11 para alternar pantalla completa y Escape para confirmar salida
+  // Atajo de teclado F11 para alternar pantalla completa y Escape para abrir modal temático del juego
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.key === 'F11' && input.type === 'keyDown') {
       mainWindow.setFullScreen(!mainWindow.isFullScreen());
@@ -110,21 +110,8 @@ function createWindow() {
     }
     if (input.key === 'Escape' && input.type === 'keyDown') {
       event.preventDefault();
-      dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        buttons: ['Cancelar', 'Salir del Juego'],
-        defaultId: 0,
-        cancelId: 0,
-        title: 'Sugar Ludo',
-        message: '¿Estás seguro de que deseas salir de Sugar Ludo?',
-        detail: 'Cualquier partida o acción no guardada podría interrumpirse.'
-      }).then(({ response }) => {
-        if (response === 1) {
-          app.quit();
-        }
-      }).catch(err => {
-        console.error('Error en cuadro de diálogo de salida:', err);
-      });
+      // Notificar al renderer para mostrar el modal temático propio de Sugar Ludo
+      mainWindow.webContents.send('escape-pressed');
     }
   });
 
@@ -190,6 +177,11 @@ ipcMain.handle('get-pending-auth-token', () => {
   const data = pendingDeepLinkData;
   pendingDeepLinkData = null; // Consumir una sola vez
   return data;
+});
+
+// IPC Handler para cerrar la aplicación desde el modal del juego
+ipcMain.on('quit-app', () => {
+  app.quit();
 });
 
 // IPC Handler para abrir URLs en el navegador predeterminado del sistema operativo

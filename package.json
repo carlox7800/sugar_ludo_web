@@ -1,6 +1,6 @@
 {
   "name": "sugar-ludo-web",
-  "version": "9.2.4",
+  "version": "9.2.5",
   "private": true,
   "main": "main.js",
   "scripts": {
@@ -29,6 +29,7 @@
     },
     "files": [
       "out/**/*",
+      "!out/downloads/**",
       "main.js",
       "preload.js"
     ]

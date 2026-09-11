@@ -7,8 +7,8 @@ android {
         applicationId "com.aistudio.sweetyludo.kxmpzq"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 90204
-        versionName "9.2.4"
+        versionCode 90205
+        versionName "9.2.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
