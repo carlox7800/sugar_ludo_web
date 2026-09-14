@@ -131,24 +131,46 @@ export default function CashierOrdersPage() {
       }
     } catch {}
 
-    // 2. Suscripción en tiempo real a Firestore
+    // 2. Suscripción en tiempo real a Firestore (Spark Cost $0 con limit y auto-pausa)
     let unsubscribe: (() => void) | null = null
-    try {
-      const q = query(collection(db, 'cashier_orders'), limit(50))
-      unsubscribe = onSnapshot(q, (snapshot) => {
-        const liveOrders: CashierOrder[] = []
-        snapshot.forEach((docSnap) => {
-          liveOrders.push({ ...docSnap.data(), id: docSnap.id } as CashierOrder)
+
+    const startOrdersListener = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (unsubscribe) return
+
+      try {
+        const q = query(collection(db, 'cashier_orders'), limit(25))
+        unsubscribe = onSnapshot(q, (snapshot) => {
+          const liveOrders: CashierOrder[] = []
+          snapshot.forEach((docSnap) => {
+            liveOrders.push({ ...docSnap.data(), id: docSnap.id } as CashierOrder)
+          })
+          if (liveOrders.length > 0 || snapshot.empty) {
+            setOrders(liveOrders)
+            setIsLoading(false)
+          }
+        }, (err) => {
+          console.warn('[CashierOrders] Firestore onSnapshot notice:', err.message)
         })
-        if (liveOrders.length > 0 || snapshot.empty) {
-          setOrders(liveOrders)
-          setIsLoading(false)
+      } catch (e) {
+        console.warn('[CashierOrders] Listener setup error:', e)
+      }
+    }
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (unsubscribe) {
+          unsubscribe()
+          unsubscribe = null
         }
-      }, (err) => {
-        console.warn('[CashierOrders] Firestore onSnapshot notice:', err.message)
-      })
-    } catch (e) {
-      console.warn('[CashierOrders] Listener setup error:', e)
+      } else {
+        startOrdersListener()
+      }
+    }
+
+    startOrdersListener()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
     }
 
     // 3. SSE Stream
@@ -184,6 +206,9 @@ export default function CashierOrdersPage() {
       if (channel) channel.close()
       if (unsubscribe) unsubscribe()
       if (sseSource) sseSource.close()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
     }
   }, [])
 

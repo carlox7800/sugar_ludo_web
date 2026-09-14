@@ -2,37 +2,7 @@ import { adminDb, admin, hasAdminCredentials } from './firebase-admin'
 import { db } from './firebase'
 import { doc, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
 import { CashierOrder, CashierProfile, DailyStats, AuditLog } from '../types/cashier'
-import fs from 'fs'
-import path from 'path'
 
-const DATA_DIR = path.join(process.cwd(), '.data')
-const DATA_FILE = path.join(DATA_DIR, 'cashier_orders.json')
-
-function loadDiskOrders(): CashierOrder[] {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf-8')
-      return JSON.parse(raw || '[]')
-    }
-  } catch {}
-  return []
-}
-
-function updateDiskOrderStatus(orderId: string, status: string, refNum?: string) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true })
-    }
-    const orders = loadDiskOrders()
-    const updated = orders.map(o => o.id === orderId ? {
-      ...o,
-      status: status as any,
-      receiptReferenceNumber: refNum || o.receiptReferenceNumber,
-      completedAt: Date.now()
-    } : o)
-    fs.writeFileSync(DATA_FILE, JSON.stringify(updated.slice(0, 100), null, 2), 'utf-8')
-  } catch {}
-}
 
 /**
  * ============================================================================
@@ -187,9 +157,6 @@ export async function approveDepositOrder(params: {
           lastAuditedAt: now
         }, { merge: true })
 
-        // Registrar en disco
-        updateDiskOrderStatus(orderId, 'completed', finalRef)
-
         return {
           success: true,
           message: `Depósito de +${amountCoins} SC acreditado con éxito al jugador.`
@@ -215,11 +182,6 @@ export async function approveDepositOrder(params: {
     console.warn('[approveDepositOrder Fallback] Error al consultar Firestore SDK:', err?.message)
   }
 
-  // 2.2. Buscar orden en disco local
-  if (!orderData) {
-    const diskOrders = loadDiskOrders()
-    orderData = diskOrders.find(o => o.id === orderId) || null
-  }
 
   // 2.3. Buscar orden vía REST API
   if (!orderData) {
@@ -405,9 +367,6 @@ export async function approveDepositOrder(params: {
     console.warn('[approveDepositOrder Fallback] Error en ledger:', ledErr?.message)
   }
 
-  // 2.8. Guardar en disco local
-  updateDiskOrderStatus(orderId, 'completed', finalRef)
-
   return {
     success: true,
     message: `Depósito de +${amountCoins} SC acreditado con éxito al jugador.`
@@ -579,14 +538,6 @@ export async function createWithdrawOrderWithEscrow(params: {
     console.warn('[createWithdrawOrderWithEscrow Fallback] Error guardando orden en Firestore SDK:', orderErr?.message)
   }
 
-  // Guardar en disco local
-  const diskOrders = loadDiskOrders()
-  const filtered = diskOrders.filter(o => o.id !== finalOrderId)
-  filtered.unshift(newOrder)
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
-    fs.writeFileSync(DATA_FILE, JSON.stringify(filtered.slice(0, 100), null, 2), 'utf-8')
-  } catch {}
 
   return { success: true, orderId: finalOrderId }
 }
@@ -675,9 +626,6 @@ export async function cancelWithdrawOrderAtomics(params: {
 
     if (orderSnap.exists()) {
       orderData = { id: orderSnap.id, ...orderSnap.data() } as CashierOrder
-    } else {
-      const disk = loadDiskOrders()
-      orderData = disk.find(o => o.id === orderId) || null
     }
 
     if (orderData) {
@@ -734,8 +682,6 @@ export async function cancelWithdrawOrderAtomics(params: {
         cancelledByUid: actorUid,
         cancelledByRole: actorRole
       }, { merge: true })
-
-      updateDiskOrderStatus(orderId, 'cancelled')
     }
   } catch (fallbackErr: any) {
     console.warn('[cancelWithdrawOrderAtomics Fallback] Error:', fallbackErr?.message)
@@ -1048,10 +994,6 @@ Conserva este mensaje como comprobante formal de la transacción.`
     }
   } catch {}
 
-  if (!order) {
-    const disk = loadDiskOrders()
-    order = disk.find(o => o.id === orderId) || null
-  }
 
   if (!order) {
     throw new Error(`La orden #${orderId} no existe.`)
@@ -1307,9 +1249,6 @@ Conserva este mensaje como comprobante formal de la transacción.`
   } catch (ledErr: any) {
     console.warn('[completeWithdrawalOrder Fallback] Error en ledger:', ledErr?.message)
   }
-
-  // 2.6. Actualizar en disco local
-  updateDiskOrderStatus(orderId, 'completed', payoutTxId)
 
   return {
     success: true,

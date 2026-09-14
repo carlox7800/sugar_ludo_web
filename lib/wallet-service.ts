@@ -1,4 +1,4 @@
-import { db } from './firebase'
+import { db, auth } from './firebase'
 import { updateDoc, doc, getDoc, setDoc, collection, query, where, getDocs, limit } from 'firebase/firestore'
 import { broadcastLocalMessage, getSugarId } from './friends-service'
 
@@ -30,6 +30,8 @@ export interface PlayerP2POrder {
   createdAt: number
   isVip?: boolean
   isVipWithdraw?: boolean
+  isEscrowLocked?: boolean
+  escrowLockedAt?: number
 }
 
 const LOCAL_ORDERS_KEY = 'sugar_cashier_orders'
@@ -278,59 +280,25 @@ export async function createWithdrawOrder(params: {
     })
   } catch {}
 
-  // 2. Retención atómica de saldo en Escrow y registro en historial
-  // Cumple estrictamente la Ley de Conservación Contable aprobada en firestore.rules
+  // 2. Pre-verificación de saldo en cliente (UX inmediata sin mutación directa en Firestore)
+  // Cumple estrictamente Zero-Trust: la retención atómica de saldo en Escrow la realiza el servidor autoritativo
   if (playerUid && !playerUid.startsWith('dev_')) {
     try {
       const userRef = doc(db, 'users', playerUid)
       const userSnap = await getDoc(userRef)
       if (userSnap.exists()) {
         const userData = userSnap.data() || {}
-        const currentCoins = Number(userData.coins ?? 200)
-        const currentEscrow = Number(userData.escrowLockedCoins ?? 0)
+        const currentCoins = Number(userData.coins ?? 0)
 
         if (currentCoins < amountSugarCoins) {
           throw new Error(`Saldo insuficiente de Sugar Coins (Disponibles: ${currentCoins} SC, Requeridos: ${amountSugarCoins} SC)`)
         }
-
-        const newCoins = Math.max(0, currentCoins - amountSugarCoins)
-        const newEscrow = currentEscrow + amountSugarCoins
-
-        const now = new Date()
-        const newTx: WalletTransaction = {
-          id: `wit_${orderId.slice(4)}`,
-          orderId: orderId,
-          type: 'withdraw',
-          amount: -amountSugarCoins,
-          description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${orderId.slice(0, 10)})` : `Solicitud de Retiro (Pendiente) (#${orderId.slice(0, 10)})`,
-          timestamp: Date.now(),
-          dateStr: now.toLocaleDateString('es-ES', { 
-            day: '2-digit', 
-            month: 'short', 
-            year: 'numeric', 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })
-        }
-
-        const existingHistory = Array.isArray(userData.walletHistory) ? userData.walletHistory : []
-        const history = [newTx, ...existingHistory].slice(0, 50)
-
-        await updateDoc(userRef, {
-          coins: newCoins,
-          escrowLockedCoins: newEscrow,
-          walletHistory: history,
-          lastActiveAt: Date.now()
-        })
-
-        orderData.isEscrowLocked = true
-        orderData.escrowLockedAt = Date.now()
       }
     } catch (checkErr: any) {
       if (checkErr?.message?.includes('Saldo insuficiente')) {
         throw checkErr
       }
-      console.warn('[WalletService] Error en retención de Escrow cliente:', checkErr?.message)
+      console.warn('[WalletService] Aviso en verificación de saldo cliente:', checkErr?.message)
     }
   }
 
@@ -347,12 +315,22 @@ export async function createWithdrawOrder(params: {
     ...(isLocalDev ? ['http://localhost:3001/api/cashier/orders'] : [])
   ]
 
+  let idToken = ''
+  try {
+    if (auth && auth.currentUser) {
+      idToken = await auth.currentUser.getIdToken()
+    }
+  } catch {}
+
   let serverProcessed = false
   for (const url of hubEndpoints) {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+        },
         body: JSON.stringify(orderData),
         mode: 'cors'
       })
@@ -360,6 +338,9 @@ export async function createWithdrawOrder(params: {
         const json = await res.json()
         if (json.success) {
           serverProcessed = true
+          orderData.isEscrowLocked = true
+          orderData.escrowLockedAt = Date.now()
+          saveLocalOrder(orderData)
           break
         } else {
           throw new Error(json.error || 'Saldo insuficiente o error al procesar retiro en servidor')
@@ -369,18 +350,22 @@ export async function createWithdrawOrder(params: {
       if (err.message && err.message.toLowerCase().includes('saldo insuficiente')) {
         throw err
       }
+      console.warn('[WalletService] Error conectando con Hub endpoint:', url, err?.message)
     }
   }
 
-  // 4. Persistir siempre en Firestore de forma idempotente con setDoc (SDK oficial cliente autenticado)
-  try {
-    const orderRef = doc(db, 'cashier_orders', orderId)
-    await Promise.race([
-      setDoc(orderRef, orderData, { merge: true }),
-      new Promise((resolve) => setTimeout(resolve, 2500))
-    ])
-  } catch (err: any) {
-    console.warn('[WalletService] Firestore setDoc notice:', err?.message)
+  // 4. Si el servidor procesó la orden, el documento ya existe en Firestore.
+  // Solo como respaldo en modo desarrollo o desconectado se intenta el registro cliente.
+  if (!serverProcessed) {
+    try {
+      const orderRef = doc(db, 'cashier_orders', orderId)
+      await Promise.race([
+        setDoc(orderRef, orderData, { merge: true }),
+        new Promise((resolve) => setTimeout(resolve, 2500))
+      ])
+    } catch (err: any) {
+      console.warn('[WalletService] Firestore setDoc notice:', err?.message)
+    }
   }
 
   return { success: true, orderId }

@@ -1,23 +1,6 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
 import { CashierOrder } from '@/types/cashier'
-import fs from 'fs'
-import path from 'path'
-
-const DATA_DIR = path.join(process.cwd(), '.data')
-const DATA_FILE = path.join(DATA_DIR, 'cashier_orders.json')
-
-function loadDiskOrder(orderId: string): CashierOrder | null {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf-8')
-      const orders: CashierOrder[] = JSON.parse(raw || '[]')
-      return orders.find(o => o.id === orderId) || null
-    }
-  } catch {}
-  return null
-}
-
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> | { id: string } }
@@ -30,18 +13,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'ID no proporcionado' }, { status: 400 })
     }
 
-    // 1. Buscar en disco local primero (velocidad instantánea < 1ms)
-    const diskOrder = loadDiskOrder(orderId)
-    if (diskOrder) {
-      return NextResponse.json({ success: true, order: diskOrder }, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-store, max-age=0'
-        }
-      })
-    }
-
-    // 2. Buscar en Firestore vía adminDb
+    // 1. Buscar en Firestore vía adminDb (Autoritativo en tiempo real)
     if (adminDb && adminDb.collection) {
       try {
         const docSnap = await adminDb.collection('cashier_orders').doc(orderId).get()

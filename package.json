@@ -1,6 +1,6 @@
 {
   "name": "sugar-ludo-web",
-  "version": "9.2.8",
+  "version": "9.3.0",
   "private": true,
   "main": "main.js",
   "scripts": {

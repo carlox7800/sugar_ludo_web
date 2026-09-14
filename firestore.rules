@@ -2,117 +2,143 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // ========================================================================
     // 1. PERFIL DE USUARIOS Y CLASIFICACIÓN GLOBAL (LEADERBOARD)
+    // ========================================================================
     match /users/{userId} {
       allow read: if true;
-      // Creación permitida para el propio usuario con bono inicial máximo de 200 monedas
+      
+      // Creación permitida para el propio usuario autenticado con bono inicial máximo de 200 monedas
       allow create: if request.auth != null && request.auth.uid == userId && 
                     (!('coins' in request.resource.data) || request.resource.data.coins <= 200);
-      // Actualización: Permitida para el usuario propio (incluyendo retención de saldo en Escrow donde la suma de coins y escrowLockedCoins se conserva estrictamente) o liquidaciones autorizadas por cajeros
-      allow update: if (request.auth != null && request.auth.uid == userId &&
-                        (
-                          // Caso 1: Actualizaciones estándar sin tocar roles ni campos restringidos
-                          (!request.resource.data.diff(resource.data).affectedKeys()
-                            .hasAny(['escrowLockedCoins', 'role', 'isBanned', 'isFrozen'])) ||
-                          // Caso 2: Retención legítima por retiro (Escrow Lock): Conservación matemática estricta del balance total con getters seguros
-                          (!request.resource.data.diff(resource.data).affectedKeys()
-                            .hasAny(['role', 'isBanned', 'isFrozen']) &&
-                           request.resource.data.coins >= 0 &&
-                           request.resource.data.get('escrowLockedCoins', 0) >= 0 &&
-                           (request.resource.data.coins + request.resource.data.get('escrowLockedCoins', 0)) == 
-                           (resource.data.get('coins', 0) + resource.data.get('escrowLockedCoins', 0)))
-                        )) ||
-                       // Caso 3: Liquidaciones financieras y acreditaciones (Cajeros / Admin Hub / P2P)
-                       (request.resource.data.diff(resource.data).affectedKeys()
-                          .hasOnly(['coins', 'escrowLockedCoins', 'walletHistory', 'lastActiveAt', 'inbox', 'lastSettledDepositId']));
+      
+      // Actualización: Blindaje Zero-Trust estricto.
+      // El cliente NUNCA puede mutar 'coins', 'escrowLockedCoins', 'role', 'isBanned' ni 'isFrozen'.
+      // Las mutaciones de balance ocurren exclusivamente a través del backend autoritativo (Admin SDK).
+      allow update: if request.auth != null && request.auth.uid == userId &&
+                    !request.resource.data.diff(resource.data).affectedKeys()
+                      .hasAny(['coins', 'escrowLockedCoins', 'role', 'isBanned', 'isFrozen']);
+                      
       allow delete: if false;
       
+      // Buzón de notificaciones (inbox): Solo el servidor escribe
       match /inbox/{mailId} {
         allow read: if true;
         allow write: if false;
       }
       
+      // Historial de partidas del jugador
       match /match_history/{matchId} {
         allow read: if true;
         allow write: if request.auth != null && request.auth.uid == userId;
       }
     }
     
-    // 2. SISTEMA DE AMISTADES DEDICADO
+    // ========================================================================
+    // 2. SISTEMA DE AMISTADES, SOLICITUDES Y DUELOS 1 VS 1
+    // ========================================================================
     match /friendships/{friendshipId} {
       allow read, write: if true;
     }
     
-    // 3. SOLICITUDES DE AMISTAD EN TIEMPO REAL
     match /friend_requests/{requestId} {
       allow read, write: if true;
     }
     
-    // 4. RETOS A DUELOS 1 VS 1 EN TIEMPO REAL
     match /duel_challenges/{challengeId} {
       allow read, write: if true;
     }
     
-    // 5. BILLETERAS Y TRANSACCIONES
+    // ========================================================================
+    // 3. BILLETERAS Y REGISTRO DE TRANSACCIONES (BLINDADAS)
+    // ========================================================================
     match /wallets/{userId} {
-      allow read, write: if true;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false; // Inmutable desde clientes: exclusivo del Admin SDK
     }
     
     match /transactions/{txId} {
-      allow read, write: if true;
+      allow read: if request.auth != null;
+      allow write: if false; // Inmutable desde clientes: exclusivo del Admin SDK
     }
 
-    // 6. SISTEMA DE CAJEROS P2P, CHAT Y AUDITORÍA
+    // ========================================================================
+    // 4. SISTEMA DE CAJEROS P2P Y CHAT DE SOPORTE
+    // ========================================================================
     match /cashier_orders/{orderId} {
       allow read: if true;
-      // Creación de órdenes en pending por parte de jugadores
+      
+      // Creación permitida para órdenes nuevas en estado 'pending'
       allow create: if request.resource.data.status == 'pending';
-      // Cancelación de órdenes pendientes, liquidaciones autorizadas, o actualizaciones de orden propia / chat / lectura
-      allow update: if (resource.data.status == 'pending' && (request.resource.data.status == 'cancelled' || request.resource.data.status == 'completed')) ||
-                    request.resource.data.status == 'completed' ||
-                    (request.auth != null && resource.data.playerUid == request.auth.uid && resource.data.status == 'pending') ||
-                    (request.auth != null && resource.data.playerUid == request.auth.uid && 
-                     request.resource.data.diff(resource.data).affectedKeys()
-                       .hasOnly(['playerReadAt', 'hasUnreadCashierMessage', 'supportMessages', 'messages', 'lastMessage', 'lastMessageTime'])) ||
-                    request.resource.data.diff(resource.data).affectedKeys()
-                      .hasOnly(['messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 'hasUnreadCashierMessage', 'playerReadAt']);
+      
+      // Actualización de cliente restringida a comprobantes, chat y lecturas
+      // (Liquidaciones y cambios a 'completed' son exclusivos de transacciones Admin SDK)
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly([
+                        'messages', 
+                        'supportMessages', 
+                        'lastMessage', 
+                        'lastMessageTime', 
+                        'hasUnreadCashierMessage', 
+                        'playerReadAt',
+                        'receiptUrl',
+                        'receiptReferenceNumber',
+                        'receiptUploadedAt'
+                      ]);
+                      
       allow delete: if false;
       
+      // Mensajes y chat de la orden
       match /messages/{messageId} {
         allow read, write: if true;
       }
     }
     
+    // Perfiles operativos de cajeros: Modificaciones exclusivas del Super Admin vía backend
     match /cashier_profiles/{cashierId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
     
+    // Estadísticas contables diarias: Gestionadas exclusivamente por transacciones del servidor
     match /daily_stats/{dateStr} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
     
+    // Registro inmutable de auditoría: Lectura para auditoría, escritura exclusiva del servidor
     match /audit_logs/{logId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
 
-    // 7. ECOSISTEMA CONTABLE, TESORERÍA INSTITUCIONAL Y CONFIGURACIÓN CENTRALIZADA
+    // ========================================================================
+    // 5. ECOSISTEMA CONTABLE, TESORERÍA INSTITUCIONAL Y CONFIGURACIÓN
+    // ========================================================================
     match /system_treasury/{treasuryId} {
-      allow read, write: if true;
+      // Lectura permitida para métricas en vivo (live_telemetry y global_ledger en Super Admin)
+      allow read: if true;
+      allow write: if false; // Exclusivo de transacciones atómicas del backend (Admin SDK)
     }
 
     match /system_config/{configId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false; // Solo Super Admin vía servidor
     }
 
     match /cashier_shifts_ledger/{ledgerId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false; // Exclusivo del servidor
     }
 
     match /dispute_cases/{disputeId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false; // Arbitraje exclusivo vía servidor
     }
 
-    // 8. COMUNICACIONES INTERNAS DE STAFF Y CHAT DUAL CON CAJEROS
+    // ========================================================================
+    // 6. COMUNICACIONES INTERNAS DE STAFF
+    // ========================================================================
     match /staff_broadcast_messages/{msgId} {
       allow read, write: if true;
     }
@@ -125,7 +151,9 @@ service cloud.firestore {
       }
     }
 
-    // 9. TORNEOS Y EVENTOS COMPETITIVOS EN VIVO
+    // ========================================================================
+    // 7. TORNEOS Y EVENTOS COMPETITIVOS EN VIVO
+    // ========================================================================
     match /tournaments/{tournamentId} {
       allow read: if true;
       allow write: if false;

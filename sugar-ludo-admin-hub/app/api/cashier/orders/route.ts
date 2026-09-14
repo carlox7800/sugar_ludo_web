@@ -1,33 +1,6 @@
 import { NextResponse } from 'next/server'
-import { adminDb } from '@/lib/firebase-admin'
+import { adminDb, adminAuth } from '@/lib/firebase-admin'
 import { CashierOrder } from '@/types/cashier'
-import fs from 'fs'
-import path from 'path'
-
-const DATA_DIR = path.join(process.cwd(), '.data')
-const DATA_FILE = path.join(DATA_DIR, 'cashier_orders.json')
-
-function loadDiskOrders(): CashierOrder[] {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf-8')
-      return JSON.parse(raw || '[]')
-    }
-  } catch {}
-  return []
-}
-
-function saveDiskOrder(order: CashierOrder) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true })
-    }
-    const current = loadDiskOrders()
-    const filtered = current.filter(o => o.id !== order.id)
-    filtered.unshift(order)
-    fs.writeFileSync(DATA_FILE, JSON.stringify(filtered.slice(0, 100), null, 2), 'utf-8')
-  } catch {}
-}
 
 export async function GET(request: Request) {
   try {
@@ -119,16 +92,6 @@ export async function GET(request: Request) {
       }
     }
 
-    // 3. Fusionar con la persistencia en disco (.data/cashier_orders.json)
-    const diskOrders = loadDiskOrders()
-    if (diskOrders.length > 0) {
-      const existingIds = new Set(ordersList.map(o => o.id))
-      for (const diskOrd of diskOrders) {
-        if (!existingIds.has(diskOrd.id)) {
-          ordersList.unshift(diskOrd)
-        }
-      }
-    }
 
     // 4. Aplicar filtros
     if (status && status !== 'all') {
@@ -178,7 +141,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Orden inválida' }, { status: 400, headers: corsHeaders })
     }
 
-    const rawPlayerUid = body.playerUid || ''
+    let rawPlayerUid = body.playerUid || ''
+
+    // Verificación criptográfica de identidad de jugador (Zero-Trust Token Verification)
+    const authHeader = request.headers.get('authorization')
+    if (authHeader && authHeader.startsWith('Bearer ') && adminAuth) {
+      try {
+        const idToken = authHeader.split('Bearer ')[1]
+        const decodedToken = await adminAuth.verifyIdToken(idToken)
+        if (decodedToken && decodedToken.uid) {
+          rawPlayerUid = decodedToken.uid
+        }
+      } catch (authErr: any) {
+        console.warn('[POST /api/cashier/orders] Token inválido o no verificado:', authErr?.message)
+      }
+    }
+
     const rawPlayerId = body.playerId || (rawPlayerUid ? `SL-${rawPlayerUid.substring(0, 6).toUpperCase()}` : '')
     const isVip = Boolean(body.isVip || body.isVipWithdraw || body.paymentMethod === 'usdt_trc20_vip' || body.paymentMethod === 'usdt_bep20')
 
@@ -209,7 +187,6 @@ export async function POST(request: Request) {
       if (alreadyLocked) {
         orderData.isEscrowLocked = true
         orderData.escrowLockedAt = body.escrowLockedAt || Date.now()
-        saveDiskOrder(orderData)
 
         if (adminDb && adminDb.collection) {
           try {
@@ -244,7 +221,6 @@ export async function POST(request: Request) {
         orderData.id = withdrawRes.orderId
         orderData.isEscrowLocked = true
         orderData.escrowLockedAt = Date.now()
-        saveDiskOrder(orderData)
 
         return NextResponse.json(
           { success: true, order: orderData, orderId: orderData.id },
@@ -259,9 +235,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. Si es DEPÓSITO o modo fallback, guardar en disco y Firestore
-    saveDiskOrder(orderData)
-
+    // 2. Si es DEPÓSITO o modo fallback, guardar en Firestore
     if (adminDb && adminDb.collection) {
       try {
         await adminDb.collection('cashier_orders').doc(orderData.id).set(orderData)

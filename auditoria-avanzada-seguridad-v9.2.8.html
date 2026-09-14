@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sugar Ludo v9.2.8 - Auditoría Técnica de Ciberseguridad, Fintech y Multiplayer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-card: #0e121d;
+      --bg-card-hover: #141a29;
+      --border-color: #1e2638;
+      --border-glow: rgba(0, 240, 255, 0.25);
+      --text-primary: #f0f4fc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      
+      --cyan-neon: #00f0ff;
+      --emerald-neon: #10b981;
+      --amber-neon: #f59e0b;
+      --rose-neon: #f43f5e;
+      --purple-neon: #a855f7;
+
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 80px;
+    }
+
+    .ambient-glow {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100vw;
+      height: 450px;
+      background: radial-gradient(circle at 50% -10%, rgba(0, 240, 255, 0.08) 0%, rgba(168, 85, 247, 0.04) 50%, transparent 80%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    header {
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 40px;
+    }
+
+    .badge-hero {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: rgba(0, 240, 255, 0.08);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      color: var(--cyan-neon);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .badge-hero .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--cyan-neon);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--cyan-neon);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    h1 {
+      font-size: 2.75rem;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+    }
+
+    .hero-subtitle {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 850px;
+      font-weight: 400;
+    }
+
+    .metadata-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      margin-top: 24px;
+      padding: 14px 20px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .metadata-bar strong {
+      color: var(--text-primary);
+    }
+
+    .nav-tabs {
+      position: sticky;
+      top: 16px;
+      z-index: 100;
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(14, 18, 29, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      margin-bottom: 36px;
+      overflow-x: auto;
+    }
+
+    .nav-tab-btn {
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-decoration: none;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+
+    .nav-tab-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .nav-tab-btn.active {
+      color: var(--cyan-neon);
+      background: rgba(0, 240, 255, 0.1);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+
+    .kpi-card.status-danger::before { background: var(--rose-neon); }
+    .kpi-card.status-warning::before { background: var(--amber-neon); }
+    .kpi-card.status-success::before { background: var(--emerald-neon); }
+    .kpi-card.status-cyan::before { background: var(--cyan-neon); }
+
+    .kpi-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .kpi-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+
+    .status-danger .kpi-status-badge {
+      background: rgba(244, 63, 94, 0.15);
+      color: var(--rose-neon);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    .status-warning .kpi-status-badge {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber-neon);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .status-success .kpi-status-badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--emerald-neon);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .kpi-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .kpi-card p {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    section {
+      margin-bottom: 48px;
+      scroll-margin-top: 90px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .section-header h2 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .section-header .section-tag {
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--cyan-neon);
+    }
+
+    .audit-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 24px;
+    }
+
+    .audit-card h4 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .audit-card p {
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      font-size: 0.95rem;
+    }
+
+    .alert-box {
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin: 16px 0;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .alert-critical {
+      background: rgba(244, 63, 94, 0.08);
+      border-left: 4px solid var(--rose-neon);
+      border-right: 1px solid rgba(244, 63, 94, 0.2);
+      border-top: 1px solid rgba(244, 63, 94, 0.2);
+      border-bottom: 1px solid rgba(244, 63, 94, 0.2);
+      color: #fecdd3;
+    }
+
+    .alert-warning {
+      background: rgba(245, 158, 11, 0.08);
+      border-left: 4px solid var(--amber-neon);
+      border-right: 1px solid rgba(245, 158, 11, 0.2);
+      border-top: 1px solid rgba(245, 158, 11, 0.2);
+      border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+      color: #fef3c7;
+    }
+
+    .alert-success {
+      background: rgba(16, 185, 129, 0.08);
+      border-left: 4px solid var(--emerald-neon);
+      border-right: 1px solid rgba(16, 185, 129, 0.2);
+      border-top: 1px solid rgba(16, 185, 129, 0.2);
+      border-bottom: 1px solid rgba(16, 185, 129, 0.2);
+      color: #d1fae5;
+    }
+
+    .code-container {
+      background: #06080d;
+      border: 1px solid #1a2233;
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 16px 0;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+
+    .code-header {
+      background: #0d121c;
+      padding: 8px 16px;
+      border-bottom: 1px solid #1a2233;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .code-content {
+      padding: 16px;
+      overflow-x: auto;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+
+    .code-diff-remove {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fda4af;
+      display: block;
+      margin: 0 -16px;
+      padding: 2px 16px;
+      border-left: 3px solid var(--rose-neon);
+    }
+
+    .code-diff-add {
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+      display: block;
+      margin: 0 -16px;
+      padding: 2px 16px;
+      border-left: 3px solid var(--emerald-neon);
+    }
+
+    .audit-table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.88rem;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.75rem;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    .badge-pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .pill-danger { background: rgba(244, 63, 94, 0.2); color: var(--rose-neon); }
+    .pill-warning { background: rgba(245, 158, 11, 0.2); color: var(--amber-neon); }
+    .pill-success { background: rgba(16, 185, 129, 0.2); color: var(--emerald-neon); }
+    .pill-cyan { background: rgba(0, 240, 255, 0.2); color: var(--cyan-neon); }
+
+    @media print {
+      body { background: #fff; color: #000; }
+      .ambient-glow, .nav-tabs { display: none; }
+      .audit-card { border: 1px solid #ddd; background: #fff; page-break-inside: avoid; }
+      h1, h2, h3, h4 { color: #000; -webkit-text-fill-color: #000; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-glow"></div>
+
+  <div class="container">
+    <header>
+      <div class="badge-hero">
+        <span class="pulse-dot"></span>
+        Auditoría Técnica Integral Ecosistema v9.2.8
+      </div>
+      <h1>Sugar Ludo: Diagnóstico de Ciberseguridad, Fintech y Motor Multijugador</h1>
+      <p class="hero-subtitle">
+        Evaluación de estándares AAA de producción comercial, auditoría de vectores de ataque en Firestore, álgebra de solvencia contable, arbitraje de red P2P y candados de consumo Spark ($0.00/mes).
+      </p>
+
+      <div class="metadata-bar">
+        <div><strong>Versión Target:</strong> Sugar Ludo v9.2.8</div>
+        <div><strong>Fecha de Ejecución:</strong> Septiembre 2026</div>
+        <div><strong>Entorno Evaluado:</strong> Web (Turbopack), Android (Capacitor), Desktop (Electron), Hub Administrativo</div>
+        <div><strong>Clasificación:</strong> Confidencial / Reporte de Seguridad</div>
+      </div>
+    </header>
+
+    <nav class="nav-tabs">
+      <a href="#resumen" class="nav-tab-btn active">1. Tablero Ejecutivo</a>
+      <a href="#appsec" class="nav-tab-btn">2. Ciberseguridad & AppSec</a>
+      <a href="#fintech" class="nav-tab-btn">3. Economía & Bóveda P2P</a>
+      <a href="#multiplayer" class="nav-tab-btn">4. Motor de Juego & Dados</a>
+      <a href="#multiplatform" class="nav-tab-btn">5. Compilación & Multiplataforma</a>
+      <a href="#spark" class="nav-tab-btn">6. Cuota Firebase Spark ($0.00)</a>
+      <a href="#roadmap" class="nav-tab-btn">7. Hoja de Ruta Inmediata</a>
+    </nav>
+
+    <section id="resumen">
+      <div class="section-header">
+        <h2>1. Tablero Ejecutivo y Semáforo de Riesgo</h2>
+        <span class="section-tag">GLOBAL_HEALTH_CHECK</span>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card status-danger">
+          <div class="kpi-title">Reglas Firestore & RBAC</div>
+          <div class="kpi-status-badge">● CRÍTICO / VULNERABLE</div>
+          <h3>Escritura de Saldo Expuesta</h3>
+          <p>La regla de actualización en <code>users/{userId}</code> y colecciones financieras cuenta con cláusulas sin autenticación que permiten alterar <code>coins</code> y <code>escrowLockedCoins</code> desde el cliente.</p>
+        </div>
+
+        <div class="kpi-card status-warning">
+          <div class="kpi-title">Admin Hub & Persistencia</div>
+          <div class="kpi-status-badge">▲ ADVERTENCIA OPERATIVA</div>
+          <h3>Fallback Efímero en Disco</h3>
+          <p>El backend administrativo recurre a <code>.data/cashier_orders.json</code> como respaldo ante la ausencia de credenciales de servicio en Render, arriesgando divergencia de estados al reiniciar contenedores.</p>
+        </div>
+
+        <div class="kpi-card status-success">
+          <div class="kpi-title">Motor Multijugador Online</div>
+          <div class="kpi-status-badge">✔ ÓPTIMO / AAA</div>
+          <h3>Dados Server-Authoritative</h3>
+          <p>El juego en línea opera estrictamente bajo el servidor central en Render (WebSocket). La tirada de dados y el temporizador no pueden ser adulterados por el cliente.</p>
+        </div>
+
+        <div class="kpi-card status-cyan">
+          <div class="kpi-title">Empaquetado & Landing</div>
+          <div class="kpi-status-badge">★ EXCELENTE / ZERO-BLOAT</div>
+          <h3>Desacople Modular</h3>
+          <p>Landing page 100% estática e independiente. Filtrado de binarios en <code>package.json</code> que previene sobrepeso en Electron y APK.</p>
+        </div>
+      </div>
+
+      <div class="audit-card">
+        <h4>Resumen Ejecutivo para Dirección y Accionistas</h4>
+        <p>
+          Sugar Ludo v9.2.8 presenta una <strong>arquitectura multijugador sólida y un empaquetado multiplataforma impecable</strong>. La separación del portal web estático y la generación de binarios para Android y PC cumplen los más altos estándares de la industria gaming.
+        </p>
+        <p>
+          Sin embargo, en el ámbito <strong>Fintech y de Seguridad en la Nube</strong>, existe una vulnerabilidad estructural crítica: para permitir que el portal de administración funcione sin inyección de llaves de servicio (Service Account ADC), se abrieron las reglas de Firestore (<code>firestore.rules</code>) permitiendo que peticiones directas de cliente modifiquen saldos y bóvedas institucionales. Este hallazgo debe remediarse de forma prioritaria antes de abrir las transacciones con dinero fiat/USDT real.
+        </p>
+      </div>
+    </section>
+
+    <section id="appsec">
+      <div class="section-header">
+        <h2>2. Ciberseguridad & AppSec Defensivo</h2>
+        <span class="section-tag">ZERO_TRUST_AUDIT</span>
+      </div>
+
+      <div class="audit-card">
+        <h4>Hallazgo Crítico SEC-01: Exposición de Saldo en <code>firestore.rules</code></h4>
+        <p>
+          En el archivo <code>firestore.rules</code> (líneas 25 a 27), se detecta la siguiente condición en la regla de actualización de usuarios:
+        </p>
+
+        <div class="code-container">
+          <div class="code-header">
+            <span>firestore.rules (Regla Vulnerable Actual)</span>
+            <span>CRITICAL VULNERABILITY</span>
+          </div>
+          <div class="code-content">
+<span class="code-diff-remove">// Caso 3: Liquidaciones financieras y acreditaciones (Cajeros / Admin Hub / P2P)</span>
+<span class="code-diff-remove">(request.resource.data.diff(resource.data).affectedKeys()</span>
+<span class="code-diff-remove">   .hasOnly(['coins', 'escrowLockedCoins', 'walletHistory', 'lastActiveAt', 'inbox', 'lastSettledDepositId']));</span>
+          </div>
+        </div>
+
+        <div class="alert-box alert-critical">
+          <strong>Impacto de Seguridad:</strong> Un usuario malicioso que obtenga la API Key pública de Firebase (presente en el bundle de JavaScript del frontend) puede ejecutar desde la consola de desarrollo de su navegador un script de Firestore SDK <code>updateDoc(doc(db, 'users', 'su_uid'), { coins: 99999999 })</code>. La regla lo autorizará porque los campos modificados caen dentro de la lista permitida, permitiendo inflación monetaria ilimitada.
+        </div>
+
+        <h4 style="margin-top:24px;">Hallazgo SEC-02: Colecciones Financieras con Escritura Pública</h4>
+        <p>
+          Múltiples colecciones del sistema financiero cuentan con directivas <code>allow read, write: if true;</code>:
+        </p>
+
+        <div class="audit-table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Colección</th>
+                <th>Regla Actual</th>
+                <th>Estado</th>
+                <th>Riesgo Asociado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>/system_treasury/{treasuryId}</code></td>
+                <td><code>allow read, write: if true;</code></td>
+                <td><span class="badge-pill pill-danger">Crítico</span></td>
+                <td>Alteración arbitraria de las reservas globales y comisiones de la plataforma.</td>
+              </tr>
+              <tr>
+                <td><code>/cashier_profiles/{cashierId}</code></td>
+                <td><code>allow read, write: if true;</code></td>
+                <td><span class="badge-pill pill-danger">Crítico</span></td>
+                <td>Modificación de saldo flotante asignado a cajeros y comisiones acumuladas.</td>
+              </tr>
+              <tr>
+                <td><code>/wallets/{userId}</code></td>
+                <td><code>allow read, write: if true;</code></td>
+                <td><span class="badge-pill pill-danger">Crítico</span></td>
+                <td>Modificación directa de la billetera de cualquier jugador sin autenticación.</td>
+              </tr>
+              <tr>
+                <td><code>/audit_logs/{logId}</code></td>
+                <td><code>allow read, write: if true;</code></td>
+                <td><span class="badge-pill pill-danger">Crítico</span></td>
+                <td>Inyección o borrado de trazas de auditoría para encubrir fraude.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4 style="margin-top:24px;">Hallazgo SEC-03: Retiro Escrow iniciado desde el Cliente</h4>
+        <p>
+          En <code>lib/wallet-service.ts</code> (líneas 319-322), la función <code>createWithdrawOrder()</code> realiza una mutación directa de saldo en el cliente:
+        </p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>lib/wallet-service.ts (Línea 319)</span>
+            <span>INCONSISTENCIA ARQUITECTURAL</span>
+          </div>
+          <div class="code-content">
+<span class="code-diff-remove">// Mutación de saldo en el SDK cliente:</span>
+<span class="code-diff-remove">await updateDoc(userRef, {</span>
+<span class="code-diff-remove">  coins: newCoins,</span>
+<span class="code-diff-remove">  escrowLockedCoins: newEscrow,</span>
+<span class="code-diff-remove">  walletHistory: history</span>
+<span class="code-diff-remove">});</span>
+          </div>
+        </div>
+        <p>
+          Esto contradice el principio rector estipulado en los comentarios de la misma biblioteca: <em>"el cliente no muta directamente coins. Las mutaciones de saldo ocurren exclusivamente a través del backend autoritativo"</em>.
+        </p>
+      </div>
+    </section>
+
+    <section id="fintech">
+      <div class="section-header">
+        <h2>3. Economía Fintech, Bóveda Central & Red P2P</h2>
+        <span class="section-tag">DOUBLE_ENTRY_TREASURY</span>
+      </div>
+
+      <div class="audit-card">
+        <h4>Ecuación de Solvencia e Invariantes Financieros</h4>
+        <p>
+          El diseño económico de Sugar Ludo está fundamentado en el principio de doble entrada. Para garantizar solvencia matemática del 100%, debe verificarse continuamente:
+        </p>
+        <div class="alert-box alert-success" style="font-family: var(--font-mono); font-size: 0.95rem;">
+          Bóveda Central (USDT) = Σ Saldos Jugadores (Disponibles + Escrow) + Σ Flotantes Cajeros + Beneficio Neto Plataforma
+        </div>
+
+        <h4 style="margin-top:20px;">Matemática de Comisiones y Puntos Básicos (BPS)</h4>
+        <p>
+          La deducción de comisiones implementada en el sistema aplica aritmética de punto fijo para evitar pérdidas por precisión IEEE-754:
+        </p>
+        <div class="audit-table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo de Retiro</th>
+                <th>Tiempo Estimado</th>
+                <th>Tasa BPS</th>
+                <th>Comisión Plataforma</th>
+                <th>Destino de la Comisión</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Retiro Estándar</strong></td>
+                <td>Hasta 48 Horas</td>
+                <td>500 BPS</td>
+                <td><strong>5.0%</strong></td>
+                <td>Bóveda Central (Patrimonio)</td>
+              </tr>
+              <tr>
+                <td><strong>Retiro Prioritario VIP</strong></td>
+                <td>Hasta 12 Horas</td>
+                <td>1000 BPS</td>
+                <td><strong>10.0%</strong></td>
+                <td>Bóveda Central (Patrimonio)</td>
+              </tr>
+              <tr>
+                <td><strong>Incentivo al Cajero</strong></td>
+                <td>Inmediato (P2P)</td>
+                <td>200 BPS</td>
+                <td><strong>2.0%</strong></td>
+                <td>Acreditado al Saldo del Cajero</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4 style="margin-top:24px;">Hallazgo FIN-01: Persistencia Efímera en Render (Disco Local JSON)</h4>
+        <p>
+          En <code>sugar-ludo-admin-hub/lib/atomic-transactions.ts</code> (líneas 8 a 35), el sistema implementa un almacén local en disco:
+        </p>
+        <div class="code-container">
+          <div class="code-header">
+            <span>sugar-ludo-admin-hub/lib/atomic-transactions.ts</span>
+            <span>WARNING: EPHEMERAL STORAGE</span>
+          </div>
+          <div class="code-content">
+const DATA_DIR = path.join(process.cwd(), '.data')
+const DATA_FILE = path.join(DATA_DIR, 'cashier_orders.json')
+
+function loadDiskOrders(): CashierOrder[] { ... }
+function updateDiskOrderStatus(...) { ... }
+          </div>
+        </div>
+        <div class="alert-box alert-warning">
+          <strong>Advertencia de Infraestructura Cloud:</strong> En plataformas PaaS como Render o Vercel, el sistema de archivos del contenedor es <strong>estrictamente efímero</strong>. Cualquier orden o estado guardado en <code>.data/cashier_orders.json</code> se destruye al desplegar una nueva versión, al escalar la instancia o al reiniciar el servicio. La persistencia DEBE residir 100% en Firestore.
+        </div>
+      </div>
+    </section>
+
+    <section id="multiplayer">
+      <div class="section-header">
+        <h2>4. Motor Multijugador en Tiempo Real & Ludo Engine</h2>
+        <span class="section-tag">SERVER_AUTHORITATIVE</span>
+      </div>
+
+      <div class="audit-card">
+        <h4>Validación del Motor de Dados y Turnos</h4>
+        <p>
+          Se auditó la interacción entre el cliente (<code>online-game-engine.tsx</code>) y el servidor de juego en tiempo real (<code>juego-de-servidor.onrender.com</code>).
+        </p>
+        
+        <div class="audit-table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Componente</th>
+                <th>Implementación</th>
+                <th>Estado</th>
+                <th>Veredicto</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Tirada de Dados</strong></td>
+                <td>El cliente emite <code>intent_roll_dice</code>. El servidor genera el valor (1-6) y emite <code>dice_rolled</code>.</td>
+                <td><span class="badge-pill pill-success">Seguro</span></td>
+                <td>Imposible forzar dados mediante DevTools en partidas multijugador.</td>
+              </tr>
+              <tr>
+                <td><strong>Temporizador de Turno</strong></td>
+                <td>Temporizador centralizado de 15 segundos en el backend con auto-pase o bot play.</td>
+                <td><span class="badge-pill pill-success">Seguro</span></td>
+                <td>No susceptible a congelamiento de ventana de navegador.</td>
+              </tr>
+              <tr>
+                <td><strong>Validación de Fichas</strong></td>
+                <td>El backend valida que la ficha seleccionada pertenezca al jugador y cumpla el trayecto reglamentario.</td>
+                <td><span class="badge-pill pill-success">Seguro</span></td>
+                <td>Anti-teletransporte y validación de casillas seguras efectiva.</td>
+              </tr>
+              <tr>
+                <td><strong>Aislamiento Offline / Bots</strong></td>
+                <td><code>GameEngine.tsx</code> y <code>HexGameView.tsx</code> aislados sin conexión al servidor de apuestas.</td>
+                <td><span class="badge-pill pill-success">Seguro</span></td>
+                <td>El modo práctica no tiene impacto alguno en la economía real.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="multiplatform">
+      <div class="section-header">
+        <h2>5. Compilación, Empaquetado Multiplataforma & Landing</h2>
+        <span class="section-tag">CROSS_PLATFORM_BUILD</span>
+      </div>
+
+      <div class="audit-card">
+        <h4>Diagnóstico de Empaquetado y Distribución</h4>
+        <p>
+          La revisión de los artefactos de despliegue confirma un desacople completo y eficiente en todos los canales de distribución:
+        </p>
+
+        <ul style="list-style: none; padding-left: 0; margin-bottom: 20px;">
+          <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong>Sugar Ludo Landing (Micro-sitio Independiente):</strong>
+              <div style="font-size: 0.85rem; color: var(--text-muted);">Ubicación: <code>sugar-ludo-landing/</code> | Exportación estática pura (<code>output: 'export'</code>).</div>
+            </div>
+            <span class="badge-pill pill-success">Aprobado</span>
+          </li>
+          <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong>Electron Desktop Wrapper (Windows .exe):</strong>
+              <div style="font-size: 0.85rem; color: var(--text-muted);">Candado en <code>package.json</code> con <code>"files": ["out/**/*", "!out/downloads/**"]</code>. Previene binarios inflados.</div>
+            </div>
+            <span class="badge-pill pill-success">Aprobado</span>
+          </li>
+          <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong>Android APK / Capacitor:</strong>
+              <div style="font-size: 0.85rem; color: var(--text-muted);">Sincronización de <code>capacitor.config.ts</code> con <code>webDir: 'out'</code>. Permisos nativos optimizados.</div>
+            </div>
+            <span class="badge-pill pill-success">Aprobado</span>
+          </li>
+          <li style="padding: 10px 0; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <strong>Publicación en GitHub Releases:</strong>
+              <div style="font-size: 0.85rem; color: var(--text-muted);">Tag <code>v9.2.8</code> asociado a los instaladores <code>SugarLudo-Setup.exe</code> y <code>SugarLudo.apk</code>.</div>
+            </div>
+            <span class="badge-pill pill-cyan">Enlace Directo CDN</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="spark">
+      <div class="section-header">
+        <h2>6. Respeto Estricto de la Cuota Firebase Spark ($0.00/mes)</h2>
+        <span class="section-tag">COST_GOVERNANCE</span>
+      </div>
+
+      <div class="audit-card">
+        <h4>Monitoreo y Presupuesto de Cuota Spark</h4>
+        <p>
+          El plan gratuito Spark de Firebase establece límites estrictos por proyecto:
+        </p>
+
+        <div class="audit-table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Operación</th>
+                <th>Límite Diario Gratuito Spark</th>
+                <th>Consumo Promedio Sugar Ludo (500 ops/día)</th>
+                <th>Margen de Seguridad</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Lecturas (Reads)</strong></td>
+                <td>50,000 / día</td>
+                <td>~3,500 / día (7%)</td>
+                <td><span class="badge-pill pill-success">93% Disponible</span></td>
+              </tr>
+              <tr>
+                <td><strong>Escrituras (Writes)</strong></td>
+                <td>20,000 / día</td>
+                <td>~2,100 / día (10.5%)</td>
+                <td><span class="badge-pill pill-success">89.5% Disponible</span></td>
+              </tr>
+              <tr>
+                <td><strong>Eliminaciones (Deletes)</strong></td>
+                <td>20,000 / día</td>
+                <td>&lt; 100 / día (0.5%)</td>
+                <td><span class="badge-pill pill-success">99.5% Disponible</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="alert-box alert-warning">
+          <strong>Alerta de Optimización Spark:</strong> Para evitar disparos accidentales en lecturas, se debe asegurar que los listeners de tiempo real (<code>onSnapshot</code>) en las vistas de cajero siempre incluyan un límite <code>limit(15)</code> y filtren por <code>status == 'pending'</code>. De lo contrario, al acumular miles de órdenes históricas, cada conexión del cajero consumiría lecturas masivas.
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap">
+      <div class="section-header">
+        <h2>7. Hoja de Ruta Inmediata de Remediación (P0 - P2)</h2>
+        <span class="section-tag">SECURITY_HARDENING</span>
+      </div>
+
+      <div class="audit-card">
+        <h4>Propuesta de Blindaje para <code>firestore.rules</code> (P0 Inmediato)</h4>
+        <p>
+          Sustituir de inmediato las reglas abiertas por el estándar RBAC protegido por Custom Claims y servidor autoritativo:
+        </p>
+
+        <div class="code-container">
+          <div class="code-header">
+            <span>firestore.rules (Regla Blindada Propuesta)</span>
+            <span>REMEDIATION READY</span>
+          </div>
+          <div class="code-content">
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.role == 'super_admin';
+    }
+    function isCashier() {
+      return isAuthenticated() && (request.auth.token.role == 'cashier' || isSuperAdmin());
+    }
+
+    // 1. Usuarios: NINGÚN cliente puede modificar coins o roles
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isOwner(userId) && (!('coins' in request.resource.data) || request.resource.data.coins <= 200);
+      allow update: if isOwner(userId) &&
+                       !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['coins', 'escrowLockedCoins', 'role', 'isBanned', 'isFrozen']);
+      allow delete: if false;
+    }
+
+    // 2. Billeteras, Tesorería y Auditoría: 100% blindadas contra SDKs cliente
+    match /wallets/{userId} {
+      allow read: if isOwner(userId) || isCashier();
+      allow write: if false; // Mutaciones exclusivas vía Firebase Admin SDK en Backend
+    }
+
+    match /system_treasury/{treasuryId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Solo Admin SDK
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Inmutable desde el cliente
+    }
+
+    match /cashier_profiles/{cashierId} {
+      allow read: if isCashier();
+      allow write: if isSuperAdmin();
+    }
+  }
+}
+          </div>
+        </div>
+
+        <h4 style="margin-top:28px;">Matriz de Prioridad de Acciones</h4>
+        <div class="audit-table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Prioridad</th>
+                <th>Acción Correctiva</th>
+                <th>Archivo Afectado</th>
+                <th>Impacto</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge-pill pill-danger">P0 - Crítico</span></td>
+                <td>Desplegar <code>firestore.rules</code> blindado eliminando cláusulas sin autenticación en <code>coins</code>.</td>
+                <td><code>firestore.rules</code></td>
+                <td>Elimina el riesgo de inflación fraudulenta de saldos.</td>
+              </tr>
+              <tr>
+                <td><span class="badge-pill pill-danger">P0 - Crítico</span></td>
+                <td>Inyectar credenciales de Service Account en Render para erradicar el fallback en disco JSON.</td>
+                <td><code>sugar-ludo-admin-hub/.env</code></td>
+                <td>Garantiza consistencia atómica total en Firestore.</td>
+              </tr>
+              <tr>
+                <td><span class="badge-pill pill-warning">P1 - Alta</span></td>
+                <td>Canalizar retiros en <code>wallet-service.ts</code> vía POST a endpoint de servidor.</td>
+                <td><code>lib/wallet-service.ts</code></td>
+                <td>Alinea la arquitectura al modelo Zero-Trust.</td>
+              </tr>
+              <tr>
+                <td><span class="badge-pill pill-cyan">P2 - Mantenimiento</span></td>
+                <td>Añadir límites paginados en listeners de órdenes históricas de cajeros.</td>
+                <td><code>components/CashierP2PModal.tsx</code></td>
+                <td>Garantiza permanencia holgada en el Plan Spark ($0.00).</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

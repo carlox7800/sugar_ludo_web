@@ -1,27 +1,5 @@
 import { NextResponse } from 'next/server'
 import { approveDepositOrder, completeWithdrawalOrder, rechargeCashierFloatAtomics, cancelWithdrawOrderAtomics } from '@/lib/atomic-transactions'
-import fs from 'fs'
-import path from 'path'
-import { CashierOrder } from '@/types/cashier'
-
-const DATA_DIR = path.join(process.cwd(), '.data')
-const DATA_FILE = path.join(DATA_DIR, 'cashier_orders.json')
-
-function updateDiskOrderStatus(orderId: string, status: string, refNum?: string) {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf-8')
-      const orders: CashierOrder[] = JSON.parse(raw || '[]')
-      const updated = orders.map(o => o.id === orderId ? {
-        ...o,
-        status: status as any,
-        receiptReferenceNumber: refNum || o.receiptReferenceNumber,
-        completedAt: Date.now()
-      } : o)
-      fs.writeFileSync(DATA_FILE, JSON.stringify(updated, null, 2), 'utf-8')
-    }
-  } catch {}
-}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,7 +22,6 @@ export async function POST(
     const finalRef = payoutTxId || txId || referenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
 
     if (action === 'approve_deposit') {
-      updateDiskOrderStatus(orderId, 'completed', finalRef)
       try {
         const result = await approveDepositOrder({
           orderId,
@@ -70,7 +47,6 @@ export async function POST(
           actorRole: actorRole || 'cashier',
           cashierName: cashierName || 'Cajero Oficial'
         })
-        updateDiskOrderStatus(orderId, 'completed', finalRef)
         return NextResponse.json({ success: true, message: result.message }, { headers: corsHeaders })
       } catch (err: any) {
         console.error('[ActionAPI] completeWithdrawalOrder error:', err)
@@ -85,7 +61,6 @@ export async function POST(
           actorUid: actorUid || 'usr_unknown',
           actorRole: actorRole || 'player'
         })
-        updateDiskOrderStatus(orderId, 'cancelled')
         return NextResponse.json({ success: true, message: result.message }, { headers: corsHeaders })
       } catch (err: any) {
         console.error('[ActionAPI] cancel order error:', err)

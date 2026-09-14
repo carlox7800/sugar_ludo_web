@@ -1,11 +1,6 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
 import { OrderChatMessage } from '@/types/cashier'
-import fs from 'fs'
-import path from 'path'
-
-const DATA_DIR = path.join(process.cwd(), '.data')
-const DATA_FILE = path.join(DATA_DIR, 'cashier_orders.json')
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
 
 export async function POST(
@@ -38,19 +33,16 @@ export async function POST(
     }
 
     let playerUid = passedPlayerUid || ''
-    let orderData: any = null
 
-    // 1. Resolver playerUid desde disco local
-    try {
-      if (!playerUid && fs.existsSync(DATA_FILE)) {
-        const raw = fs.readFileSync(DATA_FILE, 'utf-8')
-        const orders = JSON.parse(raw || '[]')
-        orderData = orders.find((o: any) => o.id === orderId)
-        if (orderData?.playerUid) {
-          playerUid = orderData.playerUid
+    // 1. Resolver playerUid desde Firestore (adminDb)
+    if (!playerUid && adminDb && adminDb.collection) {
+      try {
+        const orderSnap = await adminDb.collection('cashier_orders').doc(orderId).get()
+        if (orderSnap.exists) {
+          playerUid = orderSnap.data()?.playerUid || ''
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     // 2. Si aún no tenemos playerUid, intentar obtenerlo de Firestore REST API
     if (!playerUid) {

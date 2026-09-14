@@ -241,7 +241,7 @@ export default function LandingPage() {
                 📱 Sugar Ludo para Android (APK)
               </span>
               <ul className="space-y-1 text-white/70">
-                <li>• <strong>Versión:</strong> {APP_VERSION} (Build 90208)</li>
+                <li>• <strong>Versión:</strong> {APP_VERSION} (Build 90300)</li>
                 <li>• <strong>Tamaño:</strong> {ANDROID_FILE_SIZE}</li>
                 <li>• <strong>Compatibilidad:</strong> Android 8.0 Oreo en adelante</li>
                 <li>• <strong>Tipo:</strong> Paquete de instalación directa standalone</li>

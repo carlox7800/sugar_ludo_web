@@ -282,35 +282,60 @@ export default function CashierMainDeskPage() {
       }
     } catch {}
 
-    // 2. Realtime subscription to Firestore (Spark Plan Cost $0 with limit)
+    // 2. Realtime subscription to Firestore (Spark Plan Cost $0 with limit & auto-pause)
     let unsubscribe: (() => void) | null = null
-    try {
-      cashierLogger.firestore(`Iniciando listener onSnapshot en colección cashier_orders (limit 50)`)
-      const q = query(collection(db, 'cashier_orders'), limit(50))
-      unsubscribe = onSnapshot(q, (snapshot) => {
-        const liveOrders: CashierOrder[] = []
-        snapshot.forEach((docSnap) => {
-          liveOrders.push({ ...docSnap.data(), id: docSnap.id } as CashierOrder)
+
+    const startOrdersListener = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (unsubscribe) return
+
+      try {
+        cashierLogger.firestore(`Iniciando listener onSnapshot en colección cashier_orders (limit 25)`)
+        const q = query(collection(db, 'cashier_orders'), limit(25))
+        unsubscribe = onSnapshot(q, (snapshot) => {
+          const liveOrders: CashierOrder[] = []
+          snapshot.forEach((docSnap) => {
+            liveOrders.push({ ...docSnap.data(), id: docSnap.id } as CashierOrder)
+          })
+          cashierLogger.firestore(`Listener onSnapshot recibió actualización de colección`, { totalDocs: liveOrders.length })
+          if (liveOrders.length > 0 || snapshot.empty) {
+            setOrders(liveOrders)
+            OrdersCache.set(liveOrders)
+            setIsLoading(false)
+          }
+        }, (err) => {
+          cashierLogger.error(`Error en listener onSnapshot de cashier_orders`, {
+            code: err?.code,
+            message: err?.message
+          })
         })
-        cashierLogger.firestore(`Listener onSnapshot recibió actualización de colección`, { totalDocs: liveOrders.length })
-        if (liveOrders.length > 0 || snapshot.empty) {
-          setOrders(liveOrders)
-          OrdersCache.set(liveOrders)
-          setIsLoading(false)
+      } catch (e: any) {
+        cashierLogger.error(`Excepción al conectar listener de cashier_orders`, { message: e?.message })
+      }
+    }
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (unsubscribe) {
+          unsubscribe()
+          unsubscribe = null
         }
-      }, (err) => {
-        cashierLogger.error(`Error en listener onSnapshot de cashier_orders`, {
-          code: err?.code,
-          message: err?.message
-        })
-      })
-    } catch (e: any) {
-      cashierLogger.error(`Excepción al conectar listener de cashier_orders`, { message: e?.message })
+      } else {
+        startOrdersListener()
+      }
+    }
+
+    startOrdersListener()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
     }
 
     return () => {
       if (channel) channel.close()
       if (unsubscribe) unsubscribe()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
     }
   }, [])
 
