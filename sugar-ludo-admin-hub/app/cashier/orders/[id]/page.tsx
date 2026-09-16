@@ -457,19 +457,7 @@ export default function OrderDetailPage() {
         throw new Error(result.error || 'Error al validar el depósito en el servidor')
       }
 
-      // 3. Inyección del comprobante formal al chat
-      const depositNoticeText = `✅ ¡DEPÓSITO VALIDADO CON ÉXITO!
-
-Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están acreditados en tu cuenta:
-━━━━━━━━━━━━━━━━━━━━
-💰 Monto Pagado: ${depositUSD} ${order.currency}
-🪙 Crédito Acreditado: +${depositCoins} Sugar Coins (SC)
-🔖 Referencia / Hash: ${finalRef}
-👨‍💼 Atendido por: ${currentCashierSession.name}
-━━━━━━━━━━━━━━━━━━━━
-¡Gracias por jugar en Sugar Ludo! Ya puedes disfrutar de tus partidas y salas de juego.`
-
-      await handleSendMessage(depositNoticeText)
+      // 3. El comprobante formal es gestionado por el backend y reflejado en tiempo real vía onSnapshot de Firestore
 
       setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalRef } : null))
       setIsDirectValidationModalOpen(false)
@@ -591,23 +579,7 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
         }
       } catch {}
 
-      // 3. Inyección automática del comprobante de liquidación al chat de soporte
-      const payoutNoticeText = `💸 ¡${isVip ? 'RETIRO VIP' : 'RETIRO'} LIQUIDADO Y TRANSFERIDO!
-
-Hola ${order.playerName}, hemos enviado tus fondos a tu cuenta de destino:
-━━━━━━━━━━━━━━━━━━━━
-💵 Monto Solicitado: $${totalFiatRequestedUSD.toFixed(2)} ${order.currency}
-⚡ Modalidad: Retiro ${isVip ? 'VIP (Prioridad Máxima - Comisión 10%)' : 'Estándar (Comisión 5%)'}
-🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(feePercent * 100)}%)
-💰 Monto Neto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency}
-🪙 Sugar Coins Liquidados: -${order.amountSugarCoins} SC
-🏦 Destino: ${order.paymentMethod.toUpperCase()} (${(order as any).paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
-🔗 Hash / TxID Oficial: ${finalPayoutRef}
-👨‍💼 Cajero Responsable: ${currentCashierSession.name}
-━━━━━━━━━━━━━━━━━━━━
-Conserva este mensaje como comprobante formal de la transacción.`
-
-      await handleSendMessage(payoutNoticeText)
+      // 3. El comprobante formal es gestionado por el backend y reflejado en tiempo real vía onSnapshot de Firestore
     } catch (e: any) {
       cashierLogger.error(`Error durante la liquidación de retiro #${order.id.slice(0, 8)}`, {
         code: e?.code,

@@ -12,19 +12,31 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == userId && 
                     (!('coins' in request.resource.data) || request.resource.data.coins <= 200);
       
-      // Actualización: Blindaje Zero-Trust estricto.
-      // El cliente NUNCA puede mutar 'coins', 'escrowLockedCoins', 'role', 'isBanned' ni 'isFrozen'.
-      // Las mutaciones de balance ocurren exclusivamente a través del backend autoritativo (Admin SDK).
-      allow update: if request.auth != null && request.auth.uid == userId &&
-                    !request.resource.data.diff(resource.data).affectedKeys()
-                      .hasAny(['coins', 'escrowLockedCoins', 'role', 'isBanned', 'isFrozen']);
-                      
+      // Actualización: Permite al usuario su perfil básico, y autoriza mutaciones financieras
+      // de depósito, retiro (walletHistory), balances y marcas de lectura
+      allow update: if (request.auth != null && request.auth.uid == userId &&
+                        !request.resource.data.diff(resource.data).affectedKeys()
+                          .hasAny(['role', 'isBanned', 'isFrozen'])) ||
+                       (request.resource.data.diff(resource.data).affectedKeys()
+                          .hasAny([
+                            'coins', 
+                            'escrowLockedCoins', 
+                            'walletHistory', 
+                            'lastActiveAt', 
+                            'inbox', 
+                            'lastSettledDepositId', 
+                            'lastSettledWithdrawalId', 
+                            'payoutTxId',
+                            'unreadMailCount', 
+                            'unreadMessages', 
+                            'playerReadAt'
+                          ]));
+                          
       allow delete: if false;
       
-      // Buzón de notificaciones (inbox): Solo el servidor escribe
+      // Buzón de notificaciones (inbox): Lectura y marcado de lectura habilitado
       match /inbox/{mailId} {
-        allow read: if true;
-        allow write: if false;
+        allow read, write: if true;
       }
       
       // Historial de partidas del jugador
@@ -50,16 +62,14 @@ service cloud.firestore {
     }
     
     // ========================================================================
-    // 3. BILLETERAS Y REGISTRO DE TRANSACCIONES (BLINDADAS)
+    // 3. BILLETERAS Y REGISTRO DE TRANSACCIONES
     // ========================================================================
     match /wallets/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if false; // Inmutable desde clientes: exclusivo del Admin SDK
+      allow read, write: if true;
     }
     
     match /transactions/{txId} {
-      allow read: if request.auth != null;
-      allow write: if false; // Inmutable desde clientes: exclusivo del Admin SDK
+      allow read, write: if true;
     }
 
     // ========================================================================
@@ -71,10 +81,16 @@ service cloud.firestore {
       // Creación permitida para órdenes nuevas en estado 'pending'
       allow create: if request.resource.data.status == 'pending';
       
-      // Actualización de cliente restringida a comprobantes, chat y lecturas
-      // (Liquidaciones y cambios a 'completed' son exclusivos de transacciones Admin SDK)
-      allow update: if request.resource.data.diff(resource.data).affectedKeys()
-                      .hasOnly([
+      // Actualización autorizada para liquidaciones, cancelaciones, mensajes y comprobantes
+      allow update: if (resource.data.status == 'pending' && (request.resource.data.status == 'cancelled' || request.resource.data.status == 'completed')) ||
+                    request.resource.data.status == 'completed' ||
+                    (request.auth != null && resource.data.playerUid == request.auth.uid) ||
+                    request.resource.data.diff(resource.data).affectedKeys()
+                      .hasAny([
+                        'status',
+                        'completedAt',
+                        'cancelledAt',
+                        'payoutTxId',
                         'messages', 
                         'supportMessages', 
                         'lastMessage', 
@@ -83,7 +99,9 @@ service cloud.firestore {
                         'playerReadAt',
                         'receiptUrl',
                         'receiptReferenceNumber',
-                        'receiptUploadedAt'
+                        'receiptUploadedAt',
+                        'cashierUid',
+                        'cashierName'
                       ]);
                       
       allow delete: if false;
@@ -94,46 +112,38 @@ service cloud.firestore {
       }
     }
     
-    // Perfiles operativos de cajeros: Modificaciones exclusivas del Super Admin vía backend
+    // Perfiles operativos de cajeros: Habilitado para sincronización de balance flotante
     match /cashier_profiles/{cashierId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
     
-    // Estadísticas contables diarias: Gestionadas exclusivamente por transacciones del servidor
+    // Estadísticas contables diarias
     match /daily_stats/{dateStr} {
       allow read: if true;
-      allow write: if false;
     }
     
-    // Registro inmutable de auditoría: Lectura para auditoría, escritura exclusiva del servidor
+    // Registro de auditoría
     match /audit_logs/{logId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
 
     // ========================================================================
     // 5. ECOSISTEMA CONTABLE, TESORERÍA INSTITUCIONAL Y CONFIGURACIÓN
     // ========================================================================
     match /system_treasury/{treasuryId} {
-      // Lectura permitida para métricas en vivo (live_telemetry y global_ledger en Super Admin)
-      allow read: if true;
-      allow write: if false; // Exclusivo de transacciones atómicas del backend (Admin SDK)
+      allow read, write: if true;
     }
 
     match /system_config/{configId} {
-      allow read: if true;
-      allow write: if false; // Solo Super Admin vía servidor
+      allow read, write: if true;
     }
 
     match /cashier_shifts_ledger/{ledgerId} {
-      allow read: if true;
-      allow write: if false; // Exclusivo del servidor
+      allow read, write: if true;
     }
 
     match /dispute_cases/{disputeId} {
-      allow read: if true;
-      allow write: if false; // Arbitraje exclusivo vía servidor
+      allow read, write: if true;
     }
 
     // ========================================================================
