@@ -905,20 +905,44 @@ Conserva este mensaje como comprobante formal de la transacción.`
           }
 
           const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
-          const updatedHistory = existingHistory.map((tx: any) => {
-            if (tx.description && tx.description.includes(orderId.slice(0, 8)) && tx.description.includes('(Pendiente)')) {
-              return {
-                ...tx,
-                description: `Retiro Liquidado (#${orderId.slice(0, 8)}) - TxID: ${payoutTxId}`
+          let matched = false
+          const cleanHistory: any[] = []
+          for (const tx of existingHistory) {
+            const isTargetOrder = tx.orderId === orderId || (tx.description && tx.description.includes(orderId.slice(0, 8)))
+            if (isTargetOrder) {
+              if (!matched) {
+                matched = true
+                cleanHistory.push({
+                  ...tx,
+                  orderId,
+                  payoutTxId,
+                  description: `Retiro Liquidado (#${orderId.slice(0, 8)}) - TxID: ${payoutTxId}`
+                })
               }
+            } else {
+              cleanHistory.push(tx)
             }
-            return tx
-          })
+          }
+
+          if (!matched) {
+            cleanHistory.unshift({
+              id: `tx_wit_complete_${now}_${Math.random().toString(36).slice(2, 6)}`,
+              orderId,
+              payoutTxId,
+              type: 'withdraw',
+              amount: -amountCoins,
+              description: `Retiro Liquidado (#${orderId.slice(0, 8)}) - TxID: ${payoutTxId}`,
+              timestamp: now,
+              dateStr: new Date().toLocaleDateString('es-ES', {
+                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+              })
+            })
+          }
 
           transaction.update(playerRef, {
             coins: newCoins,
             escrowLockedCoins: newEscrow,
-            walletHistory: updatedHistory,
+            walletHistory: cleanHistory.slice(0, 50),
             lastActiveAt: now
           })
         }
@@ -1083,13 +1107,28 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 ...tx,
                 orderId,
                 payoutTxId,
-                description: `Retiro Liquidado (#${orderId}) - TxID: ${payoutTxId}`
+                description: `Retiro Liquidado (#${orderId.slice(0, 8)}) - TxID: ${payoutTxId}`
               })
             }
             // Si ya se procesó una entrada para esta misma orden, se descarta el duplicado huérfano
           } else {
             cleanHistory.push(tx)
           }
+        }
+
+        if (!matched) {
+          cleanHistory.unshift({
+            id: `tx_wit_complete_${now}_${Math.random().toString(36).slice(2, 6)}`,
+            orderId,
+            payoutTxId,
+            type: 'withdraw',
+            amount: -amountCoins,
+            description: `Retiro Liquidado (#${orderId.slice(0, 8)}) - TxID: ${payoutTxId}`,
+            timestamp: now,
+            dateStr: new Date().toLocaleDateString('es-ES', {
+              day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            })
+          })
         }
 
         const userUpdates: any = {

@@ -15,7 +15,7 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
   isOpen,
   onClose,
   platform,
-  version = '9.3.0',
+  version = '9.3.2',
   downloadUrl,
 }) => {
   useEffect(() => {
