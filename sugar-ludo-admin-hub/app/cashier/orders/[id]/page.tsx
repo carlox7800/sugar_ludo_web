@@ -19,6 +19,46 @@ import { getWithdrawalSla } from '../../../../lib/sla-calculator'
 
 import { useParams, useRouter } from 'next/navigation'
 
+function deduplicateOrderMessages(messages: OrderChatMessage[], orderId: string): OrderChatMessage[] {
+  if (!Array.isArray(messages)) return []
+  const clean: OrderChatMessage[] = []
+  const seenSignatures = new Set<string>()
+
+  for (const msg of messages) {
+    if (!msg) continue
+    const text = (msg.message || '').trim()
+    const role = msg.senderRole || 'cashier'
+
+    // Si es un comprobante formal o aviso oficial del sistema
+    const isOfficialNotice =
+      text.includes('VALIDADO CON ÉXITO') ||
+      text.includes('LIQUIDADO Y TRANSFERIDO') ||
+      text.includes('━━━━━━━━━━━━━━━━━━━━')
+
+    if (isOfficialNotice) {
+      // Clave única por orden, rol y cuerpo del comprobante
+      const noticeKey = `${msg.orderId || orderId}_${role}_${text}`
+      if (seenSignatures.has(noticeKey)) {
+        continue // Filtrar comprobante duplicado/triplicado
+      }
+      seenSignatures.add(noticeKey)
+    } else {
+      // Para mensajes de chat comunes, filtrar si es idéntico al anterior inmediato dentro de 15 segundos o mismo ID
+      const last = clean[clean.length - 1]
+      if (
+        last &&
+        last.message?.trim() === text &&
+        last.senderRole === role &&
+        Math.abs((msg.timestamp || 0) - (last.timestamp || 0)) < 15000
+      ) {
+        continue
+      }
+    }
+    clean.push(msg)
+  }
+  return clean
+}
+
 export default function OrderDetailPage() {
   const router = useRouter()
   const routeParams = useParams()
@@ -643,46 +683,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
     setIsReceiptOpen(true)
   }
 
-  // Deduplicación reactiva visual: evita renderizar comprobantes o avisos oficiales duplicados/triplicados
-  const displayMessages = React.useMemo(() => {
-    if (!Array.isArray(messages)) return []
-    const clean: OrderChatMessage[] = []
-    const seenSignatures = new Set<string>()
-
-    for (const msg of messages) {
-      if (!msg) continue
-      const text = (msg.message || '').trim()
-      const role = msg.senderRole || 'cashier'
-
-      // Si es un comprobante formal o aviso oficial del sistema
-      const isOfficialNotice =
-        text.includes('VALIDADO CON ÉXITO') ||
-        text.includes('LIQUIDADO Y TRANSFERIDO') ||
-        text.includes('━━━━━━━━━━━━━━━━━━━━')
-
-      if (isOfficialNotice) {
-        // Clave única por orden, rol y cuerpo del comprobante
-        const noticeKey = `${msg.orderId || orderId}_${role}_${text}`
-        if (seenSignatures.has(noticeKey)) {
-          continue // Filtrar comprobante duplicado/triplicado
-        }
-        seenSignatures.add(noticeKey)
-      } else {
-        // Para mensajes de chat comunes, filtrar si es idéntico al anterior inmediato dentro de 15 segundos o mismo ID
-        const last = clean[clean.length - 1]
-        if (
-          last &&
-          last.message?.trim() === text &&
-          last.senderRole === role &&
-          Math.abs((msg.timestamp || 0) - (last.timestamp || 0)) < 15000
-        ) {
-          continue
-        }
-      }
-      clean.push(msg)
-    }
-    return clean
-  }, [messages, orderId])
+  // Deduplicación reactiva visual pura (sin hooks condicionales para evitar error 310)
+  const displayMessages = deduplicateOrderMessages(messages, orderId)
 
   const isPending = order.status === 'pending'
 
