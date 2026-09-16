@@ -368,6 +368,18 @@ export async function createWithdrawOrder(params: {
     }
   }
 
+  // 5. Registrar en movimientos recientes con -amountSugarCoins sin alterar balance directo (skipCoinUpdate = true)
+  try {
+    await recordWalletTransaction(playerUid, {
+      orderId,
+      type: 'withdraw',
+      amount: -amountSugarCoins,
+      description: isVip ? `Solicitud de Retiro VIP (Pendiente) (#${orderId.slice(0, 8)})` : `Solicitud de Retiro (Pendiente) (#${orderId.slice(0, 8)})`
+    }, true)
+  } catch (histErr) {
+    console.warn('[WalletService] Error registrando historial de retiro:', histErr)
+  }
+
   return { success: true, orderId }
 }
 
