@@ -71,7 +71,7 @@ export interface CashierOrder {
   // Método de Pago y Cuentas
   paymentMethod: PaymentMethodType
   cashierPaymentAccount?: PaymentAccount  // Cuenta donde deposita el jugador (en depósito)
-  playerPaymentAccount?: PaymentAccount   // Cuenta donde recibe el jugador (en retiro)
+  playerPaymentAccount?: PaymentAccount | string   // Cuenta donde recibe el jugador (en retiro)
 
   // Comprobantes de Pago
   receiptUrl?: string

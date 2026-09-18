@@ -354,18 +354,21 @@ export async function createWithdrawOrder(params: {
     }
   }
 
-  // 4. Si el servidor procesó la orden, el documento ya existe en Firestore.
-  // Solo como respaldo en modo desarrollo o desconectado se intenta el registro cliente.
-  if (!serverProcessed) {
-    try {
-      const orderRef = doc(db, 'cashier_orders', orderId)
-      await Promise.race([
-        setDoc(orderRef, orderData, { merge: true }),
-        new Promise((resolve) => setTimeout(resolve, 2500))
-      ])
-    } catch (err: any) {
-      console.warn('[WalletService] Firestore setDoc notice:', err?.message)
+  // 4. Garantizar persistencia idempotente en Firestore cliente (doble vía preventiva)
+  try {
+    const orderRef = doc(db, 'cashier_orders', orderId)
+    const sanitizedOrder: Record<string, any> = {}
+    for (const [key, value] of Object.entries(orderData)) {
+      if (value !== undefined) {
+        sanitizedOrder[key] = value
+      }
     }
+    await Promise.race([
+      setDoc(orderRef, sanitizedOrder, { merge: true }),
+      new Promise((resolve) => setTimeout(resolve, 2500))
+    ])
+  } catch (err: any) {
+    console.warn('[WalletService] Respaldo cliente Firestore setDoc notice:', err?.message)
   }
 
   // 5. Registrar en movimientos recientes con -amountSugarCoins sin alterar balance directo (skipCoinUpdate = true)

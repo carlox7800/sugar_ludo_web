@@ -83,6 +83,25 @@ function getErrorMessage(err: unknown): string {
   return 'Error de transacción desconocido'
 }
 
+/**
+ * Sanitizador universal que descarta recursivamente cualquier clave con valor `undefined`.
+ * Previene la excepción fatal de Cloud Firestore: "Unsupported field value: undefined".
+ */
+export function cleanFirestorePayload<T extends Record<string, unknown>>(data: T): T {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) {
+      continue
+    }
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      result[key] = cleanFirestorePayload(value as Record<string, unknown>)
+    } else {
+      result[key] = value
+    }
+  }
+  return result as T
+}
+
 
 /**
  * ============================================================================
@@ -525,7 +544,9 @@ export async function createWithdrawOrderWithEscrow(params: {
           amountSugarCoins,
           cashierCommissionCoins: Math.round(amountSugarCoins * (isVip ? 0.04 : 0.02)),
           paymentMethod: paymentMethod as PaymentMethodType,
-          playerPaymentAccount: (typeof playerPaymentAccount === 'object' && playerPaymentAccount !== null && 'bankName' in playerPaymentAccount) ? (playerPaymentAccount as PaymentAccount) : undefined,
+          playerPaymentAccount: (typeof playerPaymentAccount === 'object' && playerPaymentAccount !== null && 'bankName' in playerPaymentAccount)
+            ? (playerPaymentAccount as PaymentAccount)
+            : (typeof playerPaymentAccount === 'string' && playerPaymentAccount ? playerPaymentAccount : undefined),
           receiptReferenceNumber: typeof playerPaymentAccount === 'string' ? playerPaymentAccount : String((playerPaymentAccount as PaymentAccount)?.accountNumber || ''),
           isEscrowLocked: true,
           escrowLockedAt: now,
@@ -534,7 +555,7 @@ export async function createWithdrawOrderWithEscrow(params: {
           isVip: Boolean(isVip),
           isVipWithdraw: Boolean(isVip)
         }
-        transaction.set(orderRef, newOrder)
+        transaction.set(orderRef, cleanFirestorePayload(newOrder as unknown as Record<string, unknown>))
 
         return { success: true, orderId: finalOrderId }
       })
@@ -601,7 +622,9 @@ export async function createWithdrawOrderWithEscrow(params: {
     amountSugarCoins,
     cashierCommissionCoins: Math.round(amountSugarCoins * (isVip ? 0.04 : 0.02)),
     paymentMethod: paymentMethod as PaymentMethodType,
-    playerPaymentAccount: (typeof playerPaymentAccount === 'object' && playerPaymentAccount !== null && 'bankName' in playerPaymentAccount) ? (playerPaymentAccount as PaymentAccount) : undefined,
+    playerPaymentAccount: (typeof playerPaymentAccount === 'object' && playerPaymentAccount !== null && 'bankName' in playerPaymentAccount)
+      ? (playerPaymentAccount as PaymentAccount)
+      : (typeof playerPaymentAccount === 'string' && playerPaymentAccount ? playerPaymentAccount : undefined),
     receiptReferenceNumber: typeof playerPaymentAccount === 'string' ? playerPaymentAccount : String((playerPaymentAccount as PaymentAccount)?.accountNumber || ''),
     isEscrowLocked: true,
     escrowLockedAt: now,
@@ -611,11 +634,46 @@ export async function createWithdrawOrderWithEscrow(params: {
     isVipWithdraw: Boolean(isVip)
   }
 
+  const cleanedOrderPayload = cleanFirestorePayload(newOrder as unknown as Record<string, unknown>)
+
   try {
     const orderDocRef = doc(db, 'cashier_orders', finalOrderId)
-    await setDoc(orderDocRef, newOrder, { merge: true })
+    await setDoc(orderDocRef, cleanedOrderPayload, { merge: true })
   } catch (orderErr: unknown) {
-    console.warn('[createWithdrawOrderWithEscrow Fallback] Error guardando orden en Firestore SDK:', getErrorMessage(orderErr))
+    console.warn('[createWithdrawOrderWithEscrow Fallback] Error guardando orden en Firestore SDK, activando respaldo REST:', getErrorMessage(orderErr))
+    try {
+      const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+      const firestoreRestDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders/${finalOrderId}`
+      await fetch(firestoreRestDocUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            id: { stringValue: finalOrderId },
+            type: { stringValue: newOrder.type },
+            status: { stringValue: newOrder.status },
+            playerUid: { stringValue: newOrder.playerUid },
+            playerId: { stringValue: newOrder.playerId || (playerUid ? `SL-${playerUid.substring(0, 6).toUpperCase()}` : '') },
+            playerName: { stringValue: newOrder.playerName },
+            amountFiat: { doubleValue: newOrder.amountFiat },
+            currency: { stringValue: newOrder.currency },
+            exchangeRate: { integerValue: String(newOrder.exchangeRate) },
+            amountSugarCoins: { integerValue: String(newOrder.amountSugarCoins) },
+            cashierCommissionCoins: { integerValue: String(newOrder.cashierCommissionCoins) },
+            paymentMethod: { stringValue: newOrder.paymentMethod },
+            receiptReferenceNumber: { stringValue: newOrder.receiptReferenceNumber || '' },
+            createdAt: { integerValue: String(newOrder.createdAt) },
+            expiresAt: { integerValue: String(newOrder.expiresAt) },
+            isEscrowLocked: { booleanValue: Boolean(newOrder.isEscrowLocked) },
+            escrowLockedAt: { integerValue: String(newOrder.escrowLockedAt || now) },
+            isVip: { booleanValue: Boolean(newOrder.isVip) },
+            isVipWithdraw: { booleanValue: Boolean(newOrder.isVipWithdraw) }
+          }
+        })
+      })
+    } catch (restErr: unknown) {
+      console.warn('[createWithdrawOrderWithEscrow Fallback] Error en respaldo REST:', getErrorMessage(restErr))
+    }
   }
 
 

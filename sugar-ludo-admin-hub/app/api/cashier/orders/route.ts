@@ -130,7 +130,7 @@ export async function GET(request: Request) {
   }
 }
 
-import { createWithdrawOrderWithEscrow } from '@/lib/atomic-transactions'
+import { createWithdrawOrderWithEscrow, cleanFirestorePayload } from '@/lib/atomic-transactions'
 import { db } from '@/lib/firebase'
 import { doc, setDoc } from 'firebase/firestore'
 
@@ -196,13 +196,46 @@ export async function POST(request: Request) {
 
         if (adminDb && adminDb.collection) {
           try {
-            await adminDb.collection('cashier_orders').doc(orderData.id).set(orderData, { merge: true })
+            await adminDb.collection('cashier_orders').doc(orderData.id).set(cleanFirestorePayload(orderData as unknown as Record<string, unknown>), { merge: true })
           } catch {}
         }
 
         try {
           const orderDocRef = doc(db, 'cashier_orders', orderData.id)
-          await setDoc(orderDocRef, orderData, { merge: true })
+          await setDoc(orderDocRef, cleanFirestorePayload(orderData as unknown as Record<string, unknown>), { merge: true })
+        } catch {}
+
+        // Respaldo REST
+        try {
+          const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+          const firestoreRestDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders/${orderData.id}`
+          await fetch(firestoreRestDocUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: {
+                id: { stringValue: orderData.id },
+                type: { stringValue: orderData.type },
+                status: { stringValue: orderData.status },
+                playerUid: { stringValue: orderData.playerUid },
+                playerId: { stringValue: orderData.playerId || rawPlayerId || '' },
+                playerName: { stringValue: orderData.playerName },
+                amountFiat: { doubleValue: orderData.amountFiat },
+                currency: { stringValue: orderData.currency },
+                exchangeRate: { integerValue: String(orderData.exchangeRate) },
+                amountSugarCoins: { integerValue: String(orderData.amountSugarCoins) },
+                cashierCommissionCoins: { integerValue: String(orderData.cashierCommissionCoins) },
+                paymentMethod: { stringValue: orderData.paymentMethod },
+                receiptReferenceNumber: { stringValue: orderData.receiptReferenceNumber || '' },
+                createdAt: { integerValue: String(orderData.createdAt) },
+                expiresAt: { integerValue: String(orderData.expiresAt) },
+                isEscrowLocked: { booleanValue: true },
+                escrowLockedAt: { integerValue: String(orderData.escrowLockedAt || Date.now()) },
+                isVip: { booleanValue: Boolean(orderData.isVip) },
+                isVipWithdraw: { booleanValue: Boolean(orderData.isVipWithdraw) }
+              }
+            })
+          })
         } catch {}
 
         return NextResponse.json(
@@ -227,6 +260,39 @@ export async function POST(request: Request) {
         orderData.id = withdrawRes.orderId
         orderData.isEscrowLocked = true
         orderData.escrowLockedAt = Date.now()
+
+        // Replicación dual preventiva vía REST para garantizar persistencia inmediata
+        try {
+          const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+          const firestoreRestDocUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/cashier_orders/${orderData.id}`
+          await fetch(firestoreRestDocUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: {
+                id: { stringValue: orderData.id },
+                type: { stringValue: orderData.type },
+                status: { stringValue: orderData.status },
+                playerUid: { stringValue: orderData.playerUid },
+                playerId: { stringValue: orderData.playerId || rawPlayerId || '' },
+                playerName: { stringValue: orderData.playerName },
+                amountFiat: { doubleValue: orderData.amountFiat },
+                currency: { stringValue: orderData.currency },
+                exchangeRate: { integerValue: String(orderData.exchangeRate) },
+                amountSugarCoins: { integerValue: String(orderData.amountSugarCoins) },
+                cashierCommissionCoins: { integerValue: String(orderData.cashierCommissionCoins) },
+                paymentMethod: { stringValue: orderData.paymentMethod },
+                receiptReferenceNumber: { stringValue: orderData.receiptReferenceNumber || '' },
+                createdAt: { integerValue: String(orderData.createdAt) },
+                expiresAt: { integerValue: String(orderData.expiresAt) },
+                isEscrowLocked: { booleanValue: true },
+                escrowLockedAt: { integerValue: String(orderData.escrowLockedAt || Date.now()) },
+                isVip: { booleanValue: Boolean(orderData.isVip) },
+                isVipWithdraw: { booleanValue: Boolean(orderData.isVipWithdraw) }
+              }
+            })
+          })
+        } catch {}
 
         return NextResponse.json(
           { success: true, order: orderData, orderId: orderData.id },
