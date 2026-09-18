@@ -1,4 +1,4 @@
-export const APP_VERSION = '9.4.4';
+export const APP_VERSION = '9.4.5';
 
 // Rutas de descarga oficiales
 export const PC_DOWNLOAD_URL = process.env.NEXT_PUBLIC_PC_DOWNLOAD_URL || '/downloads/SugarLudo-Setup.exe';
