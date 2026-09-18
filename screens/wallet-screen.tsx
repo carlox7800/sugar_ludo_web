@@ -102,29 +102,6 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
             }
           }
           setActiveOrders(liveActive)
-
-          // Principio de Doble Entrada y Conservación Contable:
-          // Si no hay retiros pendientes en cola, cualquier saldo residual en escrowLockedCoins
-          // se restaura a coins disponibles (Saldo = Coins + EscrowLockedCoins)
-          if (user?.uid && !user.uid.startsWith('dev_')) {
-            const pendingWithdrawals = liveActive.filter(o => o.type === 'withdraw')
-            const totalPendingWithdrawalCoins = pendingWithdrawals.reduce((acc, o) => acc + (o.amountSugarCoins || 0), 0)
-            const currentEscrow = Number(user?.escrowLockedCoins || 0)
-            
-            if (currentEscrow > totalPendingWithdrawalCoins) {
-              const orphanedEscrow = currentEscrow - totalPendingWithdrawalCoins
-              try {
-                const userRef = doc(db, 'users', user.uid)
-                const currentCoins = Number(user.coins ?? 0)
-                const correctedCoins = currentCoins + orphanedEscrow
-                updateDoc(userRef, {
-                  coins: correctedCoins,
-                  escrowLockedCoins: totalPendingWithdrawalCoins,
-                  lastActiveAt: Date.now()
-                }).catch(() => {})
-              } catch {}
-            }
-          }
         }, (err) => {
           console.debug('[WalletScreen] Orders snapshot notice:', err?.message)
         })
