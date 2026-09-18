@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { ShieldCheck, AlertTriangle, ShieldAlert, Send, RefreshCw, AlertCircle } from 'lucide-react'
 import { CashierOrder } from '@/types/cashier'
 import { cashierLogger } from '@/lib/cashier-logger'
@@ -56,6 +57,11 @@ export const OrderActionButtons: React.FC<OrderActionButtonsProps> = ({
   onCopyHash,
   onNotify
 }) => {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const [internalDirectOpen, setInternalDirectOpen] = useState(false)
   const isDirectValidationModalOpen = controlledDirectOpen !== undefined ? controlledDirectOpen : internalDirectOpen
   const setIsDirectValidationModalOpen = controlledSetDirectOpen || setInternalDirectOpen
@@ -154,9 +160,9 @@ export const OrderActionButtons: React.FC<OrderActionButtonsProps> = ({
       </div>
 
       {/* 2. Direct Validation Modal with TxID for Cashier */}
-      {isDirectValidationModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl space-y-4">
+      {isDirectValidationModalOpen && mounted && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-in fade-in">
+          <div className="relative w-full max-w-md my-auto max-h-[90vh] overflow-y-auto p-6 rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl space-y-4">
             <div className="flex items-center gap-3 border-b border-white/10 pb-3">
               <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
                 <AlertTriangle className="size-5" />
@@ -227,13 +233,14 @@ export const OrderActionButtons: React.FC<OrderActionButtonsProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 3. Payout Confirmation Modal for Cashier */}
-      {isPayoutModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-pink-500/30 shadow-2xl space-y-4">
+      {isPayoutModalOpen && mounted && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-in fade-in">
+          <div className="relative w-full max-w-md my-auto max-h-[90vh] overflow-y-auto p-6 rounded-3xl bg-slate-900 border border-pink-500/30 shadow-2xl space-y-4">
             <div className="flex items-center gap-3 border-b border-white/10 pb-3">
               <div className="p-2 rounded-xl bg-pink-500/20 text-pink-400">
                 <Send className="size-5" />
@@ -366,13 +373,14 @@ export const OrderActionButtons: React.FC<OrderActionButtonsProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 4. Escalate to Dispute Modal */}
-      {isDisputeOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md bg-slate-900 border border-rose-500/50 rounded-3xl p-6 space-y-4 shadow-[0_0_30px_rgba(244,63,94,0.3)]">
+      {isDisputeOpen && mounted && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto animate-in fade-in">
+          <div className="relative w-full max-w-md my-auto max-h-[90vh] overflow-y-auto bg-slate-900 border border-rose-500/50 rounded-3xl p-6 space-y-4 shadow-[0_0_30px_rgba(244,63,94,0.3)]">
             <div className="flex items-center gap-3 text-rose-400">
               <div className="p-2.5 rounded-2xl bg-rose-500/20 border border-rose-500/40">
                 <ShieldAlert className="size-6 text-rose-400 animate-pulse" />
@@ -439,7 +447,8 @@ export const OrderActionButtons: React.FC<OrderActionButtonsProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { ZoomIn, ZoomOut, RotateCw, RefreshCcw, X, ExternalLink, ShieldCheck, Maximize2 } from 'lucide-react'
 
 interface ReceiptImageViewerProps {
@@ -25,8 +26,13 @@ export function ReceiptImageViewer({
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)
   const [brightness, setBrightness] = useState(100)
+  const [mounted, setMounted] = useState(false)
 
-  if (!isOpen) return null
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!isOpen || !mounted || typeof document === 'undefined') return null
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3))
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5))
@@ -39,9 +45,9 @@ export function ReceiptImageViewer({
 
   const fallbackImage = imageUrl || 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&q=80&w=1000'
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative flex flex-col w-full max-w-4xl max-h-[90vh] bg-slate-900 border border-white/10 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+      <div className="relative flex flex-col w-full max-w-4xl my-auto max-h-[90vh] bg-slate-900 border border-white/10 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]">
         
         {/* Header Bar */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-slate-950/60">
@@ -149,6 +155,7 @@ export function ReceiptImageViewer({
           <span className="text-cyan-400 font-medium">Validación Criptográfica Activa</span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
