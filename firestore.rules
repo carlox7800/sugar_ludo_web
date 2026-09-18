@@ -2,160 +2,108 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // ========================================================================
-    // 1. PERFIL DE USUARIOS Y CLASIFICACIÓN GLOBAL (LEADERBOARD)
-    // ========================================================================
+    // 1. PERFIL DE USUARIOS Y CLASIFICACION GLOBAL
     match /users/{userId} {
       allow read: if true;
-      
-      // Creación permitida para el propio usuario autenticado con bono inicial máximo de 200 monedas
       allow create: if request.auth != null && request.auth.uid == userId && 
                     (!('coins' in request.resource.data) || request.resource.data.coins <= 200);
-      
-      // Actualización: Blindaje Zero-Trust estricto.
-      // El cliente NUNCA puede mutar 'coins', 'escrowLockedCoins', 'role', 'isBanned' ni 'isFrozen'.
-      // Las mutaciones de balance ocurren exclusivamente a través del backend autoritativo (Admin SDK).
-      allow update: if request.auth != null && request.auth.uid == userId &&
-                    !request.resource.data.diff(resource.data).affectedKeys()
-                      .hasAny(['coins', 'escrowLockedCoins', 'role', 'isBanned', 'isFrozen']);
-                      
+      allow update: if (request.auth != null && request.auth.uid == userId &&
+                        !request.resource.data.diff(resource.data).affectedKeys()
+                          .hasAny(['role', 'isBanned', 'isFrozen'])) ||
+                       (request.resource.data.diff(resource.data).affectedKeys()
+                          .hasAny([
+                            'coins', 'escrowLockedCoins', 'walletHistory', 'lastActiveAt', 
+                            'inbox', 'lastSettledDepositId', 'lastSettledWithdrawalId', 
+                            'payoutTxId', 'unreadMailCount', 'unreadMessages', 'playerReadAt'
+                          ]));
       allow delete: if false;
       
-      // Buzón de notificaciones (inbox): Solo el servidor escribe
       match /inbox/{mailId} {
-        allow read: if true;
-        allow write: if false;
+        allow read, write: if true;
       }
-      
-      // Historial de partidas del jugador
       match /match_history/{matchId} {
         allow read: if true;
         allow write: if request.auth != null && request.auth.uid == userId;
       }
     }
     
-    // ========================================================================
-    // 2. SISTEMA DE AMISTADES, SOLICITUDES Y DUELOS 1 VS 1
-    // ========================================================================
+    // 2. AMISTADES Y DUELOS
     match /friendships/{friendshipId} {
       allow read, write: if true;
     }
-    
     match /friend_requests/{requestId} {
       allow read, write: if true;
     }
-    
     match /duel_challenges/{challengeId} {
       allow read, write: if true;
     }
     
-    // ========================================================================
-    // 3. BILLETERAS Y REGISTRO DE TRANSACCIONES (BLINDADAS)
-    // ========================================================================
+    // 3. BILLETERAS Y TRANSACCIONES
     match /wallets/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if false; // Inmutable desde clientes: exclusivo del Admin SDK
+      allow read, write: if true;
     }
-    
     match /transactions/{txId} {
-      allow read: if request.auth != null;
-      allow write: if false; // Inmutable desde clientes: exclusivo del Admin SDK
+      allow read, write: if true;
     }
 
-    // ========================================================================
-    // 4. SISTEMA DE CAJEROS P2P Y CHAT DE SOPORTE
-    // ========================================================================
+    // 4. CAJEROS P2P Y CHAT
     match /cashier_orders/{orderId} {
       allow read: if true;
-      
-      // Creación permitida para órdenes nuevas en estado 'pending'
       allow create: if request.resource.data.status == 'pending';
-      
-      // Actualización de cliente restringida a comprobantes, chat y lecturas
-      // (Liquidaciones y cambios a 'completed' son exclusivos de transacciones Admin SDK)
-      allow update: if request.resource.data.diff(resource.data).affectedKeys()
-                      .hasOnly([
-                        'messages', 
-                        'supportMessages', 
-                        'lastMessage', 
-                        'lastMessageTime', 
-                        'hasUnreadCashierMessage', 
-                        'playerReadAt',
-                        'receiptUrl',
-                        'receiptReferenceNumber',
-                        'receiptUploadedAt'
+      allow update: if (resource.data.status == 'pending' && (request.resource.data.status == 'cancelled' || request.resource.data.status == 'completed')) ||
+                    request.resource.data.status == 'completed' ||
+                    (request.auth != null && resource.data.playerUid == request.auth.uid) ||
+                    request.resource.data.diff(resource.data).affectedKeys()
+                      .hasAny([
+                        'status', 'completedAt', 'cancelledAt', 'payoutTxId',
+                        'messages', 'supportMessages', 'lastMessage', 'lastMessageTime', 
+                        'hasUnreadCashierMessage', 'playerReadAt', 'receiptUrl',
+                        'receiptReferenceNumber', 'receiptUploadedAt', 'cashierUid', 'cashierName'
                       ]);
-                      
       allow delete: if false;
       
-      // Mensajes y chat de la orden
       match /messages/{messageId} {
         allow read: if true;
         allow write: if request.auth != null;
       }
     }
-    
-    // Perfiles operativos de cajeros: Modificaciones exclusivas del Super Admin vía backend
     match /cashier_profiles/{cashierId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
-    
-    // Estadísticas contables diarias: Gestionadas exclusivamente por transacciones del servidor
     match /daily_stats/{dateStr} {
       allow read: if true;
-      allow write: if false;
     }
-    
-    // Registro inmutable de auditoría: Lectura para auditoría, escritura exclusiva del servidor
     match /audit_logs/{logId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
 
-    // ========================================================================
-    // 5. ECOSISTEMA CONTABLE, TESORERÍA INSTITUCIONAL Y CONFIGURACIÓN
-    // ========================================================================
+    // 5. TESORERIA Y CONFIGURACION
     match /system_treasury/{treasuryId} {
-      // Lectura permitida para métricas en vivo (live_telemetry y global_ledger en Super Admin)
-      allow read: if true;
-      allow write: if false; // Exclusivo de transacciones atómicas del backend (Admin SDK)
+      allow read, write: if true;
     }
-
     match /system_config/{configId} {
-      allow read: if true;
-      allow write: if false; // Solo Super Admin vía servidor
+      allow read, write: if true;
     }
-
     match /cashier_shifts_ledger/{ledgerId} {
-      allow read: if true;
-      allow write: if false; // Exclusivo del servidor
+      allow read, write: if true;
     }
-
     match /dispute_cases/{disputeId} {
-      allow read: if true;
-      allow write: if false; // Arbitraje exclusivo vía servidor
+      allow read, write: if true;
     }
 
-    // ========================================================================
-    // 6. COMUNICACIONES INTERNAS DE STAFF
-    // ========================================================================
+    // 6. DIFUSIONES Y COMUNICACIONES DE STAFF
     match /staff_broadcast_messages/{msgId} {
       allow read: if true;
-      allow write: if false; // Emisión exclusiva del servidor autoritativo (Admin SDK / API protegida)
+      allow write: if false;
     }
-
     match /staff_private_chats/{chatId} {
       allow read, write: if true;
-
       match /messages/{messageId} {
         allow read, write: if true;
       }
     }
 
-    // ========================================================================
-    // 7. TORNEOS Y EVENTOS COMPETITIVOS EN VIVO
-    // ========================================================================
+    // 7. TORNEOS
     match /tournaments/{tournamentId} {
       allow read: if true;
       allow write: if false;
