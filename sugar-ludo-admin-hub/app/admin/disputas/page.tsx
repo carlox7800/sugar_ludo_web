@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
+import { getStaffAuthHeaders } from '../../../lib/auth-headers'
 import { db } from '../../../lib/firebase'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { DisputeCase } from '../../../types/treasury'
@@ -96,7 +97,10 @@ export default function DisputasAdminPage() {
     try {
       const res = await fetch('/api/disputes/resolve', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getStaffAuthHeaders('admin')
+        },
         body: JSON.stringify({
           disputeId,
           verdict: 'favor_player',
@@ -128,7 +132,10 @@ export default function DisputasAdminPage() {
     try {
       const res = await fetch('/api/disputes/resolve', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getStaffAuthHeaders('admin')
+        },
         body: JSON.stringify({
           disputeId,
           verdict: 'favor_cashier',

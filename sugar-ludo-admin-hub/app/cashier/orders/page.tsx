@@ -11,6 +11,7 @@ import { ReceiptImageViewer } from '../../../components/receipts/ReceiptImageVie
 import { CashierFloatHistoryModal } from '../../../components/cashier/CashierFloatHistoryModal'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
 import { db } from '../../../lib/firebase'
+import { getStaffAuthHeaders } from '../../../lib/auth-headers'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, LayoutList, LayoutGrid } from 'lucide-react'
 
@@ -83,7 +84,11 @@ export default function CashierOrdersPage() {
       }
 
       // 2. Cargar desde API
-      const res = await fetch('/api/cashier/orders')
+      const res = await fetch('/api/cashier/orders', {
+        headers: {
+          ...getStaffAuthHeaders('cashier')
+        }
+      })
       if (res.ok) {
         const data = await res.json()
         if (data.orders && data.orders.length > 0) {
@@ -262,7 +267,10 @@ export default function CashierOrdersPage() {
     try {
       await fetch(`/api/cashier/orders/${orderId}/action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getStaffAuthHeaders('cashier')
+        },
         body: JSON.stringify({
           action: 'approve_deposit',
           cashierUid: currentCashier.uid,

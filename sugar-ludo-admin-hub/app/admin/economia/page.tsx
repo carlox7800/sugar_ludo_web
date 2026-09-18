@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
+import { getStaffAuthHeaders } from '../../../lib/auth-headers'
 import { db } from '../../../lib/firebase'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { MOCK_REAL_STORE_CATALOG } from '../../../lib/mock-treasury'
@@ -213,7 +214,11 @@ export default function EconomiaAdminPage() {
 
       // 2. Fallback a API
       try {
-        const res = await fetch('/api/economy/config')
+        const res = await fetch('/api/economy/config', {
+          headers: {
+            ...getStaffAuthHeaders('admin')
+          }
+        })
         if (res.ok) {
           const data = await res.json()
           if (data.config) {
@@ -286,7 +291,10 @@ export default function EconomiaAdminPage() {
     try {
       await fetch('/api/economy/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getStaffAuthHeaders('admin')
+        },
         body: JSON.stringify(payload)
       })
       setNotification('✨ ¡Precios del catálogo, comisiones y modo competitivo guardados y sincronizados en TIEMPO REAL!')

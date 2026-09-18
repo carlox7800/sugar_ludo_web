@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../lib/admin-auth-context'
+import { getStaffAuthHeaders } from '../../lib/auth-headers'
 import { APP_VERSION_TAG } from '../../lib/version'
 import { TreasuryBreakdownCard } from '../../components/admin/TreasuryBreakdownCard'
 import { DetailedTelemetryCard } from '../../components/admin/DetailedTelemetryCard'
@@ -219,7 +220,10 @@ export default function AdminDashboardPage() {
       try {
         const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...getStaffAuthHeaders('admin')
+          },
           body: JSON.stringify({
             adminUid: adminUser?.uid || 'adm_super',
             adminName: adminUser?.displayName || 'Super Admin'
@@ -332,7 +336,10 @@ export default function AdminDashboardPage() {
       try {
         const res = await fetch('/api/admin/treasury/reset', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...getStaffAuthHeaders('admin')
+          },
           body: JSON.stringify({
             scope,
             purgeOrdersHistory,

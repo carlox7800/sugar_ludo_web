@@ -22,6 +22,7 @@ import {
   markPrivateChatAsReadByCashier
 } from '../../lib/staff-chat-service'
 import { APP_VERSION_TAG } from '../../lib/version'
+import { getStaffAuthHeaders } from '../../lib/auth-headers'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins, Calendar, LayoutList, LayoutGrid } from 'lucide-react'
 
 export default function CashierMainDeskPage() {
@@ -235,7 +236,11 @@ export default function CashierMainDeskPage() {
 
       // 2. Fetch API only if stale or manual refresh
       if (isManualRefresh || OrdersCache.isStale(20000)) {
-        const res = await fetch('/api/cashier/orders')
+        const res = await fetch('/api/cashier/orders', {
+          headers: {
+            ...getStaffAuthHeaders('cashier')
+          }
+        })
         if (res.ok) {
           const data = await res.json()
           if (data.orders && Array.isArray(data.orders)) {
@@ -346,7 +351,10 @@ export default function CashierMainDeskPage() {
     try {
       const res = await fetch(`/api/cashier/orders/${orderId}/action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getStaffAuthHeaders('cashier')
+        },
         body: JSON.stringify({
           action: 'approve_deposit',
           cashierUid: currentCashier.uid,
@@ -377,7 +385,10 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
 
         fetch(`/api/cashier/orders/${orderId}/message`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...getStaffAuthHeaders('cashier')
+          },
           body: JSON.stringify({
             message: depositNoticeText,
             senderName: currentCashier.name,
