@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { verifyStaffAuth } from '@/lib/api-auth-guard'
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -12,12 +11,11 @@ export async function OPTIONS() {
   })
 }
 
-export async function GET(request: Request) {
-  const authResult = await verifyStaffAuth(request, ['cashier', 'admin'])
-  if (!authResult.authorized) {
-    return authResult.errorResponse!
-  }
-
+/**
+ * Endpoint de Telemetría & Health Check de Infraestructura.
+ * Utilizado por Render para validar liveness y readiness (HTTP 200 OK).
+ */
+export async function GET() {
   const startTime = Date.now()
   let serverLatencyMs = 35
   let serverStatus = 'online'
