@@ -36,6 +36,14 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "sugar-ludo-admin-hub",
+    "sugar-ludo-landing",
+    "dist",
+    "out",
+    ".archive",
+    "original_training.tsx",
+    "src/main.tsx",
+    "vite.config.ts"
   ]
 }

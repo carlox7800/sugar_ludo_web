@@ -134,13 +134,14 @@ export function CompetitiveTraining({
 
     const handleRoomUpdated = (data: { id?: string; players?: any[] }) => {
       if (!hasLobbyIntentRef.current) return
-      if (data.players) {
+      const roomPlayers = data.players
+      if (roomPlayers) {
         setLobbyData((prev) => ({
           roomId: prev?.roomId && prev.roomId !== 'Buscando...' && prev.roomId !== 'Creando...' ? prev.roomId : (data.id || 'Buscando...'),
-          players: data.players,
+          players: roomPlayers,
           targetPlayers: targetPlayersRef.current
         }))
-        showToast(`Jugadores en sala: ${data.players.length}`)
+        showToast(`Jugadores en sala: ${roomPlayers.length}`)
       }
     }
 

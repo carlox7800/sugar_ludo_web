@@ -83,16 +83,23 @@ const buildFinalRankings = (
 export interface OnlineGameData {
   id?: string
   roomId: string
+  roomCode?: string
+  maxPlayers?: number
+  boardType?: string
+  isPrivate?: boolean
   players: Array<{
     playerId: string
+    id?: string
     playerName?: string
     name?: string
     socketId?: string
     isConnected?: boolean
     isBot?: boolean
     slotIndex?: number
+    colorId?: number | string
     photoURL?: string
     photoUrl?: string
+    uid?: string
   }>
   myPlayerId: string
 }
@@ -228,8 +235,7 @@ export function OnlineGameEngine({
           particleCount: 150,
           spread: 100,
           origin: { y: 0.6 },
-          zIndex: 9999,
-          useWorker: true
+          zIndex: 9999
         });
       }, 400);
       return () => clearTimeout(timer);
@@ -1988,8 +1994,8 @@ export function OnlineGameEngine({
                 onSendReaction={isLocalUser ? handleSendReaction : undefined}
                 reactionMessage={playerReactions[p.id]}
                 isLocalUser={isLocalUser}
-                isVoiceActive={isFriendsMatch}
-                isSpeaking={isPeerSpeaking}
+                isVoiceActive={Boolean(isFriendsMatch)}
+                isSpeaking={Boolean(isPeerSpeaking)}
                 isVoiceMuted={isLocalUser ? isMuted : false}
                 isVoiceDeafened={isLocalUser ? isDeafened : false}
                 isVoiceListenerOnly={isLocalUser ? isListenerOnly : false}

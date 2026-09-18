@@ -14,7 +14,7 @@ interface PlayerCornerProps {
   isHumanTurnToRoll: boolean;
   isRolling: boolean;
   hasRolled: boolean;
-  diceValues: [number, number] | null;
+  diceValues: [number, number] | [number] | number[] | null;
   remainingMoves: number[];
   onRollDice: () => void;
   timer: number;

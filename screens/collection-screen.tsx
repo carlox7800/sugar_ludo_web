@@ -117,6 +117,22 @@ export function CollectionScreen({ onBack, onNavigate }: { onBack: () => void, o
     })
   }
 
+  const handleClaimAchievement = async (ach: Achievement) => {
+    const res = await claimAchievementReward(user?.uid, ach, (add: number) => setCoins(coins + add))
+    if (res.success) {
+      showToast(`🏆 ¡Recompensa reclamada: +${ach.rewardSC} SC!`)
+      confetti({
+        particleCount: 80,
+        spread: 60,
+        origin: { y: 0.6 }
+      })
+      const updated = await fetchUserAchievements(user?.uid, user, inventory.ownedItems.length)
+      setAchievements(updated)
+    } else {
+      showToast(res.message)
+    }
+  }
+
   const allItemsCount = boards.length + tokens.length + dices.length + emotes.length
   const ownedCount = inventory.ownedItems.length
 

@@ -46,8 +46,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
     currentTurnPlayer.color === 'green' ? 'ring-2 ring-emerald-400 shadow-[0_0_20px_#4ade80] animate-pulse' :
     currentTurnPlayer.color === 'blue' ? 'ring-2 ring-cyan-400 shadow-[0_0_20px_#38bdf8] animate-pulse' :
     currentTurnPlayer.color === 'purple' ? 'ring-2 ring-fuchsia-500 shadow-[0_0_20px_#d946ef] animate-pulse' :
-    currentTurnPlayer.color === 'cyan' ? 'ring-2 ring-cyan-300 shadow-[0_0_20px_#22d3ee] animate-pulse' :
-    currentTurnPlayer.color === 'magenta' ? 'ring-2 ring-rose-400 shadow-[0_0_20px_#f43f5e] animate-pulse' :
+    currentTurnPlayer.color === 'orange' ? 'ring-2 ring-orange-500 shadow-[0_0_20px_#f97316] animate-pulse' :
     'ring-2 ring-cyan-400 shadow-[0_0_20px_#38bdf8] animate-pulse'
   ) : '';
 

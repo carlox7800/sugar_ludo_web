@@ -285,7 +285,7 @@ function PageContent() {
 
     // Si es una invitación al Lobby P2P de espera previa, redirigir a online-training como invitado
     if (rawCode.startsWith('LOBBY-')) {
-      globalLogger.nav(`Redirigiendo a BatallaLobby como invitado para: ${rawCode}`)
+      globalLogger.nav('lobby', 'online-training', { duelAutoJoinCode: rawCode })
       setDuelAutoJoinCode(rawCode)
       setScreenAndRef('online-training')
       return

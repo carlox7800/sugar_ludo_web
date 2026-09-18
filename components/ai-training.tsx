@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { GameConfig } from '@/src/types'
 import { GameGuideModal } from '@/components/game-guide-modal'
 
-const PLAYER_OPTIONS = [2, 3, 4, 5, 6]
+const PLAYER_OPTIONS = [2, 3, 4, 5, 6] as const
 
 const DIFFICULTY_OPTIONS = [
   {
@@ -33,7 +33,7 @@ const DIFFICULTY_OPTIONS = [
 ] as const
 
 export function AiTraining({ onBack, onStartGame }: { onBack: () => void, onStartGame: (config: GameConfig) => void }) {
-  const [players, setPlayers] = useState(4)
+  const [players, setPlayers] = useState<GameConfig['playerCount']>(4)
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTY_OPTIONS)[number]['id']>('medio')
   const [isGuideOpen, setIsGuideOpen] = useState(false)
 

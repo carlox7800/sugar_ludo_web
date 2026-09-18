@@ -45,7 +45,9 @@ const COLOR_MAP: Record<PlayerColor, string> = {
   red: '#ff0055',
   green: '#00ff88',
   yellow: '#ffcc00',
-  blue: '#00ddff'
+  blue: '#00ddff',
+  purple: '#9333ea',
+  orange: '#ea580c'
 };
 
 // 52 Perimeter cells in clockwise order starting from Amarillo's start at (6,14) as per specification

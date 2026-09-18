@@ -47,6 +47,9 @@ export async function recordMatchResult(userId: string, matchData: Omit<MatchRec
 
     const isWin = matchData.rank === 1
     const newWins = currentWins + (isWin ? 1 : 0)
+    const newLosses = currentLosses + (isWin ? 0 : 1)
+    const newGames = currentGames + 1
+    const newWinStreak = isWin ? currentWinStreak + 1 : 0
     // Check active XP Boosters
     let xpMultiplier = 1
     if (Array.isArray(userData.activeBoosters)) {

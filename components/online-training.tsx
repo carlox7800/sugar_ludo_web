@@ -122,13 +122,14 @@ export function OnlineTraining({
 
     const handleRoomUpdated = (data: { id?: string; players?: any[] }) => {
       if (!hasLobbyIntentRef.current) return
-      if (data.players) {
+      const roomPlayers = data.players
+      if (roomPlayers) {
         setLobbyData((prev) => ({
           roomId: prev?.roomId && prev.roomId !== 'Buscando...' && prev.roomId !== 'Creando...' ? prev.roomId : (data.id || 'Buscando...'),
-          players: data.players,
+          players: roomPlayers,
           targetPlayers: targetPlayersRef.current
         }))
-        showToast(`Jugadores en sala: ${data.players.length}`)
+        showToast(`Jugadores en sala: ${roomPlayers.length}`)
       }
     }
 
@@ -817,19 +818,23 @@ function PillButton({
   onClick,
   accent,
   shadow,
+  disabled = false,
 }: {
   children: React.ReactNode
   selected: boolean
   onClick: () => void
   accent: string
   shadow: string
+  disabled?: boolean
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={selected}
       className={cn(
         'btn-3d rounded-2xl py-3 font-display text-base font-extrabold transition-colors',
+        disabled && 'opacity-50 cursor-not-allowed',
         selected
           ? 'text-[oklch(0.16_0.03_285)]'
           : 'border border-border bg-[oklch(1_0_0/0.05)] text-muted-foreground hover:text-foreground',

@@ -36,6 +36,7 @@ export interface GameConfig {
   playerCount: 2 | 3 | 4 | 5 | 6;
   humanColor: PlayerColor;
   botDifficulty: 'easy' | 'medium' | 'hard';
+  mode?: string;
 }
 
 export type AppTheme = 'classic' | 'sugar';

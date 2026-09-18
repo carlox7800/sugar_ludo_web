@@ -20,10 +20,12 @@ export interface MailItem {
   isRead: boolean
   claimed?: boolean
   rewardSC?: number
+  preview?: string
   content: string
   badge?: string
   timestamp: number
   orderId?: string
+  orderStatus?: string
   status?: 'pending' | 'resolved'
   cashierReadAt?: number
   playerReadAt?: number

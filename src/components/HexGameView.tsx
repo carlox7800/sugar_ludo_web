@@ -76,8 +76,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
           particleCount: 150,
           spread: 100,
           origin: { y: 0.6 },
-          zIndex: 9999,
-          useWorker: true
+          zIndex: 9999
         });
       }, 400);
       return () => clearTimeout(timer);
@@ -633,7 +632,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
     setTimeout(() => {
       const r1 = Math.floor(Math.random() * 6) + 1;
       const r2 = Math.floor(Math.random() * 6) + 1;
-      const rolls = [r1, r2];
+      const rolls: [number, number] = [r1, r2];
       const isDouble = r1 === r2;
 
       setDiceValues(rolls);
@@ -1180,7 +1179,7 @@ export const HexGameView: React.FC<HexGameViewProps> = ({
                     </div>
                     <span 
                       className="font-black text-lg drop-shadow-md" 
-                      style={{ color: HEX_COLOR_INFO[p.color].hex }}
+                      style={{ color: HEX_COLOR_INFO[p.color].hexCode }}
                     >
                       {p.name}
                     </span>

@@ -504,7 +504,6 @@ class VoiceChatService {
     if (!audioEl && typeof document !== 'undefined') {
       audioEl = document.createElement('audio')
       audioEl.autoplay = true
-      audioEl.playsInline = true
       audioEl.setAttribute('playsinline', 'true')
       audioEl.setAttribute('autoplay', 'true')
       audioEl.style.display = 'none'

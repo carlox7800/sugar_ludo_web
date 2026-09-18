@@ -184,14 +184,13 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
     try {
       if (user && !user.isDev) {
         // En producción: Crear orden de depósito P2P formal para verificación de cajero
-        const orderRes = await createDepositOrder(
-          user.uid,
-          user.displayName || 'Jugador',
-          packageToBuy.usdtCost,
-          'USDT',
-          packageToBuy.totalCoins,
-          `TIENDA-${packageToBuy.id.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`
-        )
+        const orderRes = await createDepositOrder({
+          playerUid: user.uid,
+          playerName: user.displayName || 'Jugador',
+          amountFiat: packageToBuy.usdtCost,
+          currency: 'USDT',
+          receiptReferenceNumber: `TIENDA-${packageToBuy.id.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`
+        })
 
         setIsProcessing(false)
         setPackageToBuy(null)
@@ -199,7 +198,7 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
         if (orderRes.success) {
           showToast(`📋 Solicitud de recarga #${orderRes.orderId?.slice(0, 8)} creada. Paga a través de un Cajero para acreditar.`)
         } else {
-          showToast(`⚠️ ${orderRes.error || 'No se pudo generar la orden de recarga'}`)
+          showToast('⚠️ No se pudo generar la orden de recarga')
         }
       } else {
         // Modo Sandbox / Dev: Acreditación local simulada

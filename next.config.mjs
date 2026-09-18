@@ -4,7 +4,7 @@ const nextConfig = {
   trailingSlash: true,
   allowedDevOrigins: ['localhost', '192.168.0.136'],
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true,

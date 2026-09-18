@@ -17,6 +17,9 @@ export interface Tournament {
   accentColor: string
   rules: string
   isActive?: boolean
+  firstPlacePct?: number
+  secondPlacePct?: number
+  thirdPlacePct?: number
 }
 
 export const DEFAULT_TOURNAMENTS: Tournament[] = [

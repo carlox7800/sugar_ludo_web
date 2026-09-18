@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { usePlayer } from '@/lib/player-context'
 import { db } from '@/lib/firebase'
-import { doc, onSnapshot, collection, query, where, getDoc, updateDoc } from 'firebase/firestore'
+import { doc, onSnapshot, collection, query, where, getDoc, updateDoc, limit } from 'firebase/firestore'
 import { globalLogger } from '@/lib/logger'
 import confetti from 'canvas-confetti'
 import { 
@@ -206,7 +206,7 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
                   replyMap.set(key, {
                     id: key,
                     sender: m.senderName || (m.senderRole === 'cashier' ? 'Cajero Autorizado' : 'Jugador'),
-                    role: m.senderRole === 'cashier' ? 'cashier' : 'player',
+                    senderRole: m.senderRole === 'cashier' ? 'cashier' : 'player',
                     message: m.message || '',
                     timestamp: Number(m.timestamp || 0)
                   })
@@ -221,7 +221,6 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
                 orderSupportMails.push({
                   id: mailKey,
-                  type: 'support',
                   category: 'support',
                   title: `💬 Soporte Orden #${orderId.slice(0, 8)}`,
                   sender: ord.cashierName || 'Cajero Oficial',
