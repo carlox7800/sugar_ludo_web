@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "node server.js",
     "lint": "eslint .",
+    "bump": "node scripts/bump-version.js",
     "electron:build": "electron-builder -w"
   },
   "build": {
