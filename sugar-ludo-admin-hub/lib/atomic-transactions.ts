@@ -1,7 +1,87 @@
 import { adminDb, admin, hasAdminCredentials } from './firebase-admin'
 import { db } from './firebase'
 import { doc, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
-import { CashierOrder, CashierProfile, DailyStats, AuditLog } from '../types/cashier'
+import { CashierOrder, CashierProfile, DailyStats, AuditLog, PaymentMethodType, PaymentAccount } from '../types/cashier'
+
+export interface PlayerWalletTransaction {
+  id?: string
+  orderId?: string
+  payoutTxId?: string
+  type: string
+  amount: number
+  description: string
+  timestamp?: number
+  dateStr?: string
+  status?: string
+}
+
+export interface ExtendedCashierOrder extends CashierOrder {
+  paymentAddress?: string
+  isVipWithdraw?: boolean
+}
+
+export interface UserData {
+  uid?: string
+  displayName?: string
+  coins?: number
+  escrowLockedCoins?: number
+  walletHistory?: PlayerWalletTransaction[]
+  createdAt?: number
+  lastActiveAt?: number
+  [key: string]: unknown
+}
+
+export interface DisputeData {
+  orderId?: string
+  playerUid?: string
+  cashierUid?: string
+  amountSugarCoins?: number
+  [key: string]: unknown
+}
+
+export interface CashierProfileData extends Partial<CashierProfile> {
+  floatBalanceUSDT?: number
+  totalPaidWithdrawalsUSDT?: number
+  [key: string]: unknown
+}
+
+export interface AdminDocumentSnapshot<T = unknown> {
+  exists: boolean
+  id: string
+  data: () => T
+}
+
+export interface AdminTransactionHandler {
+  get: <T = unknown>(ref: unknown) => Promise<AdminDocumentSnapshot<T>>
+  update: (ref: unknown, data: unknown) => void
+  set: (ref: unknown, data: unknown, options?: { merge?: boolean }) => void
+  delete: (ref: unknown) => void
+}
+
+export interface AdminFirestoreService {
+  collection: (name: string) => {
+    doc: (id?: string) => unknown
+  }
+  runTransaction: <T>(updateFunction: (transaction: AdminTransactionHandler) => Promise<T>) => Promise<T>
+}
+
+export interface CashierAccountConfig {
+  uid: string
+  name: string
+  floatBalanceCoins: number
+  floatBalanceUSDT?: number
+  totalPaidWithdrawalsUSDT?: number
+  totalCommissionEarnedCoins?: number
+  lastRechargeAt?: number
+  lastActiveAt?: number
+  [key: string]: unknown
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  return 'Error de transacción desconocido'
+}
 
 
 /**
@@ -32,7 +112,7 @@ export async function approveDepositOrder(params: {
   // 1. Intentar vía Firebase Admin SDK si existen credenciales válidas en el servidor
   if (adminDb && hasAdminCredentials) {
     try {
-      return await (adminDb as any).runTransaction(async (transaction: any) => {
+      return await (adminDb as unknown as AdminFirestoreService).runTransaction(async (transaction: AdminTransactionHandler) => {
         const orderRef = adminDb.collection('cashier_orders').doc(orderId)
         const orderSnap = await transaction.get(orderRef)
 
@@ -40,7 +120,7 @@ export async function approveDepositOrder(params: {
           throw new Error('La orden de depósito no existe')
         }
 
-        const order = orderSnap.data() as CashierOrder
+        const order = orderSnap.data() as unknown as ExtendedCashierOrder
         if (order.status === 'completed') {
           return { success: true, message: 'La orden ya se encuentra completada.' }
         }
@@ -76,8 +156,8 @@ export async function approveDepositOrder(params: {
           })
         }
 
-        const playerData = playerSnap.exists ? (playerSnap.data() || {}) : {}
-        const cashierData = cashierSnap.exists ? (cashierSnap.data() as CashierProfile) : {
+        const playerData = (playerSnap.exists ? playerSnap.data() : {}) as UserData
+        const cashierData = cashierSnap.exists ? ((cashierSnap.data() as unknown) as CashierProfile) : {
           uid: cashierUid,
           name: 'Cajero Autorizado',
           floatBalanceCoins: 50000,
@@ -118,7 +198,7 @@ export async function approveDepositOrder(params: {
               day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
             })
           }
-          const updatedHistory = [newTxEntry, ...existingHistory.filter((t: any) => t.id !== newTxEntry.id)].slice(0, 50)
+          const updatedHistory = [newTxEntry, ...existingHistory.filter((t: PlayerWalletTransaction) => t.id !== newTxEntry.id)].slice(0, 50)
 
           transaction.update(playerRef, {
             coins: newPlayerCoins,
@@ -162,8 +242,8 @@ export async function approveDepositOrder(params: {
           message: `Depósito de +${amountCoins} SC acreditado con éxito al jugador.`
         }
       })
-    } catch (adminErr: any) {
-      console.warn('[approveDepositOrder] Admin SDK transaction failed, activating hybrid engine:', adminErr?.message)
+    } catch (adminErr: unknown) {
+      console.warn('[approveDepositOrder] Admin SDK transaction failed, activating hybrid engine:', getErrorMessage(adminErr))
     }
   }
 
@@ -176,10 +256,10 @@ export async function approveDepositOrder(params: {
     const orderDocRef = doc(db, 'cashier_orders', orderId)
     const orderSnap = await getDoc(orderDocRef)
     if (orderSnap.exists()) {
-      orderData = { id: orderSnap.id, ...orderSnap.data() } as CashierOrder
+      orderData = { id: orderSnap.id, ...orderSnap.data() } as unknown as ExtendedCashierOrder
     }
-  } catch (err: any) {
-    console.warn('[approveDepositOrder Fallback] Error al consultar Firestore SDK:', err?.message)
+  } catch (err: unknown) {
+    console.warn('[approveDepositOrder Fallback] Error al consultar Firestore SDK:', getErrorMessage(err))
   }
 
 
@@ -203,7 +283,7 @@ export async function approveDepositOrder(params: {
           amountSugarCoins: Number(fields.amountSugarCoins?.integerValue || 0),
           receiptReferenceNumber: fields.receiptReferenceNumber?.stringValue || '',
           createdAt: Number(fields.createdAt?.integerValue || now)
-        } as CashierOrder
+        } as unknown as ExtendedCashierOrder
       }
     } catch {}
   }
@@ -232,8 +312,8 @@ export async function approveDepositOrder(params: {
       settledByCashierUid: cashierUid
     }, { merge: true })
     orderCompletedInCloud = true
-  } catch (err: any) {
-    console.warn('[approveDepositOrder Fallback] Error actualizando orden en Firestore SDK:', err?.message)
+  } catch (err: unknown) {
+    console.warn('[approveDepositOrder Fallback] Error actualizando orden en Firestore SDK:', getErrorMessage(err))
   }
 
   // Fallback REST para actualizar orden si SDK reportó fallo
@@ -254,8 +334,8 @@ export async function approveDepositOrder(params: {
           }
         })
       })
-    } catch (e: any) {
-      console.warn('[approveDepositOrder Fallback] Error en REST patch de orden:', e?.message)
+    } catch (e: unknown) {
+      console.warn('[approveDepositOrder Fallback] Error en REST patch de orden:', getErrorMessage(e))
     }
   }
 
@@ -282,7 +362,7 @@ export async function approveDepositOrder(params: {
         }
 
         let updated = false
-        const updatedHistory = existingHistory.map((tx: any) => {
+        const updatedHistory = existingHistory.map((tx: PlayerWalletTransaction) => {
           if (!updated && tx.description && tx.description.includes('(Pendiente)')) {
             updated = true
             return newTxEntry
@@ -300,8 +380,8 @@ export async function approveDepositOrder(params: {
         })
         coinsCreditedInCloud = true
       }
-    } catch (userErr: any) {
-      console.warn('[approveDepositOrder Fallback] Error acreditando saldo en usuario SDK:', userErr?.message)
+    } catch (userErr: unknown) {
+      console.warn('[approveDepositOrder Fallback] Error acreditando saldo en usuario SDK:', getErrorMessage(userErr))
     }
 
     // Fallback REST para acreditar saldo si SDK no pudo
@@ -326,8 +406,8 @@ export async function approveDepositOrder(params: {
             })
           })
         }
-      } catch (e: any) {
-        console.warn('[approveDepositOrder Fallback] Error en REST patch de saldo de usuario:', e?.message)
+      } catch (e: unknown) {
+        console.warn('[approveDepositOrder Fallback] Error en REST patch de saldo de usuario:', getErrorMessage(e))
       }
     }
   }
@@ -348,8 +428,8 @@ export async function approveDepositOrder(params: {
       totalOrdersCompleted: (Number(cashierData.totalOrdersCompleted) || 0) + 1,
       lastActiveAt: now
     }, { merge: true })
-  } catch (cashierErr: any) {
-    console.warn('[approveDepositOrder Fallback] Error actualizando cajero:', cashierErr?.message)
+  } catch (cashierErr: unknown) {
+    console.warn('[approveDepositOrder Fallback] Error actualizando cajero:', getErrorMessage(cashierErr))
   }
 
   // 2.7. Actualizar custodia en system_treasury/global_ledger
@@ -363,8 +443,8 @@ export async function approveDepositOrder(params: {
       totalVaultUSD: increment(amountCoins / 100),
       lastAuditedAt: now
     }, { merge: true })
-  } catch (ledErr: any) {
-    console.warn('[approveDepositOrder Fallback] Error en ledger:', ledErr?.message)
+  } catch (ledErr: unknown) {
+    console.warn('[approveDepositOrder Fallback] Error en ledger:', getErrorMessage(ledErr))
   }
 
   return {
@@ -382,8 +462,8 @@ export async function createWithdrawOrderWithEscrow(params: {
   amountSugarCoins: number
   amountFiat: number
   currency: string
-  paymentMethod: any
-  playerPaymentAccount: any
+  paymentMethod: PaymentMethodType | string
+  playerPaymentAccount: PaymentAccount | Record<string, unknown> | string
   orderId?: string
   playerId?: string
   isVip?: boolean
@@ -395,21 +475,21 @@ export async function createWithdrawOrderWithEscrow(params: {
   // 1. Vía Firebase Admin SDK si existen credenciales
   if (adminDb && hasAdminCredentials) {
     try {
-      return await (adminDb as any).runTransaction(async (transaction: any) => {
+      return await (adminDb as unknown as AdminFirestoreService).runTransaction(async (transaction: AdminTransactionHandler) => {
         const playerRef = adminDb.collection('users').doc(playerUid)
         const playerSnap = await transaction.get(playerRef)
 
         if (!playerSnap.exists) throw new Error('Jugador no encontrado')
 
-        const currentCoins = Number(playerSnap.data()?.coins || 0)
+        const currentCoins = Number((playerSnap.data() as UserData)?.coins || 0)
         if (currentCoins < amountSugarCoins) {
           throw new Error(`Saldo insuficiente para realizar el retiro (Disponible: ${currentCoins} SC, Requerido: ${amountSugarCoins} SC)`)
         }
 
         const newCoins = currentCoins - amountSugarCoins
 
-        const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
-        const alreadyHasTx = existingHistory.some((tx: any) => tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8))))
+        const existingHistory = Array.isArray((playerSnap.data() as UserData)?.walletHistory) ? ((playerSnap.data() as UserData).walletHistory as PlayerWalletTransaction[]) : []
+        const alreadyHasTx = existingHistory.some((tx: PlayerWalletTransaction) => tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8))))
         let updatedHistory = existingHistory
         if (!alreadyHasTx) {
           const withdrawTxEntry = {
@@ -444,9 +524,9 @@ export async function createWithdrawOrderWithEscrow(params: {
           exchangeRate: amountSugarCoins / (amountFiat || 1),
           amountSugarCoins,
           cashierCommissionCoins: Math.round(amountSugarCoins * (isVip ? 0.04 : 0.02)),
-          paymentMethod,
-          playerPaymentAccount,
-          receiptReferenceNumber: String(playerPaymentAccount || ''),
+          paymentMethod: paymentMethod as PaymentMethodType,
+          playerPaymentAccount: (typeof playerPaymentAccount === 'object' && playerPaymentAccount !== null && 'bankName' in playerPaymentAccount) ? (playerPaymentAccount as PaymentAccount) : undefined,
+          receiptReferenceNumber: typeof playerPaymentAccount === 'string' ? playerPaymentAccount : String((playerPaymentAccount as PaymentAccount)?.accountNumber || ''),
           isEscrowLocked: true,
           escrowLockedAt: now,
           createdAt: now,
@@ -458,9 +538,9 @@ export async function createWithdrawOrderWithEscrow(params: {
 
         return { success: true, orderId: finalOrderId }
       })
-    } catch (adminErr: any) {
-      console.warn('[createWithdrawOrderWithEscrow] Fallo Admin SDK, activando motor híbrido:', adminErr?.message)
-      if (adminErr?.message?.includes('Saldo insuficiente')) throw adminErr
+    } catch (adminErr: unknown) {
+      console.warn('[createWithdrawOrderWithEscrow] Fallo Admin SDK, activando motor híbrido:', getErrorMessage(adminErr))
+      if (getErrorMessage(adminErr)?.includes('Saldo insuficiente')) throw adminErr
     }
   }
 
@@ -481,7 +561,7 @@ export async function createWithdrawOrderWithEscrow(params: {
       const newEscrow = currentEscrow + amountSugarCoins
 
       const existingHistory = Array.isArray(userData.walletHistory) ? userData.walletHistory : []
-      const alreadyHasTx = existingHistory.some((tx: any) => tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8))))
+      const alreadyHasTx = existingHistory.some((tx: PlayerWalletTransaction) => tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8))))
       let updatedHistory = existingHistory
       if (!alreadyHasTx) {
         const withdrawTxEntry = {
@@ -503,9 +583,9 @@ export async function createWithdrawOrderWithEscrow(params: {
         lastActiveAt: now
       })
     }
-  } catch (userErr: any) {
-    console.warn('[createWithdrawOrderWithEscrow Fallback] Error actualizando usuario SDK:', userErr?.message)
-    if (userErr?.message?.includes('Saldo insuficiente')) throw userErr
+  } catch (userErr: unknown) {
+    console.warn('[createWithdrawOrderWithEscrow Fallback] Error actualizando usuario SDK:', getErrorMessage(userErr))
+    if (getErrorMessage(userErr)?.includes('Saldo insuficiente')) throw userErr
   }
 
   const newOrder: CashierOrder = {
@@ -520,9 +600,9 @@ export async function createWithdrawOrderWithEscrow(params: {
     exchangeRate: amountSugarCoins / (amountFiat || 1),
     amountSugarCoins,
     cashierCommissionCoins: Math.round(amountSugarCoins * (isVip ? 0.04 : 0.02)),
-    paymentMethod,
-    playerPaymentAccount,
-    receiptReferenceNumber: String(playerPaymentAccount || ''),
+    paymentMethod: paymentMethod as PaymentMethodType,
+    playerPaymentAccount: (typeof playerPaymentAccount === 'object' && playerPaymentAccount !== null && 'bankName' in playerPaymentAccount) ? (playerPaymentAccount as PaymentAccount) : undefined,
+    receiptReferenceNumber: typeof playerPaymentAccount === 'string' ? playerPaymentAccount : String((playerPaymentAccount as PaymentAccount)?.accountNumber || ''),
     isEscrowLocked: true,
     escrowLockedAt: now,
     createdAt: now,
@@ -534,8 +614,8 @@ export async function createWithdrawOrderWithEscrow(params: {
   try {
     const orderDocRef = doc(db, 'cashier_orders', finalOrderId)
     await setDoc(orderDocRef, newOrder, { merge: true })
-  } catch (orderErr: any) {
-    console.warn('[createWithdrawOrderWithEscrow Fallback] Error guardando orden en Firestore SDK:', orderErr?.message)
+  } catch (orderErr: unknown) {
+    console.warn('[createWithdrawOrderWithEscrow Fallback] Error guardando orden en Firestore SDK:', getErrorMessage(orderErr))
   }
 
 
@@ -556,13 +636,13 @@ export async function cancelWithdrawOrderAtomics(params: {
   // 1. Vía Firebase Admin SDK si existen credenciales
   if (adminDb && hasAdminCredentials) {
     try {
-      return await (adminDb as any).runTransaction(async (transaction: any) => {
+      return await (adminDb as unknown as AdminFirestoreService).runTransaction(async (transaction: AdminTransactionHandler) => {
         const orderRef = adminDb.collection('cashier_orders').doc(orderId)
         const orderSnap = await transaction.get(orderRef)
 
         if (!orderSnap.exists) throw new Error('La orden no existe')
 
-        const order = orderSnap.data() as CashierOrder
+        const order = orderSnap.data() as unknown as ExtendedCashierOrder
         if (order.status === 'completed' || order.status === 'cancelled') {
           return { success: true, message: `La orden ya se encuentra en estado '${order.status}'.` }
         }
@@ -578,12 +658,12 @@ export async function cancelWithdrawOrderAtomics(params: {
           const playerSnap = await transaction.get(playerRef)
 
           if (playerSnap.exists) {
-            const currentCoins = Number(playerSnap.data()?.coins || 0)
-            const currentEscrow = Number(playerSnap.data()?.escrowLockedCoins || 0)
+            const currentCoins = Number((playerSnap.data() as UserData)?.coins || 0)
+            const currentEscrow = Number((playerSnap.data() as UserData)?.escrowLockedCoins || 0)
             const newEscrow = Math.max(0, currentEscrow - amountCoins)
             const newCoins = currentCoins + amountCoins
 
-            const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
+            const existingHistory = Array.isArray((playerSnap.data() as UserData)?.walletHistory) ? ((playerSnap.data() as UserData).walletHistory as PlayerWalletTransaction[]) : []
             const refundTxEntry = {
               id: `tx_ref_${now}_${Math.random().toString(36).slice(2, 6)}`,
               type: 'deposit',
@@ -613,8 +693,8 @@ export async function cancelWithdrawOrderAtomics(params: {
 
         return { success: true, message: 'Orden cancelada con éxito y saldo desbloqueado.' }
       })
-    } catch (adminErr: any) {
-      console.warn('[cancelWithdrawOrderAtomics] Fallo Admin SDK, activando motor híbrido:', adminErr?.message)
+    } catch (adminErr: unknown) {
+      console.warn('[cancelWithdrawOrderAtomics] Fallo Admin SDK, activando motor híbrido:', getErrorMessage(adminErr))
     }
   }
 
@@ -625,7 +705,7 @@ export async function cancelWithdrawOrderAtomics(params: {
     let orderData: CashierOrder | null = null
 
     if (orderSnap.exists()) {
-      orderData = { id: orderSnap.id, ...orderSnap.data() } as CashierOrder
+      orderData = { id: orderSnap.id, ...orderSnap.data() } as unknown as ExtendedCashierOrder
     }
 
     if (orderData) {
@@ -643,7 +723,7 @@ export async function cancelWithdrawOrderAtomics(params: {
 
           const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
           let marked = false
-          const updatedHistory = existingHistory.map((tx: any) => {
+          const updatedHistory = existingHistory.map((tx: PlayerWalletTransaction) => {
             if (!marked && tx.description && tx.description.includes(orderId.slice(0, 8)) && tx.description.includes('(Pendiente)')) {
               marked = true
               return {
@@ -683,8 +763,8 @@ export async function cancelWithdrawOrderAtomics(params: {
         cancelledByRole: actorRole
       }, { merge: true })
     }
-  } catch (fallbackErr: any) {
-    console.warn('[cancelWithdrawOrderAtomics Fallback] Error:', fallbackErr?.message)
+  } catch (fallbackErr: unknown) {
+    console.warn('[cancelWithdrawOrderAtomics Fallback] Error:', getErrorMessage(fallbackErr))
   }
 
   return { success: true, message: 'Orden cancelada y saldo desbloqueado.' }
@@ -705,12 +785,12 @@ export async function resolveDisputeCaseAtomics(params: {
 
   if (adminDb && hasAdminCredentials) {
     try {
-      return await (adminDb as any).runTransaction(async (transaction: any) => {
+      return await (adminDb as unknown as AdminFirestoreService).runTransaction(async (transaction: AdminTransactionHandler) => {
         const disputeRef = adminDb.collection('dispute_cases').doc(disputeId)
         const disputeSnap = await transaction.get(disputeRef)
 
         if (disputeSnap.exists) {
-          const disputeData = disputeSnap.data() || {}
+          const disputeData = (disputeSnap.data() || {}) as DisputeData
           const orderRef = adminDb.collection('cashier_orders').doc(disputeData.orderId || disputeId)
           const playerRef = adminDb.collection('users').doc(disputeData.playerUid)
           const cashierRef = adminDb.collection('cashier_profiles').doc(disputeData.cashierUid)
@@ -724,11 +804,11 @@ export async function resolveDisputeCaseAtomics(params: {
 
           if (verdict === 'favor_player') {
             if (playerSnap.exists) {
-              const currentCoins = Number(playerSnap.data()?.coins || 0)
+              const currentCoins = Number((playerSnap.data() as UserData)?.coins || 0)
               transaction.update(playerRef, { coins: currentCoins + amountCoins })
             }
             if (cashierSnap.exists) {
-              const currentFloat = Number(cashierSnap.data()?.floatBalanceCoins || 0)
+              const currentFloat = Number((cashierSnap.data() as CashierProfileData)?.floatBalanceCoins || 0)
               transaction.update(cashierRef, { floatBalanceCoins: Math.max(0, currentFloat - amountCoins) })
             }
             transaction.update(disputeRef, {
@@ -741,7 +821,7 @@ export async function resolveDisputeCaseAtomics(params: {
             transaction.update(orderRef, { status: 'completed', completedAt: now })
           } else {
             if (cashierSnap.exists) {
-              const currentFloat = Number(cashierSnap.data()?.floatBalanceCoins || 0)
+              const currentFloat = Number((cashierSnap.data() as CashierProfileData)?.floatBalanceCoins || 0)
               transaction.update(cashierRef, { floatBalanceCoins: currentFloat + amountCoins })
             }
             transaction.update(disputeRef, {
@@ -756,8 +836,8 @@ export async function resolveDisputeCaseAtomics(params: {
         }
         return { success: true, message: `Veredicto ejecutado: ${verdict}` }
       })
-    } catch (e: any) {
-      console.warn('[resolveDisputeCaseAtomics] Fallback a cliente SDK:', e?.message)
+    } catch (e: unknown) {
+      console.warn('[resolveDisputeCaseAtomics] Fallback a cliente SDK:', getErrorMessage(e))
     }
   }
 
@@ -765,7 +845,7 @@ export async function resolveDisputeCaseAtomics(params: {
   try {
     const dispDocRef = doc(db, 'dispute_cases', disputeId)
     const dispSnap = await getDoc(dispDocRef)
-    const dData = dispSnap.exists() ? dispSnap.data() : {}
+    const dData = (dispSnap.exists() ? dispSnap.data() : {}) as DisputeData
     const finalOrderId = dData.orderId || disputeId
     const amountCoins = Number(dData.amountSugarCoins || 0)
 
@@ -800,8 +880,8 @@ export async function resolveDisputeCaseAtomics(params: {
         lastActiveAt: now
       }).catch(() => {})
     }
-  } catch (dispErr: any) {
-    console.warn('[resolveDisputeCaseAtomics Fallback] Error:', dispErr?.message)
+  } catch (dispErr: unknown) {
+    console.warn('[resolveDisputeCaseAtomics Fallback] Error:', getErrorMessage(dispErr))
   }
 
   return { success: true, message: `Veredicto ejecutado: ${verdict}` }
@@ -824,13 +904,13 @@ export async function completeWithdrawalOrder(params: {
   // 1. Vía Firebase Admin SDK si existen credenciales
   if (adminDb && hasAdminCredentials) {
     try {
-      return await (adminDb as any).runTransaction(async (transaction: any) => {
+      return await (adminDb as unknown as AdminFirestoreService).runTransaction(async (transaction: AdminTransactionHandler) => {
         const orderRef = adminDb.collection('cashier_orders').doc(orderId)
         const orderSnap = await transaction.get(orderRef)
 
         if (!orderSnap.exists) throw new Error(`La orden #${orderId} no existe.`)
 
-        const order = orderSnap.data() as CashierOrder
+        const order = orderSnap.data() as unknown as ExtendedCashierOrder
         if (order.status === 'completed') {
           return { success: true, message: 'La orden ya se encuentra completada.' }
         }
@@ -838,7 +918,7 @@ export async function completeWithdrawalOrder(params: {
         const amountCoins = Number(order.amountSugarCoins || 0)
         const commissionCoins = Number(order.cashierCommissionCoins || Math.round(amountCoins * 0.03))
         const totalFiatRequestedUSD = Number(order.amountFiat || (amountCoins / 100))
-        const isVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || order.paymentMethod === 'usdt_bep20' || order.paymentMethod === 'usdt_trc20_vip')
+        const isVip = Boolean(order.isVip || order.isVipWithdraw || order.paymentMethod === 'usdt_bep20' || order.paymentMethod === 'usdt_trc20_vip')
         const withdrawalFeePercent = isVip ? 0.10 : 0.05
         const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
         const netPayoutUSD = parseFloat(Math.max(0, totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
@@ -855,7 +935,7 @@ Hola ${order.playerName || 'Jugador'}, hemos enviado tus fondos a tu cuenta de d
 🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(withdrawalFeePercent * 100)}%)
 💰 Monto Neto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency || 'USDT'}
 🪙 Sugar Coins Liquidados: -${amountCoins} SC
-🏦 Destino: ${(order.paymentMethod || 'USDT').toUpperCase()} (${(order as any).paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
+🏦 Destino: ${(order.paymentMethod || 'USDT').toUpperCase()} (${order.paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
 🔗 Hash / TxID Oficial: ${payoutTxId}
 👨‍💼 Cajero Responsable: ${cashierName || 'Cajero Oficial'}
 ━━━━━━━━━━━━━━━━━━━━
@@ -891,8 +971,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
         const playerRef = adminDb.collection('users').doc(order.playerUid)
         const playerSnap = await transaction.get(playerRef)
         if (playerSnap.exists) {
-          const currentEscrow = Number(playerSnap.data()?.escrowLockedCoins || 0)
-          const currentCoins = Number(playerSnap.data()?.coins || 0)
+          const currentEscrow = Number((playerSnap.data() as UserData)?.escrowLockedCoins || 0)
+          const currentCoins = Number((playerSnap.data() as UserData)?.coins || 0)
           let newEscrow = Math.max(0, currentEscrow - amountCoins)
           let newCoins = currentCoins
 
@@ -904,9 +984,9 @@ Conserva este mensaje como comprobante formal de la transacción.`
             newEscrow = 0
           }
 
-          const existingHistory = Array.isArray(playerSnap.data()?.walletHistory) ? playerSnap.data()?.walletHistory : []
+          const existingHistory = Array.isArray((playerSnap.data() as UserData)?.walletHistory) ? ((playerSnap.data() as UserData).walletHistory as PlayerWalletTransaction[]) : []
           let matched = false
-          const cleanHistory: any[] = []
+          const cleanHistory: PlayerWalletTransaction[] = []
           for (const tx of existingHistory) {
             const isTargetOrder = tx.orderId === orderId || (tx.description && tx.description.includes(orderId.slice(0, 8)))
             if (isTargetOrder) {
@@ -952,7 +1032,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
         const cashierRef = adminDb.collection('cashier_profiles').doc(cashierUid)
         const cashierSnap = await transaction.get(cashierRef)
         if (cashierSnap.exists) {
-          const cData = cashierSnap.data() || {}
+          const cData = (cashierSnap.data() || {}) as CashierProfileData
           cashierCurrentFloatUSDT = Number(cData.floatBalanceUSDT ?? (Number(cData.floatBalanceCoins || 0) / 100))
           if (cashierCurrentFloatUSDT < netPayoutUSD) {
             throw new Error(`Saldo flotante insuficiente ($${cashierCurrentFloatUSDT.toFixed(2)} USDT disponibles). Se requieren $${netPayoutUSD.toFixed(2)} USDT.`)
@@ -1002,19 +1082,19 @@ Conserva este mensaje como comprobante formal de la transacción.`
 
         return { success: true, message: `Retiro #${orderId.slice(0, 8)} liquidado con éxito.` }
       })
-    } catch (adminErr: any) {
-      console.warn('[completeWithdrawalOrder] Fallo Admin SDK, activando motor híbrido:', adminErr?.message)
-      if (adminErr?.message?.includes('Saldo flotante insuficiente')) throw adminErr
+    } catch (adminErr: unknown) {
+      console.warn('[completeWithdrawalOrder] Fallo Admin SDK, activando motor híbrido:', getErrorMessage(adminErr))
+      if (getErrorMessage(adminErr)?.includes('Saldo flotante insuficiente')) throw adminErr
     }
   }
 
   // 2. Motor híbrido de respaldo (SDK cliente db + REST + disco local)
   const orderDocRef = doc(db, 'cashier_orders', orderId)
-  let order: CashierOrder | null = null
+  let order: ExtendedCashierOrder | null = null
   try {
     const orderSnap = await getDoc(orderDocRef)
     if (orderSnap.exists()) {
-      order = { id: orderSnap.id, ...orderSnap.data() } as CashierOrder
+      order = { id: orderSnap.id, ...orderSnap.data() } as unknown as ExtendedCashierOrder
     }
   } catch {}
 
@@ -1030,7 +1110,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
   const amountCoins = Number(order.amountSugarCoins || 0)
   const commissionCoins = Number(order.cashierCommissionCoins || Math.round(amountCoins * 0.03))
   const totalFiatRequestedUSD = Number(order.amountFiat || (amountCoins / 100))
-  const isVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || order.paymentMethod === 'usdt_bep20' || order.paymentMethod === 'usdt_trc20_vip')
+  const isVip = Boolean(order.isVip || order.isVipWithdraw || order.paymentMethod === 'usdt_bep20' || order.paymentMethod === 'usdt_trc20_vip')
   const withdrawalFeePercent = isVip ? 0.10 : 0.05
   const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
   const netPayoutUSD = parseFloat(Math.max(0, totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
@@ -1047,7 +1127,7 @@ Hola ${order.playerName || 'Jugador'}, hemos enviado tus fondos a tu cuenta de d
 🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(withdrawalFeePercent * 100)}%)
 💰 Monto Neto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency || 'USDT'}
 🪙 Sugar Coins Liquidados: -${amountCoins} SC
-🏦 Destino: ${(order.paymentMethod || 'USDT').toUpperCase()} (${(order as any).paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
+🏦 Destino: ${(order.paymentMethod || 'USDT').toUpperCase()} (${order.paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
 🔗 Hash / TxID Oficial: ${payoutTxId}
 👨‍💼 Cajero Responsable: ${cashierName || 'Cajero Oficial'}
 ━━━━━━━━━━━━━━━━━━━━
@@ -1078,8 +1158,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
       lastMessageTime: now,
       hasUnreadCashierMessage: true
     }, { merge: true })
-  } catch (err: any) {
-    console.warn('[completeWithdrawalOrder Fallback] Error actualizando orden en Firestore SDK:', err?.message)
+  } catch (err: unknown) {
+    console.warn('[completeWithdrawalOrder Fallback] Error actualizando orden en Firestore SDK:', getErrorMessage(err))
   }
 
   // 2.2. Liberar saldo de Escrow del jugador y actualizar historial
@@ -1097,7 +1177,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
 
         const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
         let matched = false
-        const cleanHistory: any[] = []
+          const cleanHistory: PlayerWalletTransaction[] = []
         for (const tx of existingHistory) {
           const isTargetOrder = tx.orderId === orderId || (tx.description && tx.description.includes(orderId.slice(0, 8)))
           if (isTargetOrder) {
@@ -1131,26 +1211,20 @@ Conserva este mensaje como comprobante formal de la transacción.`
           })
         }
 
-        const userUpdates: any = {
-          escrowLockedCoins: newEscrow,
+        const isDeficit = currentEscrow < amountCoins
+        const finalCoins = isDeficit ? Math.max(0, currentCoins - (amountCoins - currentEscrow)) : newCoins
+        const finalEscrow = isDeficit ? 0 : newEscrow
+
+        await updateDoc(userDocRef, {
+          coins: finalCoins,
+          escrowLockedCoins: finalEscrow,
           walletHistory: cleanHistory.slice(0, 50),
           lastActiveAt: now
-        }
-
-        // Candado Defensivo Anti-Rebote:
-        // Si el saldo no estaba completamente retenido en escrow, debitar el déficit directamente de coins
-        if (currentEscrow < amountCoins) {
-          const deficit = amountCoins - currentEscrow
-          newCoins = Math.max(0, currentCoins - deficit)
-          userUpdates.coins = newCoins
-          userUpdates.escrowLockedCoins = 0
-        }
-
-        await updateDoc(userDocRef, userUpdates)
+        })
         escrowReleasedInCloud = true
       }
-    } catch (userErr: any) {
-      console.warn('[completeWithdrawalOrder Fallback] Error liberando escrow en usuario SDK:', userErr?.message)
+    } catch (userErr: unknown) {
+      console.warn('[completeWithdrawalOrder Fallback] Error liberando escrow en usuario SDK:', getErrorMessage(userErr))
     }
 
     // Fallback REST para garantizar liberación de Escrow en Firestore si SDK falló
@@ -1175,8 +1249,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
             })
           })
         }
-      } catch (restErr: any) {
-        console.warn('[completeWithdrawalOrder Fallback] Error en REST patch de escrow:', restErr?.message)
+      } catch (restErr: unknown) {
+        console.warn('[completeWithdrawalOrder Fallback] Error en REST patch de escrow:', getErrorMessage(restErr))
       }
     }
   }
@@ -1234,7 +1308,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
     if (configSnap.exists()) {
       const configData = configSnap.data() || {}
       const accounts = Array.isArray(configData.accounts) ? configData.accounts : []
-      const updatedAccounts = accounts.map((acc: any) => {
+      const updatedAccounts = accounts.map((acc: CashierAccountConfig) => {
         if (acc.uid === cashierUid) {
           return {
             ...acc,
@@ -1248,8 +1322,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
       })
       await updateDoc(configDocRef, { accounts: updatedAccounts, updatedAt: now })
     }
-  } catch (cashierErr: any) {
-    console.warn('[completeWithdrawalOrder Fallback] Error actualizando cajero:', cashierErr?.message)
+  } catch (cashierErr: unknown) {
+    console.warn('[completeWithdrawalOrder Fallback] Error actualizando cajero:', getErrorMessage(cashierErr))
   }
 
   // 2.4. Registrar arqueo en cashier_shifts_ledger
@@ -1285,8 +1359,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
       [feeKey]: increment(withdrawalFeeUSD),
       lastAuditedAt: now
     }, { merge: true })
-  } catch (ledErr: any) {
-    console.warn('[completeWithdrawalOrder Fallback] Error en ledger:', ledErr?.message)
+  } catch (ledErr: unknown) {
+    console.warn('[completeWithdrawalOrder Fallback] Error en ledger:', getErrorMessage(ledErr))
   }
 
   return {
@@ -1311,11 +1385,11 @@ export async function rechargeCashierFloatAtomics(params: {
 
   if (adminDb && hasAdminCredentials) {
     try {
-      return await (adminDb as any).runTransaction(async (transaction: any) => {
+      return await (adminDb as unknown as AdminFirestoreService).runTransaction(async (transaction: AdminTransactionHandler) => {
         const cashierRef = adminDb.collection('cashier_profiles').doc(cashierUid)
         const cashierSnap = await transaction.get(cashierRef)
 
-        const prevFloatUSDT = cashierSnap.exists ? Number(cashierSnap.data()?.floatBalanceUSDT || 0) : 0
+        const prevFloatUSDT = cashierSnap.exists ? Number((cashierSnap.data() as CashierProfileData)?.floatBalanceUSDT || 0) : 0
         const newFloatUSDT = prevFloatUSDT + amountUSDT
         const newFloatCoins = Math.round(newFloatUSDT * 100)
 
@@ -1360,8 +1434,8 @@ export async function rechargeCashierFloatAtomics(params: {
           newFloatCoins
         }
       })
-    } catch (e: any) {
-      console.warn('[rechargeCashierFloatAtomics] Fallback a cliente SDK:', e?.message)
+    } catch (e: unknown) {
+      console.warn('[rechargeCashierFloatAtomics] Fallback a cliente SDK:', getErrorMessage(e))
     }
   }
 
@@ -1371,7 +1445,7 @@ export async function rechargeCashierFloatAtomics(params: {
   try {
     const cashierDocRef = doc(db, 'cashier_profiles', cashierUid)
     const cashierSnap = await getDoc(cashierDocRef)
-    const prevFloatUSDT = cashierSnap.exists() ? Number(cashierSnap.data()?.floatBalanceUSDT || 0) : 0
+    const prevFloatUSDT = cashierSnap.exists() ? Number((cashierSnap.data() as CashierProfileData)?.floatBalanceUSDT || 0) : 0
     fallbackNewUSDT = prevFloatUSDT + amountUSDT
     fallbackNewCoins = Math.round(fallbackNewUSDT * 100)
 
@@ -1397,8 +1471,8 @@ export async function rechargeCashierFloatAtomics(params: {
       notes: `Asignación de saldo flotante por Super Admin ${adminName}: ${notes}`,
       timestamp: now
     })
-  } catch (err: any) {
-    console.warn('[rechargeCashierFloatAtomics Fallback] Error:', err?.message)
+  } catch (err: unknown) {
+    console.warn('[rechargeCashierFloatAtomics Fallback] Error:', getErrorMessage(err))
   }
 
   return {
