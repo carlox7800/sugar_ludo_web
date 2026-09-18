@@ -90,7 +90,8 @@ service cloud.firestore {
       
       // Mensajes y chat de la orden
       match /messages/{messageId} {
-        allow read, write: if true;
+        allow read: if true;
+        allow write: if request.auth != null;
       }
     }
     
@@ -140,7 +141,8 @@ service cloud.firestore {
     // 6. COMUNICACIONES INTERNAS DE STAFF
     // ========================================================================
     match /staff_broadcast_messages/{msgId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false; // Emisión exclusiva del servidor autoritativo (Admin SDK / API protegida)
     }
 
     match /staff_private_chats/{chatId} {
