@@ -1,24 +1,26 @@
 'use client'
 
-import React, { useState, useEffect, use } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
 import { MOCK_ORDERS, MOCK_CHAT_MESSAGES } from '../../../../lib/mock-data'
 import { CashierOrder, OrderChatMessage } from '../../../../types/cashier'
-import { ReceiptImageViewer } from '../../../../components/receipts/ReceiptImageViewer'
-import { OrderChatPanel } from '../../../../components/chat/OrderChatPanel'
 import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/WithdrawalAuditInspectorCard'
 import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../../../lib/cashier-logger'
 import { db } from '../../../../lib/firebase'
-import { doc, onSnapshot, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, ShieldCheck, ShieldAlert, Eye, Clock, CheckCircle2, AlertTriangle, AlertCircle, Wallet, Send, Check, Copy, RefreshCw, Crown } from 'lucide-react'
+import { doc, onSnapshot, getDoc, updateDoc, setDoc } from 'firebase/firestore'
+import { ArrowLeft, Wallet, Check, Copy, Crown, Clock } from 'lucide-react'
 import { clsx } from 'clsx'
 import { OrdersCache } from '../../../../lib/orders-cache'
 import { useAdminAuth } from '../../../../lib/admin-auth-context'
 import { getWithdrawalSla } from '../../../../lib/sla-calculator'
-
-import { useParams, useRouter } from 'next/navigation'
 import { getStaffAuthHeaders } from '@/lib/auth-headers'
+
+import { OrderHeaderTimer } from './components/OrderHeaderTimer'
+import { OrderReceiptViewer } from './components/OrderReceiptViewer'
+import { OrderChatStream } from './components/OrderChatStream'
+import { OrderActionButtons, PayoutActionButton } from './components/OrderActionButtons'
 
 function deduplicateOrderMessages(messages: OrderChatMessage[], orderId: string): OrderChatMessage[] {
   if (!Array.isArray(messages)) return []
@@ -68,7 +70,7 @@ export default function OrderDetailPage() {
 
   const [liveCashierProfile, setLiveCashierProfile] = useState<{ floatBalanceCoins: number; floatBalanceUSDT: number } | null>(null)
 
-  const [currentCashierSession, setCurrentCashierSession] = useState<{ uid: string; name: string; email?: string }>(() => {
+  const [currentCashierSession, setCurrentCashierSession] = useState<{ uid: string; name: string; email?: string; floatBalanceCoins?: number; floatBalanceUSDT?: number }>(() => {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('sugar_cashier_session')
@@ -89,17 +91,17 @@ export default function OrderDetailPage() {
           const parsed = JSON.parse(saved)
           if (parsed && parsed.uid) {
             const live = cashierList.find(c => c.uid === parsed.uid || (parsed.email && c.email.toLowerCase() === parsed.email.toLowerCase()))
-            setCurrentCashierSession((prev: any) => ({
+            setCurrentCashierSession((prev) => ({
               ...(live || parsed),
               floatBalanceCoins: prev?.floatBalanceCoins || (live || parsed)?.floatBalanceCoins || 0,
               floatBalanceUSDT: prev?.floatBalanceUSDT !== undefined ? prev.floatBalanceUSDT : (live || parsed)?.floatBalanceUSDT
             }))
           }
         } else if (cashierList.length > 0) {
-          setCurrentCashierSession((prev: any) => ({
+          setCurrentCashierSession((prev) => ({
             ...cashierList[0],
-            floatBalanceCoins: prev?.floatBalanceCoins || cashierList[0].floatBalanceCoins || 0,
-            floatBalanceUSDT: prev?.floatBalanceUSDT !== undefined ? prev.floatBalanceUSDT : cashierList[0].floatBalanceUSDT
+            floatBalanceCoins: prev?.floatBalanceCoins || cashierList[0]?.floatBalanceCoins || 0,
+            floatBalanceUSDT: prev?.floatBalanceUSDT !== undefined ? prev.floatBalanceUSDT : (cashierList[0] as unknown as { floatBalanceUSDT?: number })?.floatBalanceUSDT
           }))
         }
       } catch {}
@@ -109,223 +111,118 @@ export default function OrderDetailPage() {
   // Escuchar saldo flotante real de trabajo desde Firestore (cashier_profiles/{uid})
   useEffect(() => {
     if (!currentCashierSession?.uid) return
-    let unsubProfile: (() => void) | null = null
-    try {
-      const profileRef = doc(db, 'cashier_profiles', currentCashierSession.uid)
-      unsubProfile = onSnapshot(profileRef, (snap) => {
-        if (snap.exists()) {
-          const pData = snap.data()
-          const fUSDT = Number(pData.floatBalanceUSDT ?? (Number(pData.floatBalanceCoins || 0) / 100))
-          const fCoins = Number(pData.floatBalanceCoins ? pData.floatBalanceCoins : Math.round(fUSDT * 100))
+    cashierLogger.firestore(`Iniciando listener de saldo flotante en cashier_profiles/${currentCashierSession.uid}`)
+
+    const profileDocRef = doc(db, 'cashier_profiles', currentCashierSession.uid)
+    const unsub = onSnapshot(
+      profileDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data()
+          const coins = Number(data.floatBalanceCoins ?? Math.round(Number(data.floatBalanceUSDT || 0) * 100))
+          const usdt = Number(data.floatBalanceUSDT ?? (coins / 100))
+
           setLiveCashierProfile({
-            floatBalanceCoins: fCoins,
-            floatBalanceUSDT: fUSDT
+            floatBalanceCoins: coins,
+            floatBalanceUSDT: usdt
           })
-          setCurrentCashierSession((prev: any) => ({
+          setCurrentCashierSession((prev) => ({
             ...(prev || {}),
-            floatBalanceCoins: fCoins,
-            floatBalanceUSDT: fUSDT
+            floatBalanceCoins: coins,
+            floatBalanceUSDT: usdt
           }))
+          cashierLogger.firestore(`Saldo de perfil actualizado en vivo: $${usdt.toFixed(2)} USDT (${coins} SC)`)
         }
-      }, (err) => {
-        console.debug('[OrderDetailPage] Profile snapshot notice:', err?.message)
-      })
-    } catch {}
+      },
+      (err) => {
+        cashierLogger.error(`Error en listener de cashier_profiles: ${err?.message}`)
+      }
+    )
 
     return () => {
-      if (unsubProfile) unsubProfile()
+      unsub()
     }
   }, [currentCashierSession?.uid])
 
   const [order, setOrder] = useState<CashierOrder | null>(() => {
-    const cached = OrdersCache.get()
-    return cached?.find((o) => o.id === orderId) || null
+    const cached = OrdersCache.get()?.find((o) => o.id === orderId)
+    if (cached) return cached
+    const found = MOCK_ORDERS.find((o) => o.id === orderId)
+    if (found) return found
+    return null
   })
-  const [messages, setMessages] = useState<OrderChatMessage[]>([])
-  const [isReceiptOpen, setIsReceiptOpen] = useState(false)
-  const [activeReceiptUrl, setActiveReceiptUrl] = useState<string | undefined>(undefined)
-  const [isDisputeOpen, setIsDisputeOpen] = useState(false)
-  const [notification, setNotificationState] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
 
-  const setNotification = (val: string | { message: string; type: 'success' | 'error' | 'info' } | null) => {
-    if (!val) {
-      setNotificationState(null)
-      return
-    }
-    if (typeof val === 'string') {
-      const isErr = val.toLowerCase().includes('error') || val.toLowerCase().includes('fallo') || val.toLowerCase().includes('denegad') || val.toLowerCase().includes('insuficiente')
-      setNotificationState({ message: val, type: isErr ? 'error' : 'success' })
-    } else {
-      setNotificationState(val)
-    }
-    setTimeout(() => setNotificationState(null), 4500)
-  }
-  const [payoutTxId, setPayoutTxId] = useState('')
-  const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false)
-  const [isDirectValidationModalOpen, setIsDirectValidationModalOpen] = useState(false)
-  const [directTxId, setDirectTxId] = useState('')
+  const [messages, setMessages] = useState<OrderChatMessage[]>(() => {
+    return MOCK_CHAT_MESSAGES[orderId] || []
+  })
+
+  const [notification, setNotification] = useState<string | null>(null)
   const [copiedHash, setCopiedHash] = useState(false)
-  const [disputeReason, setDisputeReason] = useState('')
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false)
+  const [activeReceiptUrl, setActiveReceiptUrl] = useState('')
+  const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false)
+  const [isDisputeOpen, setIsDisputeOpen] = useState(false)
+  const [isValidating, setIsValidating] = useState(false)
+  const [isValidatingPayout, setIsValidatingPayout] = useState(false)
   const [isEscalating, setIsEscalating] = useState(false)
 
-  const handleEscalateToDispute = async () => {
-    if (!order || !disputeReason.trim()) return
-    setIsEscalating(true)
-    const now = Date.now()
-    const reason = disputeReason.trim()
-
-    try {
-      // 1. Actualizar orden en Firestore
-      const orderRef = doc(db, 'cashier_orders', order.id)
-      await updateDoc(orderRef, {
-        status: 'disputed',
-        disputeReason: reason,
-        disputedAt: now,
-        disputedBy: currentCashierSession?.name || 'Cajero'
-      })
-
-      // 2. Crear caso de disputa en dispute_cases
-      const disputeRef = doc(db, 'dispute_cases', order.id)
-      await setDoc(disputeRef, {
-        id: order.id,
-        orderId: order.id,
-        orderType: order.type,
-        playerUid: order.playerUid || (order as any).userId || 'usr_player',
-        playerName: order.playerName || (order as any).userName || 'Jugador Sugar',
-        cashierUid: currentCashierSession?.uid || 'csh_001',
-        cashierName: currentCashierSession?.name || 'Cajero Oficial',
-        amountSugarCoins: order.amountSugarCoins,
-        amountFiat: order.amountFiat,
-        currency: order.currency,
-        reason,
-        receiptUrl: order.receiptUrl || '',
-        status: 'open',
-        createdAt: now
-      }, { merge: true })
-
-      // 3. Notificar en chat de orden
-      await handleSendMessage(`⚠️ [ORDEN ESCALADA A DISPUTA]: ${reason}. El caso ha sido remitido al Super Admin para arbitraje final.`)
-
-      setOrder((prev) => (prev ? { ...prev, status: 'disputed' } : null))
-      setIsDisputeOpen(false)
-      setDisputeReason('')
-      setNotification('¡Orden escalada a Disputa oficial ante la Administración!')
-      setTimeout(() => setNotification(null), 4000)
-    } catch (e: any) {
-      console.error('[CashierDispute] Error escalando:', e)
-      setNotification(`Error al escalar: ${e.message}`)
-      setTimeout(() => setNotification(null), 4000)
-    } finally {
-      setIsEscalating(false)
-    }
-  }
-
-  // Baseline instant fallback to guarantee immediate UI rendering (<50ms)
+  // Sincronización en tiempo real de la orden desde Firestore
   useEffect(() => {
     if (!orderId) return
-    cashierLogger.info(`Abriendo vista de detalle para Orden #${orderId.slice(0, 10)}`, { orderId })
 
-    // 1. Check local storage / OrdersCache
-    const cached = OrdersCache.get()
-    const foundCached = cached?.find((o) => o.id === orderId)
-    if (foundCached) {
-      setOrder(foundCached)
-      cashierLogger.info(`Orden cargada desde caché local de memoria`, { id: foundCached.id, status: foundCached.status, type: foundCached.type })
-      if (foundCached.receiptUrl) setActiveReceiptUrl(foundCached.receiptUrl)
-    }
-
-    // 2. Fetch single order API directly (/api/cashier/orders/[id])
-    cashierLogger.api(`Consultando API interna /api/cashier/orders/${orderId}`)
-    fetch(`/api/cashier/orders/${orderId}`, {
-      headers: {
-        ...getStaffAuthHeaders('cashier')
-      }
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.order) {
-          setOrder(data.order)
-          cashierLogger.api(`Respuesta exitosa de /api/cashier/orders/${orderId}`, { status: data.order.status, player: data.order.playerName })
-          if (data.order.receiptUrl) setActiveReceiptUrl(data.order.receiptUrl)
-        }
-      })
-      .catch((err) => {
-        cashierLogger.error(`Error al consultar /api/cashier/orders/${orderId}`, { message: err?.message })
-      })
-
-    // 3. Direct Firestore live subscription
     let unsub: (() => void) | null = null
-    try {
-      cashierLogger.firestore(`Iniciando listener onSnapshot en cashier_orders/${orderId}`)
-      const orderDocRef = doc(db, 'cashier_orders', orderId)
-      unsub = onSnapshot(
-        orderDocRef,
-        (snap) => {
-          if (snap.exists()) {
-            const data = { ...snap.data(), id: snap.id } as CashierOrder
-            setOrder(data)
-            if (Array.isArray((data as any).supportMessages)) {
-              setMessages((data as any).supportMessages)
+    const startListener = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (unsub) return
+
+      try {
+        const orderDocRef = doc(db, 'cashier_orders', orderId)
+        unsub = onSnapshot(
+          orderDocRef,
+          (docSnap) => {
+            if (docSnap.exists()) {
+              const liveData = { id: docSnap.id, ...docSnap.data() } as CashierOrder
+              setOrder(liveData)
+              OrdersCache.updateOrder(liveData)
+
+              if (Array.isArray(docSnap.data()?.supportMessages)) {
+                setMessages(docSnap.data().supportMessages)
+              }
             }
-            cashierLogger.firestore(`Evento onSnapshot recibido para orden #${orderId.slice(0, 8)}`, {
-              status: data.status,
-              type: data.type,
-              amount: data.amountFiat,
-              currency: data.currency,
-              refNumber: data.receiptReferenceNumber,
-              messagesCount: Array.isArray((data as any).supportMessages) ? (data as any).supportMessages.length : 0
-            })
-            if (data.receiptUrl) setActiveReceiptUrl(data.receiptUrl)
-          } else {
-            cashierLogger.firestore(`Documento cashier_orders/${orderId} no existe en Firestore`)
+          },
+          (err) => {
+            cashierLogger.error(`Error en onSnapshot de orden ${orderId}: ${err?.message}`)
           }
-        },
-        (err) => {
-          cashierLogger.error(`Error en listener onSnapshot de orden #${orderId.slice(0, 8)}`, {
-            code: err?.code,
-            message: err?.message
-          })
-        }
-      )
-    } catch (e: any) {
-      cashierLogger.error(`Excepción al conectar listener Firestore`, { message: e?.message })
+        )
+      } catch {}
     }
 
-    // 4. Fallback timeout: if still null after 800ms, populate standard object so UI renders
-    const timer = setTimeout(() => {
-      setOrder((prev) => {
-        if (!prev) {
-          cashierLogger.info(`Inicializando objeto de orden predeterminado tras timeout de 800ms`)
-          return {
-            id: orderId,
-            type: orderId.includes('wit') ? 'withdraw' : 'deposit',
-            status: 'pending',
-            playerUid: 'usr_player',
-            playerName: 'Jugador',
-            amountFiat: 50.0,
-            currency: 'USDT',
-            exchangeRate: 100,
-            amountSugarCoins: 5000,
-            cashierCommissionCoins: orderId.includes('wit') ? 150 : 100,
-            paymentMethod: 'usdt_trc20',
-            createdAt: Date.now(),
-            expiresAt: Date.now() + 1800000
-          } as CashierOrder
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (unsub) {
+          unsub()
+          unsub = null
         }
-        return prev
-      })
-    }, 800)
+      } else {
+        startListener()
+      }
+    }
+
+    startListener()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
+    }
 
     return () => {
       if (unsub) unsub()
-      clearTimeout(timer)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
     }
   }, [orderId])
 
   const [mounted, setMounted] = useState(false)
   const [, setTick] = useState(0)
-  const [isValidating, setIsValidating] = useState(false)
-  const [isValidatingPayout, setIsValidatingPayout] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -351,18 +248,18 @@ export default function OrderDetailPage() {
   const isTerminated = isCompleted || isCancelled
   const isWithdraw = order.type === 'withdraw'
 
-  // Saldo flotante real de trabajo del cajero activo (prioriza listener en vivo liveCashierProfile)
   const cashierFloatUSDT = liveCashierProfile?.floatBalanceUSDT
-    ?? Number((currentCashierSession as any).floatBalanceUSDT
+    ?? Number(currentCashierSession.floatBalanceUSDT
     ?? (cashierList.find(c => c.uid === currentCashierSession.uid)?.floatBalanceUSDT
-    ?? (((currentCashierSession as any).floatBalanceCoins || 0) / 100)))
+    ?? ((currentCashierSession.floatBalanceCoins || 0) / 100)))
+
   const cashierFloatCoins = liveCashierProfile?.floatBalanceCoins
-    ?? Number((currentCashierSession as any).floatBalanceCoins
+    ?? Number(currentCashierSession.floatBalanceCoins
     ?? Math.round(cashierFloatUSDT * 100))
 
   const slaInfo = getWithdrawalSla(order)
   const totalFiatRequestedUSD = Number(order.amountFiat || (Number(order.amountSugarCoins || 0) / 100))
-  const isVipOrder = Boolean(slaInfo?.isVip || (order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
+  const isVipOrder = Boolean(slaInfo?.isVip || order.isVip || order.isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
   const withdrawalFeePercent = isVipOrder ? 0.10 : 0.05
   const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
   const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
@@ -391,16 +288,15 @@ export default function OrderDetailPage() {
     }
     setMessages((prev) => [...prev, newMsg])
 
-    // 1. Escritura directa a cashier_orders/{order.id}.supportMessages en Firestore
     try {
-      cashierLogger.firestore(`Guardando mensaje en cashier_orders/${order.id}.supportMessages`)
       const orderDocRef = doc(db, 'cashier_orders', order.id)
       const orderSnap = await getDoc(orderDocRef)
-      const existingMsgs = (orderSnap.exists() && Array.isArray(orderSnap.data()?.supportMessages))
-        ? orderSnap.data().supportMessages
+      const snapData = orderSnap.exists() ? (orderSnap.data() as Record<string, unknown>) : null
+      const existingMsgs: unknown[] = (snapData && Array.isArray(snapData.supportMessages))
+        ? (snapData.supportMessages as unknown[])
         : []
 
-      const cleanMsg: any = {
+      const cleanMsg: Record<string, unknown> = {
         id: newMsg.id,
         orderId: order.id,
         senderUid: currentCashierSession.uid,
@@ -429,15 +325,11 @@ export default function OrderDetailPage() {
           hasUnreadCashierMessage: true
         })
       }
-      cashierLogger.firestore(`Mensaje guardado exitosamente en cashier_orders/${order.id}`)
-    } catch (fsErr: any) {
-      cashierLogger.error(`Error guardando mensaje en cashier_orders/${order.id}`, {
-        code: fsErr?.code,
-        message: fsErr?.message
-      })
+    } catch (fsErr: unknown) {
+      const errMsg = fsErr instanceof Error ? fsErr.message : String(fsErr)
+      cashierLogger.error(`Error guardando mensaje en cashier_orders/${order.id}`, { message: errMsg })
     }
 
-    // 2. Post al backend API
     try {
       fetch(`/api/cashier/orders/${order.id}/message`, {
         method: 'POST',
@@ -457,37 +349,23 @@ export default function OrderDetailPage() {
     } catch {}
   }
 
+
+
   const handleApprove = async (verifiedTxId?: string) => {
     const finalRef = verifiedTxId || order.receiptReferenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
     const depositUSD = Number(order.amountFiat || (order.amountSugarCoins / 100))
     const depositCoins = Number(order.amountSugarCoins || Math.round(depositUSD * 100))
 
-    cashierLogger.action(`Iniciando Validación y Liberación de Depósito`, {
-      orderId: order.id,
-      amountFiat: depositUSD,
-      amountSugarCoins: depositCoins,
-      playerUid: order.playerUid,
-      referenceNumber: finalRef
-    })
     setIsValidating(true)
-    
-    // 1. LocalStorage & OrdersCache instant optimistic update
-    const updatedOrder = {
+    const updatedOrder: CashierOrder = {
       ...order,
-      status: 'completed' as const,
+      status: 'completed',
       completedAt: Date.now(),
-      receiptReferenceNumber: finalRef,
-      verifiedAt: Date.now()
+      receiptReferenceNumber: finalRef
     }
     OrdersCache.updateOrder(updatedOrder)
-    if (typeof window !== 'undefined') {
-      const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
-      const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
-      localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
-    }
 
     try {
-      // 2. Llamada exclusiva y autoritativa al backend (runTransaction atómico en servidor)
       const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
         headers: {
@@ -508,7 +386,6 @@ export default function OrderDetailPage() {
         throw new Error(result.error || 'Error al validar el depósito en el servidor')
       }
 
-      // 3. Inyección del comprobante formal al chat
       const depositNoticeText = `✅ ¡DEPÓSITO VALIDADO CON ÉXITO!
 
 Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están acreditados en tu cuenta:
@@ -523,67 +400,35 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       await handleSendMessage(depositNoticeText)
 
       setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalRef } : null))
-      setIsDirectValidationModalOpen(false)
       setNotification(`¡Depósito #${order.id.slice(0, 10)} validado y liberado con éxito (+${depositCoins} SC acreditados al jugador)!`)
-    } catch (e: any) {
-      cashierLogger.error(`Error durante la validación del depósito #${order.id.slice(0, 8)}`, {
-        code: e?.code,
-        message: e?.message
-      })
-      setNotification(`Error al validar depósito: ${e?.message || 'Fallo de conexión'}`)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Fallo de conexión'
+      setNotification(`Error al validar depósito: ${msg}`)
     } finally {
       setIsValidating(false)
     }
   }
 
-  const handleConfirmPayout = async () => {
-    const finalPayoutRef = payoutTxId.trim() || `TX-PAYOUT-${Date.now().toString(36).toUpperCase()}`
-    setPayoutTxId(finalPayoutRef)
+  const handleConfirmPayout = async (payoutTxIdParam: string) => {
+    const finalPayoutRef = payoutTxIdParam.trim() || `TX-PAYOUT-${Date.now().toString(36).toUpperCase()}`
 
-    const totalFiatRequestedUSD = Number(order.amountFiat || (order.amountSugarCoins / 100))
-    const isVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
-    const feePercent = isVip ? 0.10 : 0.05
-    const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * feePercent).toFixed(2))
-    const netPayoutUSD = parseFloat((totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
-    const netPayoutCoins = Math.round(netPayoutUSD * 100)
-    const feeCoins = Math.round(withdrawalFeeUSD * 100)
-
-    // Candado crítico de seguridad: Bloquear si no hay saldo flotante suficiente
     if (cashierFloatUSDT < netPayoutUSD) {
-      setNotification(`⛔ OPERACIÓN DENEGADA: Saldo insuficiente ($${cashierFloatUSDT.toFixed(2)} USDT disponibles). Se requieren $${netPayoutUSD.toFixed(2)} USDT. Solicita recarga al Administrador.`)
-      setIsValidatingPayout(false)
+      setNotification(`⛔ OPERACIÓN DENEGADA: Saldo insuficiente ($${cashierFloatUSDT.toFixed(2)} USDT disponibles). Se requieren $${netPayoutUSD.toFixed(2)} USDT.`)
       return
     }
 
-    cashierLogger.action(`Iniciando Liquidación de Retiro`, {
-      orderId: order.id,
-      playerUid: order.playerUid,
-      amountFiat: totalFiatRequestedUSD,
-      netPayoutUSD,
-      withdrawalFeeUSD,
-      payoutTxId: finalPayoutRef
-    })
     setIsValidatingPayout(true)
-
-    // 1. LocalStorage & OrdersCache instant optimistic update
-    const updatedOrder = {
+    const updatedOrder: CashierOrder = {
       ...order,
-      status: 'completed' as const,
+      status: 'completed',
       completedAt: Date.now(),
       receiptReferenceNumber: finalPayoutRef,
       netPayoutUSD,
-      withdrawalFeeUSD,
-      settledByCashierUid: currentCashierSession.uid
+      withdrawalFeeUSD
     }
     OrdersCache.updateOrder(updatedOrder)
-    if (typeof window !== 'undefined') {
-      const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
-      const updated = localOrders.map((o) => (o.id === order.id ? updatedOrder : o))
-      localStorage.setItem('sugar_cashier_orders', JSON.stringify(updated))
-    }
 
     try {
-      // 2. Ejecutar liquidación atómica en el backend autoritativo (completeWithdrawalOrder en servidor)
       const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
         headers: {
@@ -604,33 +449,20 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
         throw new Error(result.error || 'Error al liquidar el retiro en el servidor')
       }
 
-      // Cerrar modal inmediatamente tras confirmación del backend para evitar alertas espurias
-      setIsPayoutModalOpen(false)
       setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalPayoutRef } : null))
       setNotification(`¡Retiro #${order.id.slice(0, 10)} completado y liquidado con TxID: ${finalPayoutRef}!`)
       setTimeout(() => setNotification(null), 4000)
 
-      // 2.1. Actualizar estado reactivo local del cajero y persistir globalmente
       const newUSDT = Math.max(0, parseFloat((cashierFloatUSDT - netPayoutUSD).toFixed(2)))
       const newCoins = Math.round(newUSDT * 100)
 
-      setLiveCashierProfile({
-        floatBalanceCoins: newCoins,
-        floatBalanceUSDT: newUSDT
-      })
-      setCurrentCashierSession((prev: any) => ({
-        ...(prev || {}),
-        floatBalanceCoins: newCoins,
-        floatBalanceUSDT: newUSDT
-      }))
+      setLiveCashierProfile({ floatBalanceCoins: newCoins, floatBalanceUSDT: newUSDT })
+      setCurrentCashierSession((prev) => ({ ...(prev || {}), floatBalanceCoins: newCoins, floatBalanceUSDT: newUSDT }))
 
       try {
         await updateCashierFloat(currentCashierSession.uid, newCoins, newUSDT, netPayoutUSD)
-      } catch (floatErr: any) {
-        console.warn('[handleConfirmPayout] Error en updateCashierFloat:', floatErr?.message)
-      }
+      } catch {}
 
-      // 2.2. Emitir evento BroadcastChannel para sincronizar otras pestañas y pantallas (0 lecturas)
       try {
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
           const ch = new BroadcastChannel('sugar_ludo_social_channel')
@@ -645,45 +477,79 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
         }
       } catch {}
 
-      // 3. Inyección automática del comprobante de liquidación al chat de soporte
-      const payoutNoticeText = `💸 ¡${isVip ? 'RETIRO VIP' : 'RETIRO'} LIQUIDADO Y TRANSFERIDO!
+      const destAddress = (order as unknown as { paymentAddress?: string }).paymentAddress || order.receiptReferenceNumber || (typeof order.playerPaymentAccount === 'string' ? order.playerPaymentAccount : order.playerPaymentAccount?.accountNumber) || 'Dirección registrada'
+
+      const payoutNoticeText = `💸 ¡${isVipOrder ? 'RETIRO VIP' : 'RETIRO'} LIQUIDADO Y TRANSFERIDO!
 
 Hola ${order.playerName}, hemos enviado tus fondos a tu cuenta de destino:
 ━━━━━━━━━━━━━━━━━━━━
 💵 Monto Solicitado: $${totalFiatRequestedUSD.toFixed(2)} ${order.currency}
-⚡ Modalidad: Retiro ${isVip ? 'VIP (Prioridad Máxima - Comisión 10%)' : 'Estándar (Comisión 5%)'}
-🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(feePercent * 100)}%)
+⚡ Modalidad: Retiro ${isVipOrder ? 'VIP (Prioridad Máxima - Comisión 10%)' : 'Estándar (Comisión 5%)'}
+🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(withdrawalFeePercent * 100)}%)
 💰 Monto Neto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency}
 🪙 Sugar Coins Liquidados: -${order.amountSugarCoins} SC
-🏦 Destino: ${order.paymentMethod.toUpperCase()} (${(order as any).paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})
+🏦 Destino: ${order.paymentMethod.toUpperCase()} (${destAddress})
 🔗 Hash / TxID Oficial: ${finalPayoutRef}
 👨‍💼 Cajero Responsable: ${currentCashierSession.name}
 ━━━━━━━━━━━━━━━━━━━━
 Conserva este mensaje como comprobante formal de la transacción.`
 
       await handleSendMessage(payoutNoticeText)
-    } catch (e: any) {
-      cashierLogger.error(`Error durante la liquidación de retiro #${order.id.slice(0, 8)}`, {
-        code: e?.code,
-        message: e?.message
-      })
-      // REVERSIÓN: Si el backend rechazó la orden (ej: FLOAT_INSUFFICIENT), revertir optimistic update
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'No se pudo liquidar la orden'
+      setNotification(`⛔ ERROR: ${msg}`)
       OrdersCache.updateOrder(order)
-      if (typeof window !== 'undefined') {
-        const localOrders: CashierOrder[] = JSON.parse(localStorage.getItem('sugar_cashier_orders') || '[]')
-        const reverted = localOrders.map((o) => (o.id === order.id ? order : o))
-        localStorage.setItem('sugar_cashier_orders', JSON.stringify(reverted))
-      }
       setOrder(order)
-      setIsPayoutModalOpen(false)
-      setNotification({ message: `⛔ ERROR: ${e?.message || 'No se pudo liquidar la orden'}`, type: 'error' })
     } finally {
       setIsValidatingPayout(false)
     }
   }
 
+  const handleEscalateToDispute = async (reason: string) => {
+    if (!order || !reason.trim()) return
+    setIsEscalating(true)
+    const now = Date.now()
+
+    try {
+      const orderRef = doc(db, 'cashier_orders', order.id)
+      await updateDoc(orderRef, {
+        status: 'disputed',
+        disputeReason: reason,
+        disputedAt: now,
+        disputedBy: currentCashierSession?.name || 'Cajero'
+      })
+
+      const disputeRef = doc(db, 'dispute_cases', order.id)
+      await setDoc(disputeRef, {
+        id: order.id,
+        orderId: order.id,
+        orderType: order.type,
+        playerUid: order.playerUid || 'usr_player',
+        playerName: order.playerName || 'Jugador Sugar',
+        cashierUid: currentCashierSession?.uid || 'csh_001',
+        cashierName: currentCashierSession?.name || 'Cajero Oficial',
+        amountSugarCoins: order.amountSugarCoins,
+        amountFiat: order.amountFiat,
+        currency: order.currency,
+        reason,
+        receiptUrl: order.receiptUrl || '',
+        status: 'open',
+        createdAt: now
+      }, { merge: true })
+
+      await handleSendMessage(`⚠️ [ORDEN ESCALADA A DISPUTA]: ${reason}. El caso ha sido remitido al Super Admin para arbitraje final.`)
+      setOrder((prev) => (prev ? { ...prev, status: 'disputed' } : null))
+      setNotification('¡Orden escalada a Disputa oficial ante la Administración!')
+      setTimeout(() => setNotification(null), 4000)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Error al escalar'
+      setNotification(`Error al escalar: ${msg}`)
+    } finally {
+      setIsEscalating(false)
+    }
+  }
+
   const handleCopyHash = (text: string) => {
-    cashierLogger.click(`Copiar Hash/TxID al portapapeles`, { hash: text })
     if (typeof navigator !== 'undefined') {
       navigator.clipboard.writeText(text)
       setCopiedHash(true)
@@ -691,16 +557,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
     }
   }
 
-  const handleViewCustomImage = (url: string) => {
-    cashierLogger.click(`Abrir visor de imagen comprobante`, { url })
-    setActiveReceiptUrl(url)
-    setIsReceiptOpen(true)
-  }
-
-  // Deduplicación reactiva visual pura (sin hooks condicionales para evitar error 310)
   const displayMessages = deduplicateOrderMessages(messages, orderId)
-
-  const isPending = order.status === 'pending'
+  const walletTargetAddress = (order as unknown as { paymentAddress?: string }).paymentAddress || order.receiptReferenceNumber || (typeof order.playerPaymentAccount === 'string' ? order.playerPaymentAccount : order.playerPaymentAccount?.accountNumber) || ''
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col">
@@ -733,14 +591,14 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 className={clsx(
                   'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0',
                   isCompleted
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                     : isPaid
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
-                    : isPending
-                    ? isVipOrder
-                      ? 'bg-amber-500/35 text-amber-200 border-amber-500/70 shadow-[0_0_12px_rgba(245,158,11,0.35)] animate-pulse font-black'
-                      : 'bg-amber-500/30 text-amber-300 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse'
-                    : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse'
+                    : order.status === 'disputed'
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                    : isCancelled
+                    ? 'bg-slate-800 text-slate-400 border-white/10'
+                    : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
                 )}
               >
                 {order.status === 'paid' ? 'Comprobante Subido' : order.status}
@@ -756,158 +614,43 @@ Conserva este mensaje como comprobante formal de la transacción.`
           </div>
         </div>
 
-        {/* Action Buttons for Validation / Release & Dispute Escalation */}
-        <div className="flex items-center gap-2">
-          {isDeposit && !isCompleted && !isCancelled && order.status !== 'disputed' && (
-            isPaid ? (
-              <button
-                onClick={() => {
-                  cashierLogger.click(`Botón Validar y Liberar Saldo (Depósito Pagado)`)
-                  handleApprove()
-                }}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 text-xs font-black shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-all cursor-pointer"
-              >
-                <ShieldCheck className="size-4" />
-                <span>Validar y Liberar Saldo</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  cashierLogger.click(`Botón Validar con Hash / TxID (Abrir modal)`)
-                  setDirectTxId(order.receiptReferenceNumber || '')
-                  setIsDirectValidationModalOpen(true)
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-black shadow-[0_0_20px_rgba(245,158,11,0.35)] transition-all cursor-pointer"
-              >
-                <AlertTriangle className="size-4" />
-                <span>Validar con Hash / TxID</span>
-              </button>
-            )
-          )}
-
-          {!isCompleted && !isCancelled && order.status !== 'disputed' && (
-            <button
-              onClick={() => setIsDisputeOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
-              title="Escalar esta orden a Disputa Oficial ante el Super Admin"
-            >
-              <ShieldAlert className="size-4 text-rose-400" />
-              <span className="hidden sm:inline">Escalar a Disputa</span>
-            </button>
-          )}
-        </div>
+        {/* Subcomponente 4A: Botones de Acción en Navbar */}
+        <OrderActionButtons
+          order={order}
+          isDeposit={isDeposit}
+          isWithdraw={isWithdraw}
+          isPaid={isPaid}
+          isCompleted={isCompleted}
+          isCancelled={isCancelled}
+          cashierFloatUSDT={cashierFloatUSDT}
+          netPayoutUSD={netPayoutUSD}
+          hasSufficientFloat={hasSufficientFloat}
+          isValidating={isValidating}
+          isValidatingPayout={isValidatingPayout}
+          isEscalating={isEscalating}
+          isPayoutModalOpen={isPayoutModalOpen}
+          setIsPayoutModalOpen={setIsPayoutModalOpen}
+          isDisputeOpen={isDisputeOpen}
+          setIsDisputeOpen={setIsDisputeOpen}
+          onApprove={handleApprove}
+          onConfirmPayout={handleConfirmPayout}
+          onEscalateToDispute={handleEscalateToDispute}
+          onCopyHash={handleCopyHash}
+          onNotify={(msg) => {
+            setNotification(msg)
+            setTimeout(() => setNotification(null), 4000)
+          }}
+        />
       </header>
 
-      {/* Dispute Banner if order is already in dispute */}
-      {order.status === 'disputed' && (
-        <div className="max-w-7xl mx-auto w-full px-6 pt-4">
-          <div className="p-4 rounded-3xl bg-rose-950/85 border border-rose-500 text-rose-200 shadow-[0_0_30px_rgba(244,63,94,0.3)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs font-mono animate-pulse">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/50">
-                <ShieldAlert className="size-6 text-rose-400" />
-              </div>
-              <div>
-                <span className="font-black text-white uppercase block text-sm">CASO EN DISPUTA Y ARBITRAJE OFICIAL</span>
-                <p className="text-[11px] text-rose-200/90">
-                  Motivo: <strong>{(order as any).disputeReason || 'Revisión solicitada por inconsistencia en comprobante o pago'}</strong>.
-                  La orden está en revisión de la Administración.
-                </p>
-              </div>
-            </div>
-            <span className="px-3 py-1.5 rounded-xl bg-rose-500 text-slate-950 font-black text-xs uppercase tracking-wider">
-              En Arbitraje
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* SLA Countdown & Urgency Banner for Withdrawals */}
-      {slaInfo && !isTerminated && (
-        <div className="max-w-7xl mx-auto w-full px-6 pt-4">
-          <div
-            className={clsx(
-              'p-4 rounded-3xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs font-mono transition-all',
-              slaInfo.isExpired
-                ? 'bg-rose-950/85 border-rose-500 text-rose-200 shadow-[0_0_30px_rgba(244,63,94,0.3)] animate-pulse font-black'
-                : slaInfo.isUrgent
-                ? 'bg-amber-950/85 border-amber-500 text-amber-200 shadow-[0_0_25px_rgba(245,158,11,0.25)] animate-pulse font-bold'
-                : slaInfo.isVip
-                ? 'bg-gradient-to-r from-amber-950/60 via-purple-950/40 to-slate-900 border-amber-500/60 text-amber-200 shadow-md'
-                : 'bg-slate-900/80 border-white/10 text-slate-300'
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className={clsx(
-                  'p-2.5 rounded-2xl border shrink-0',
-                  slaInfo.isExpired
-                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-bounce'
-                    : slaInfo.isVip
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                    : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
-                )}
-              >
-                {slaInfo.isExpired ? (
-                  <AlertTriangle className="size-5 text-rose-400" />
-                ) : slaInfo.isVip ? (
-                  <Crown className="size-5 text-amber-400" />
-                ) : (
-                  <Clock className="size-5 text-cyan-400" />
-                )}
-              </div>
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold uppercase tracking-wider text-white text-xs">
-                    {slaInfo.slaTitle}
-                  </span>
-                  {slaInfo.isVip && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 shadow-sm">
-                      Prioridad Máxima
-                    </span>
-                  )}
-                  {slaInfo.isExpired && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-500 text-white animate-pulse">
-                      ¡Atención Atrasada!
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-400 font-sans">
-                  {slaInfo.isExpired
-                    ? '⚠️ El plazo de atención garantizado ha vencido. Realiza la transferencia de inmediato para evitar reclamos.'
-                    : slaInfo.isUrgent
-                    ? '⚡ Quedan menos de 2 horas para el vencimiento del plazo. Liquida este retiro a la brevedad.'
-                    : `Plazo de atención comprometido con el usuario: máximo ${slaInfo.maxHours} horas desde la solicitud.`}
-                </p>
-              </div>
-            </div>
-
-            <div className="text-left sm:text-right shrink-0 pl-12 sm:pl-0">
-              <span className="text-[10px] uppercase text-slate-400 block font-sans font-bold">Tiempo Restante SLA</span>
-              <span className={clsx('text-base font-black font-mono tracking-tight', slaInfo.isExpired ? 'text-rose-400 text-lg' : slaInfo.isVip ? 'text-amber-300 text-lg' : 'text-white')}>
-                {slaInfo.formattedTime}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Notification Toast */}
-      {notification && (
-        <div className={`fixed top-20 right-6 z-50 p-4 rounded-2xl font-bold text-xs shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-300 ${
-          notification.type === 'error'
-            ? 'bg-rose-500 text-white shadow-rose-500/25'
-            : notification.type === 'info'
-            ? 'bg-cyan-500 text-slate-950 shadow-cyan-500/25'
-            : 'bg-emerald-500 text-slate-950 shadow-emerald-500/25'
-        }`}>
-          {notification.type === 'error' ? (
-            <AlertCircle className="size-5 text-white" />
-          ) : (
-            <CheckCircle2 className="size-5 text-slate-950" />
-          )}
-          <span>{notification.message}</span>
-        </div>
-      )}
+      {/* Subcomponente 1: SLA Countdown, Banners de Urgencia y Disputa */}
+      <OrderHeaderTimer
+        slaInfo={slaInfo}
+        isTerminated={isTerminated}
+        orderStatus={order.status}
+        disputeReason={(order as unknown as { disputeReason?: string }).disputeReason}
+        notification={notification}
+      />
 
       {/* Main Grid: Left Financial Info & Right Chat Panel */}
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -950,19 +693,20 @@ Conserva este mensaje como comprobante formal de la transacción.`
             </div>
 
             {/* Reference / Wallet Address Bar with Fast Copy */}
-            {(order.receiptReferenceNumber || (order as any).paymentAddress || order.status === 'pending') && (
+            {(order.receiptReferenceNumber || walletTargetAddress || order.status === 'pending') && (
               <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-white/10 flex items-center justify-between gap-2 text-xs">
                 <div className="min-w-0 flex-1">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block">
                     {isWithdraw ? '📍 Billetera USDT de Destino (Configurada por el Jugador)' : 'Hash / Referencia Tx'}
                   </span>
                   <span className="font-mono text-emerald-300 text-xs truncate block font-bold mt-0.5">
-                    {(order as any).paymentAddress || order.receiptReferenceNumber || 'Sin dirección registrada aún'}
+                    {walletTargetAddress || 'Sin dirección registrada aún'}
                   </span>
                 </div>
-                {((order as any).paymentAddress || order.receiptReferenceNumber) && (
+                {walletTargetAddress && (
                   <button
-                    onClick={() => handleCopyHash((order as any).paymentAddress || order.receiptReferenceNumber!)}
+                    type="button"
+                    onClick={() => handleCopyHash(walletTargetAddress)}
                     className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-[11px] font-bold border border-white/10 transition-colors cursor-pointer shrink-0"
                     title={isWithdraw ? "Copiar Billetera de Destino" : "Copiar Hash"}
                   >
@@ -984,404 +728,53 @@ Conserva este mensaje como comprobante formal de la transacción.`
               />
             )}
 
-            {/* Payout Action for Cashier on Withdrawals */}
-            {isWithdraw && order.status !== 'completed' && (
-              <div className="pt-2 space-y-3">
-                {!hasSufficientFloat && (
-                  <div className="p-4 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-xs space-y-2 shadow-[0_0_20px_rgba(244,63,94,0.2)] animate-in fade-in">
-                    <div className="flex items-center gap-2 text-rose-400 font-black">
-                      <AlertTriangle className="size-4 shrink-0 text-rose-400" />
-                      <span className="uppercase tracking-wider">SALDO FLOTANTE INSUFICIENTE</span>
-                    </div>
-                    <p className="text-rose-200/95 text-xs leading-relaxed font-sans">
-                      Tu saldo de trabajo disponible es de <strong className="text-white font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-500/30">${cashierFloatUSDT.toFixed(2)} USDT</strong> y este retiro requiere liquidar <strong className="text-rose-300 font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-500/30">${netPayoutUSD.toFixed(2)} USDT</strong>.
-                      No cuentas con saldo suficiente para pagar este retiro. Debes solicitar recarga al Administrador.
-                    </p>
-                  </div>
-                )}
+            {/* Subcomponente 4B: Payout Action for Cashier on Withdrawals */}
+            <PayoutActionButton
+              isWithdraw={isWithdraw}
+              isCompleted={isCompleted}
+              hasSufficientFloat={hasSufficientFloat}
+              cashierFloatUSDT={cashierFloatUSDT}
+              netPayoutUSD={netPayoutUSD}
+              onOpenPayout={() => setIsPayoutModalOpen(true)}
+            />
 
-                <button
-                  disabled={!hasSufficientFloat}
-                  onClick={() => {
-                    if (!hasSufficientFloat) return
-                    cashierLogger.click(`Botón Transferir Dinero y Liquidar Retiro (Abrir modal)`)
-                    setIsPayoutModalOpen(true)
-                  }}
-                  className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-                    !hasSufficientFloat
-                      ? 'bg-slate-800/90 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed shadow-none'
-                      : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 shadow-[0_0_25px_rgba(236,72,153,0.35)] cursor-pointer'
-                  }`}
-                >
-                  <Send className="size-4" />
-                  <span>Transferir Dinero y Liquidar Retiro</span>
-                </button>
-              </div>
-            )}
-
-            {/* Receipt Preview Thumbnail (solo si existe comprobante adjunto) */}
-            {order.receiptUrl && (
-              <div className="space-y-2 pt-2 border-t border-white/10">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-300">Comprobante Bancario</span>
-                  <button
-                    onClick={() => {
-                      setActiveReceiptUrl(order.receiptUrl)
-                      setIsReceiptOpen(true)
-                    }}
-                    className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 text-xs font-bold cursor-pointer"
-                  >
-                    <Eye className="size-3.5" />
-                    <span>Inspeccionar en HD</span>
-                  </button>
-                </div>
-
-                <div
-                  onClick={() => {
-                    setActiveReceiptUrl(order.receiptUrl)
-                    setIsReceiptOpen(true)
-                  }}
-                  className="group relative rounded-2xl overflow-hidden border border-white/10 bg-black/40 cursor-pointer aspect-video flex items-center justify-center"
-                >
-                  <img
-                    src={order.receiptUrl}
-                    alt="Comprobante"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white font-bold text-xs">
-                    <Eye className="size-5 text-cyan-300" />
-                    <span>Abrir Visor con Zoom</span>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Subcomponente 2: Receipt Preview Thumbnail & HD Modal Viewer */}
+            <OrderReceiptViewer
+              receiptUrl={order.receiptUrl}
+              receiptReferenceNumber={order.receiptReferenceNumber}
+              paymentMethod={order.paymentMethod}
+              amountFiat={order.amountFiat}
+              currency={order.currency}
+              isOpen={isReceiptOpen}
+              activeReceiptUrl={activeReceiptUrl}
+              onOpenModal={(url) => {
+                setActiveReceiptUrl(url)
+                setIsReceiptOpen(true)
+              }}
+              onCloseModal={() => setIsReceiptOpen(false)}
+            />
           </div>
         </div>
 
-        {/* Right Column: Live Order Chat with dynamic responsive height (7 cols) */}
-        <div className="lg:col-span-7 h-[calc(100vh-180px)] min-h-[520px]">
-          <OrderChatPanel
-            orderId={order.id}
-            currentUserUid="csh_carlosandroid_001"
-            currentUserName="carlosandroid (Cajero)"
-            currentUserRole="cashier"
-            messages={displayMessages}
-            counterpartReadAt={order.playerReadAt || 0}
-            isOrderResolved={order.status === 'completed'}
-            onSendMessage={handleSendMessage}
-            onViewImage={handleViewCustomImage}
-            isDisputed={order.status === 'disputed'}
-            onOpenDisputeModal={() => {
-              cashierLogger.click(`Abrir Modal de Disputa`)
-              setIsDisputeOpen(true)
-            }}
-          />
-        </div>
+        {/* Subcomponente 3: Right Column Live Order Chat */}
+        <OrderChatStream
+          orderId={order.id}
+          orderStatus={order.status}
+          messages={displayMessages}
+          playerReadAt={order.playerReadAt}
+          currentUserUid={currentCashierSession.uid}
+          currentUserName={currentCashierSession.name}
+          onSendMessage={handleSendMessage}
+          onViewImage={(url) => {
+            setActiveReceiptUrl(url)
+            setIsReceiptOpen(true)
+          }}
+          onOpenDisputeModal={() => setIsDisputeOpen(true)}
+        />
       </main>
 
-      {/* Direct Validation Modal with TxID for Cashier */}
-      {isDirectValidationModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-amber-500/40 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
-                <AlertTriangle className="size-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white uppercase">Validación Directa por Hash / TxID</h3>
-                <p className="text-[10px] text-slate-400 font-mono">Orden #{order.id.slice(0, 10)}</p>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3.5 bg-slate-950 rounded-2xl border border-white/5 space-y-1">
-                <div className="flex justify-between text-slate-400">
-                  <span>Monto Verificado:</span>
-                  <strong className="text-white font-mono">{order.amountFiat} {order.currency}</strong>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Crédito a Liberar:</span>
-                  <strong className="text-cyan-300 font-mono">+{order.amountSugarCoins.toLocaleString()} SC</strong>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Jugador:</span>
-                  <strong className="text-white">{order.playerName}</strong>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-slate-300 font-bold block text-[10px] uppercase">
-                  Hash de Transacción / Referencia Bancaria Verificada *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={directTxId}
-                  onChange={(e) => setDirectTxId(e.target.value)}
-                  placeholder="Ej. 0x7c8a... o REF-10928374"
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-amber-400"
-                />
-                <p className="text-[10px] text-slate-500">
-                  Ingresa el Hash o referencia tras verificar el ingreso de fondos en tu cuenta bancaria o wallet.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setIsDirectValidationModalOpen(false)}
-                disabled={isValidating}
-                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => handleApprove(directTxId.trim())}
-                disabled={!directTxId.trim() || isValidating}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-              >
-                {isValidating ? (
-                  <>
-                    <RefreshCw className="size-3.5 animate-spin" />
-                    <span>Procesando validación...</span>
-                  </>
-                ) : (
-                  <span>Confirmar y Liberar Saldo</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Payout Confirmation Modal for Cashier */}
-      {isPayoutModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-pink-500/30 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-              <div className="p-2 rounded-xl bg-pink-500/20 text-pink-400">
-                <Send className="size-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white uppercase">Confirmar Liquidación de Retiro</h3>
-                <p className="text-[10px] text-slate-400 font-mono">Orden #{order.id.slice(0, 10)}</p>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              {(() => {
-                const isModalVip = Boolean((order as any).isVip || (order as any).isVipWithdraw || (order.paymentMethod as string) === 'usdt_bep20' || (order.paymentMethod as string) === 'usdt_trc20_vip')
-                const modalFeePercent = isModalVip ? 0.10 : 0.05
-                const modalRequestedFiat = Number(order.amountFiat || (order.amountSugarCoins / 100))
-                const modalFeeFiat = parseFloat((modalRequestedFiat * modalFeePercent).toFixed(2))
-                const modalNetPayoutFiat = parseFloat((modalRequestedFiat - modalFeeFiat).toFixed(2))
-
-                return (
-                  <div className="p-3.5 bg-slate-950 rounded-2xl border border-white/5 space-y-1.5 font-mono">
-                    <div className="flex justify-between text-slate-400 text-[11px]">
-                      <span>Monto Solicitado:</span>
-                      <strong className="text-white font-mono">${modalRequestedFiat.toFixed(2)} {order.currency}</strong>
-                    </div>
-                    <div className="flex justify-between text-slate-400 text-[11px]">
-                      <span>Comisión {isModalVip ? 'VIP (10%)' : 'Estándar (5%)'}:</span>
-                      <strong className="text-rose-400 font-mono">-${modalFeeFiat.toFixed(2)} {order.currency}</strong>
-                    </div>
-                    <div className="border-t border-white/10 pt-1.5 flex justify-between items-center text-xs">
-                      <span className="text-white font-bold">Monto Neto a Transferir:</span>
-                      <strong className="text-pink-300 font-black text-sm font-mono">${modalNetPayoutFiat.toFixed(2)} {order.currency}</strong>
-                    </div>
-                    <div className="border-t border-white/5 pt-1.5 flex justify-between text-slate-400 text-[10px]">
-                      <span>Jugador Destino:</span>
-                      <strong className="text-white">{order.playerName}</strong>
-                    </div>
-                    <div className="flex justify-between text-slate-400 text-[10px]">
-                      <span>Método de Pago:</span>
-                      <strong className="text-cyan-300 uppercase">{order.paymentMethod}</strong>
-                    </div>
-                    <div className="border-t border-white/10 pt-1.5 flex justify-between items-center text-slate-400 text-[10px]">
-                      <span>Billetera / Cuenta:</span>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <strong className="text-emerald-300 font-mono text-[11px] truncate max-w-[170px]">
-                          {(order as any).paymentAddress || order.receiptReferenceNumber || 'No especificada'}
-                        </strong>
-                        {((order as any).paymentAddress || order.receiptReferenceNumber) && (
-                          <button
-                            type="button"
-                            onClick={() => handleCopyHash((order as any).paymentAddress || order.receiptReferenceNumber!)}
-                            className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-cyan-300 text-[9px] font-bold cursor-pointer transition-colors shrink-0"
-                            title="Copiar Billetera"
-                          >
-                            Copiar
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* Alerta roja de Saldo Insuficiente en Modal */}
-              {!hasSufficientFloat && !isValidatingPayout && (
-                <div className="p-3.5 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-rose-300 text-xs space-y-1.5 shadow-lg animate-in fade-in">
-                  <div className="flex items-center gap-2 font-black text-rose-400">
-                    <AlertCircle className="size-4 shrink-0 text-rose-400" />
-                    <span className="uppercase tracking-wider">SALDO FLOTANTE INSUFICIENTE</span>
-                  </div>
-                  <p className="text-[11px] text-rose-200 leading-snug">
-                    Tu saldo de trabajo disponible es de <strong className="text-white font-mono">${cashierFloatUSDT.toFixed(2)} USDT</strong>. Se requieren <strong className="text-rose-300 font-mono">${netPayoutUSD.toFixed(2)} USDT</strong> para pagar este retiro. No puedes procesar esta orden. Solicita recarga al Administrador.
-                  </p>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-slate-300 font-bold block text-[10px] uppercase">
-                  Número de Referencia Bancaria / TxID Cripto (Obligatorio) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  disabled={!hasSufficientFloat || isValidatingPayout}
-                  value={payoutTxId}
-                  onChange={(e) => setPayoutTxId(e.target.value)}
-                  placeholder={hasSufficientFloat ? "Ej. 0x8f9c2a... o REF-9928172" : "Bloqueado por saldo insuficiente"}
-                  className={`w-full bg-slate-950 border rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none ${
-                    !hasSufficientFloat 
-                      ? 'border-rose-500/30 opacity-50 cursor-not-allowed text-slate-500' 
-                      : 'border-white/10 focus:border-pink-400'
-                  }`}
-                />
-                <p className="text-[10px] text-slate-400">
-                  Ingresa el Hash de la transacción o número de comprobante emitido tras realizar la transferencia.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => {
-                  cashierLogger.click(`Cancelar Liquidación de Retiro`)
-                  setIsPayoutModalOpen(false)
-                }}
-                disabled={isValidatingPayout}
-                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  if (!hasSufficientFloat) {
-                    setNotification(`⛔ Saldo insuficiente ($${cashierFloatUSDT.toFixed(2)} USDT). Se requieren $${netPayoutUSD.toFixed(2)} USDT.`)
-                    return
-                  }
-                  if (!payoutTxId.trim()) return
-                  cashierLogger.click(`Clic en botón Confirmar Pago Retiro`, {
-                    payoutTxId: payoutTxId.trim()
-                  })
-                  handleConfirmPayout()
-                }}
-                disabled={!hasSufficientFloat || !payoutTxId.trim() || isValidatingPayout}
-                className={`flex-1 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
-                  (!hasSufficientFloat || !payoutTxId.trim()) && !isValidatingPayout
-                    ? 'bg-slate-800 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed shadow-none'
-                    : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 shadow-[0_0_15px_rgba(236,72,153,0.3)] cursor-pointer'
-                }`}
-              >
-                {isValidatingPayout ? (
-                  <>
-                    <RefreshCw className="size-3.5 animate-spin" />
-                    <span>Procesando liquidación...</span>
-                  </>
-                ) : (
-                  <span>Confirmar Pago y Notificar</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Escalate to Dispute Modal */}
-      {isDisputeOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md bg-slate-900 border border-rose-500/50 rounded-3xl p-6 space-y-4 shadow-[0_0_30px_rgba(244,63,94,0.3)]">
-            <div className="flex items-center gap-3 text-rose-400">
-              <div className="p-2.5 rounded-2xl bg-rose-500/20 border border-rose-500/40">
-                <ShieldAlert className="size-6 text-rose-400 animate-pulse" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-white text-base">Escalar Orden a Disputa Oficial</h3>
-                <p className="text-xs text-slate-400 font-mono">Remitir caso al Super Admin para arbitraje</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-300">Motivo de la Disputa:</label>
-              <div className="flex flex-wrap gap-1.5 pb-1">
-                {['Comprobante inconsistente', 'TxID no verificado', 'Datos de billetera erróneos', 'Sospecha de duplicidad'].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setDisputeReason(preset)}
-                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition-all border border-white/5 cursor-pointer"
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                value={disputeReason}
-                onChange={(e) => setDisputeReason(e.target.value)}
-                placeholder="Describe detalladamente la irregularidad o inconsistencia detectada..."
-                rows={3}
-                className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-rose-400"
-              />
-            </div>
-
-            <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-200/90 leading-relaxed font-mono">
-              ⚠️ Al escalar, la orden pasará a estado <strong>DISPUTED</strong> y quedará congelada en custodia hasta que el Super Admin dicte la resolución final.
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsDisputeOpen(false)
-                  setDisputeReason('')
-                }}
-                disabled={isEscalating}
-                className="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleEscalateToDispute}
-                disabled={!disputeReason.trim() || isEscalating}
-                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-400 disabled:opacity-40 text-slate-950 font-black text-xs transition-all cursor-pointer shadow-[0_0_15px_rgba(244,63,94,0.4)] flex items-center justify-center gap-1.5"
-              >
-                {isEscalating ? (
-                  <>
-                    <RefreshCw className="size-3.5 animate-spin" />
-                    <span>Escalando...</span>
-                  </>
-                ) : (
-                  <span>Confirmar y Escalar</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Interactive Receipt Viewer Modal */}
-      <ReceiptImageViewer
-        isOpen={isReceiptOpen}
-        onClose={() => setIsReceiptOpen(false)}
-        imageUrl={activeReceiptUrl}
-        referenceNumber={order.receiptReferenceNumber}
-        bankName={order.paymentMethod}
-        amount={`${order.amountFiat.toLocaleString()} ${order.currency}`}
-      />
+      {/* Auditoría en Vivo y Consola de Diagnóstico */}
+      <CashierLogPanel />
     </div>
   )
 }
