@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { approveDepositOrder, completeWithdrawalOrder, rechargeCashierFloatAtomics, cancelWithdrawOrderAtomics } from '@/lib/atomic-transactions'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,6 +16,11 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authResult = await verifyStaffAuth(request, ['cashier', 'admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   try {
     const { id: orderId } = await params
     const body = await request.json()

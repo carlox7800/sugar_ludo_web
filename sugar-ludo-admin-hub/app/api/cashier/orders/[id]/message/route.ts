@@ -1,12 +1,30 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
 import { OrderChatMessage } from '@/types/cashier'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
+
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'sweety-ludo-87343'
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  })
+}
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authResult = await verifyStaffAuth(request, ['cashier', 'admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   try {
     const { id: orderId } = await params
     const body = await request.json()

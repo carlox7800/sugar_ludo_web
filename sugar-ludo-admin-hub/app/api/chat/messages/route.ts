@@ -1,7 +1,24 @@
 import { NextResponse } from 'next/server'
 import { OrderChatMessage } from '../../../../types/cashier'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  })
+}
 
 export async function POST(request: Request) {
+  const authResult = await verifyStaffAuth(request, ['cashier', 'admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   try {
     const body = await request.json()
     const { orderId, senderUid, senderName, senderRole, message, attachmentUrl } = body

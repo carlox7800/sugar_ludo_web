@@ -1,10 +1,28 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
 import { CashierOrder } from '@/types/cashier'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  })
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
+  const authResult = await verifyStaffAuth(request, ['cashier', 'admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   try {
     const resolvedParams = await Promise.resolve(params)
     const orderId = resolvedParams.id

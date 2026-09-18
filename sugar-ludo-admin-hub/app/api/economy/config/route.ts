@@ -1,10 +1,27 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
 
 // In-Memory cache en el proceso de Node.js
 let inMemoryEconomyConfig: any = null
 
-export async function GET() {
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  })
+}
+
+export async function GET(request: Request) {
+  const authResult = await verifyStaffAuth(request, ['cashier', 'admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   try {
     // 1. Si está en cache en RAM, devolver de inmediato ($0.00 lecturas)
     if (inMemoryEconomyConfig) {
@@ -46,6 +63,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const authResult = await verifyStaffAuth(request, ['admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   try {
     const body = await request.json()
     const payload = {

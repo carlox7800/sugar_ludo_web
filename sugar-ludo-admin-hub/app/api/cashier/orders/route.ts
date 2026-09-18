@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server'
 import { adminDb, adminAuth } from '@/lib/firebase-admin'
 import { CashierOrder } from '@/types/cashier'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
 
 export async function GET(request: Request) {
+  const authResult = await verifyStaffAuth(request, ['cashier', 'admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   try {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')

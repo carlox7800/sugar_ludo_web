@@ -1,6 +1,23 @@
 import { NextResponse } from 'next/server'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
 
-export async function GET() {
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+  })
+}
+
+export async function GET(request: Request) {
+  const authResult = await verifyStaffAuth(request, ['cashier', 'admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   const startTime = Date.now()
   let serverLatencyMs = 35
   let serverStatus = 'online'

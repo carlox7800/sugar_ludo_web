@@ -18,6 +18,7 @@ import { useAdminAuth } from '../../../../lib/admin-auth-context'
 import { getWithdrawalSla } from '../../../../lib/sla-calculator'
 
 import { useParams, useRouter } from 'next/navigation'
+import { getStaffAuthHeaders } from '@/lib/auth-headers'
 
 function deduplicateOrderMessages(messages: OrderChatMessage[], orderId: string): OrderChatMessage[] {
   if (!Array.isArray(messages)) return []
@@ -235,7 +236,11 @@ export default function OrderDetailPage() {
 
     // 2. Fetch single order API directly (/api/cashier/orders/[id])
     cashierLogger.api(`Consultando API interna /api/cashier/orders/${orderId}`)
-    fetch(`/api/cashier/orders/${orderId}`)
+    fetch(`/api/cashier/orders/${orderId}`, {
+      headers: {
+        ...getStaffAuthHeaders('cashier')
+      }
+    })
       .then((res) => res.json())
       .then((data) => {
         if (data.order) {
@@ -436,7 +441,10 @@ export default function OrderDetailPage() {
     try {
       fetch(`/api/cashier/orders/${order.id}/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getStaffAuthHeaders('cashier')
+        },
         body: JSON.stringify({
           message: text.trim(),
           senderName: currentCashierSession.name,
@@ -482,7 +490,10 @@ export default function OrderDetailPage() {
       // 2. Llamada exclusiva y autoritativa al backend (runTransaction atómico en servidor)
       const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getStaffAuthHeaders('cashier')
+        },
         body: JSON.stringify({
           action: 'approve_deposit',
           cashierUid: currentCashierSession.uid,
@@ -575,7 +586,10 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       // 2. Ejecutar liquidación atómica en el backend autoritativo (completeWithdrawalOrder en servidor)
       const res = await fetch(`/api/cashier/orders/${order.id}/action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getStaffAuthHeaders('cashier')
+        },
         body: JSON.stringify({
           action: 'complete_withdrawal',
           cashierUid: currentCashierSession.uid,

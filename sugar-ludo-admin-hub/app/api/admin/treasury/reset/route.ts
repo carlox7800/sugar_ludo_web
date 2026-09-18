@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { adminDb, hasAdminCredentials } from '@/lib/firebase-admin'
 import { db } from '@/lib/firebase'
 import { collection, getDocs, doc, setDoc, writeBatch, limit, query } from 'firebase/firestore'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,6 +15,11 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: Request) {
+  const authResult = await verifyStaffAuth(request, ['admin'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
   try {
     const body = await request.json()
     const { 
