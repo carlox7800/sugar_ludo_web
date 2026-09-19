@@ -11,6 +11,112 @@ const memoryPresenceMap = new Map(); // uid -> { status, ts }
 const sseClients = new Map(); // uid -> Set<http.ServerResponse>
 const pendingEvents = new Map(); // uid -> Array<event>
 
+// ================= RATE LIMITING & ANTI-DDOS IN MEMORY ($0.00) =================
+const rateLimitStore = new Map(); // ip -> { previousCount, currentCount, windowStart, lastUpdated }
+const sseIpConnections = new Map(); // ip -> Set<http.ServerResponse>
+const MAX_SSE_PER_IP = 10;
+const SOCIAL_EVENT_LIMIT = 60; // 60 req/min
+const WINDOW_MS = 60000;
+
+function getClientIp(req) {
+  const cfIp = req.headers['cf-connecting-ip'];
+  if (cfIp && cfIp.trim().length > 0) return cfIp.trim();
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    const first = forwarded.split(',')[0].trim();
+    if (first.length > 0) return first;
+  }
+  const realIp = req.headers['x-real-ip'];
+  if (realIp && realIp.trim().length > 0) return realIp.trim();
+  return req.socket.remoteAddress || '127.0.0.1';
+}
+
+function checkSocialRateLimit(ip, limit = SOCIAL_EVENT_LIMIT, windowMs = WINDOW_MS) {
+  const now = Date.now();
+  let entry = rateLimitStore.get(ip);
+  if (!entry) {
+    entry = { previousCount: 0, currentCount: 1, windowStart: now, lastUpdated: now };
+    rateLimitStore.set(ip, entry);
+    return {
+      allowed: true,
+      limit,
+      remaining: limit - 1,
+      resetTime: Math.ceil((now + windowMs) / 1000),
+      retryAfter: 0
+    };
+  }
+
+  const elapsed = now - entry.windowStart;
+  if (elapsed >= 2 * windowMs) {
+    entry.previousCount = 0;
+    entry.currentCount = 1;
+    entry.windowStart = now;
+    entry.lastUpdated = now;
+    return {
+      allowed: true,
+      limit,
+      remaining: limit - 1,
+      resetTime: Math.ceil((now + windowMs) / 1000),
+      retryAfter: 0
+    };
+  }
+
+  if (elapsed >= windowMs) {
+    entry.previousCount = entry.currentCount;
+    entry.currentCount = 1;
+    entry.windowStart = entry.windowStart + windowMs;
+    entry.lastUpdated = now;
+
+    const newElapsed = now - entry.windowStart;
+    const weight = Math.max(0, 1 - (newElapsed / windowMs));
+    const estimated = entry.currentCount + (entry.previousCount * weight);
+    const allowed = estimated <= limit;
+    return {
+      allowed,
+      limit,
+      remaining: Math.max(0, Math.floor(limit - estimated)),
+      resetTime: Math.ceil((entry.windowStart + windowMs) / 1000),
+      retryAfter: allowed ? 0 : 10
+    };
+  }
+
+  const weight = Math.max(0, 1 - (elapsed / windowMs));
+  const estimated = entry.currentCount + (entry.previousCount * weight);
+  if (estimated >= limit) {
+    entry.lastUpdated = now;
+    return {
+      allowed: false,
+      limit,
+      remaining: 0,
+      resetTime: Math.ceil((entry.windowStart + windowMs) / 1000),
+      retryAfter: Math.max(1, Math.min(10, Math.ceil((entry.windowStart + windowMs - now) / 1000)))
+    };
+  }
+
+  entry.currentCount += 1;
+  entry.lastUpdated = now;
+  const newEstimated = entry.currentCount + (entry.previousCount * weight);
+  return {
+    allowed: true,
+    limit,
+    remaining: Math.max(0, Math.floor(limit - newEstimated)),
+    resetTime: Math.ceil((entry.windowStart + windowMs) / 1000),
+    retryAfter: 0
+  };
+}
+
+// Auto-GC periódico cada 5 minutos para respetar los 512 MB de RAM en Render
+const rateLimitGcTimer = setInterval(() => {
+  const now = Date.now();
+  const threshold = now - 120000;
+  for (const [key, entry] of rateLimitStore.entries()) {
+    if (entry.lastUpdated < threshold) {
+      rateLimitStore.delete(key);
+    }
+  }
+}, 300000);
+if (rateLimitGcTimer.unref) rateLimitGcTimer.unref();
+
 function clearPendingDuels(uid) {
   if (!uid) return;
   const key = uid.toLowerCase();
@@ -111,6 +217,26 @@ const server = http.createServer((req, res) => {
 
     // 3. IN-MEMORY SOCIAL RELAY ENDPOINTS ($0.00 FIRESTORE)
     if (pathname === '/api/social/event' && req.method === 'POST') {
+      const clientIp = getClientIp(req);
+      const rl = checkSocialRateLimit(clientIp);
+      if (!rl.allowed) {
+        res.writeHead(429, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Retry-After': String(rl.retryAfter),
+          'X-RateLimit-Limit': String(rl.limit),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(rl.resetTime)
+        });
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Demasiadas solicitudes. Límite de tasa excedido para eventos sociales.',
+          code: 'RATE_LIMIT_EXCEEDED',
+          retryAfter: rl.retryAfter
+        }));
+        return;
+      }
+
       let bodyStr = '';
       req.on('data', chunk => { bodyStr += chunk; });
       req.on('end', () => {
@@ -150,7 +276,10 @@ const server = http.createServer((req, res) => {
           res.writeHead(200, {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'no-store'
+            'Cache-Control': 'no-store',
+            'X-RateLimit-Limit': String(rl.limit),
+            'X-RateLimit-Remaining': String(rl.remaining),
+            'X-RateLimit-Reset': String(rl.resetTime)
           });
           res.end(JSON.stringify({ success: true, presence: currentMap }));
         } catch (err) {
@@ -162,6 +291,27 @@ const server = http.createServer((req, res) => {
     }
 
     if (pathname === '/api/social/stream') {
+      const clientIp = getClientIp(req);
+      let ipClients = sseIpConnections.get(clientIp);
+      if (!ipClients) {
+        ipClients = new Set();
+        sseIpConnections.set(clientIp, ipClients);
+      }
+      if (ipClients.size >= MAX_SSE_PER_IP) {
+        res.writeHead(429, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Retry-After': '30'
+        });
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Límite de conexiones simultáneas en tiempo real excedido para esta IP.',
+          code: 'SSE_LIMIT_EXCEEDED',
+          retryAfter: 30
+        }));
+        return;
+      }
+
       const uid = (parsedUrl.searchParams.get('uid') || '').toLowerCase();
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -169,6 +319,8 @@ const server = http.createServer((req, res) => {
         'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*'
       });
+
+      ipClients.add(res);
 
       if (uid) {
         let clients = sseClients.get(uid);
@@ -199,12 +351,43 @@ const server = http.createServer((req, res) => {
           if (clients.size === 0) {
             sseClients.delete(uid);
           }
+          ipClients.delete(res);
+          if (ipClients.size === 0) {
+            sseIpConnections.delete(clientIp);
+          }
+        });
+      } else {
+        req.on('close', () => {
+          ipClients.delete(res);
+          if (ipClients.size === 0) {
+            sseIpConnections.delete(clientIp);
+          }
         });
       }
       return;
     }
 
     if (pathname === '/api/social/presence') {
+      const clientIp = getClientIp(req);
+      const rl = checkSocialRateLimit(clientIp);
+      if (!rl.allowed) {
+        res.writeHead(429, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Retry-After': String(rl.retryAfter),
+          'X-RateLimit-Limit': String(rl.limit),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(rl.resetTime)
+        });
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Demasiadas solicitudes. Límite de tasa excedido.',
+          code: 'RATE_LIMIT_EXCEEDED',
+          retryAfter: rl.retryAfter
+        }));
+        return;
+      }
+
       const currentMap = {};
       for (const [k, v] of memoryPresenceMap.entries()) {
         currentMap[k] = v.status;
@@ -212,7 +395,10 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-store'
+        'Cache-Control': 'no-store',
+        'X-RateLimit-Limit': String(rl.limit),
+        'X-RateLimit-Remaining': String(rl.remaining),
+        'X-RateLimit-Reset': String(rl.resetTime)
       });
       res.end(JSON.stringify({ success: true, presence: currentMap }));
       return;

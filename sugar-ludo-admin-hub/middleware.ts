@@ -1,13 +1,21 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import {
+  getClientIp,
+  resolveRateLimitTier,
+  checkRateLimit,
+  createRateLimitResponse,
+  applyRateLimitHeaders,
+} from './lib/rate-limiter'
 
 /**
  * ============================================================================
- * MIDDLEWARE DE ENRUTAMIENTO POR SUBDOMINIO & GUARDIÁN DE SEGURIDAD (EDGE)
+ * MIDDLEWARE DE ENRUTAMIENTO POR SUBDOMINIO & RATE LIMITING MULTI-TIER
  * ============================================================================
- * - admin.sugarludo.com   -> Enruta internamente a /admin
- * - cajeros.sugarludo.com -> Enruta internamente a /cashier
- * - Bloqueo inmediato de solicitudes no autorizadas en el borde.
+ * 1. Rate Limiting en memoria para todas las rutas /api/** con mitigación anti-DDoS.
+ * 2. Enrutamiento por subdominio (*.sugarludo.com):
+ *    - admin.sugarludo.com   -> Enruta internamente a /admin
+ *    - cajeros.sugarludo.com -> Enruta internamente a /cashier
  *
  * NOTA: Los dominios de Render (*.onrender.com) y localhost NO reciben
  * rewrite de subdominio — el usuario verá el formulario de login en `/`.
@@ -17,18 +25,35 @@ export function middleware(request: NextRequest) {
   const url = request.nextUrl
   const hostname = request.headers.get('host') || 'localhost'
 
-  // Rutas públicas y de estáticos (bypass)
+  // 1. MANEJO DE RUTAS DE API (Rate Limiting Multi-Tier)
+  if (url.pathname.startsWith('/api')) {
+    const tier = resolveRateLimitTier(url.pathname, request.method)
+    if (tier) {
+      const clientIp = getClientIp(request.headers)
+      const limitResult = checkRateLimit(clientIp, tier)
+
+      if (!limitResult.allowed) {
+        return createRateLimitResponse(limitResult)
+      }
+
+      const response = NextResponse.next()
+      return applyRateLimitHeaders(response, limitResult)
+    }
+
+    // Ruta de API exenta (telemetría, salud, OPTIONS preflight)
+    return NextResponse.next()
+  }
+
+  // 2. Rutas públicas y de estáticos (bypass)
   if (
     url.pathname.startsWith('/_next') ||
-    url.pathname.startsWith('/api/auth') ||
     url.pathname.includes('.') ||
     url.pathname === '/favicon.ico'
   ) {
     return NextResponse.next()
   }
 
-  // Solo hacer rewrite si es un subdominio REAL del dominio de producción (sugarludo.com)
-  // Excluir Render, localhost y cualquier otro dominio genérico
+  // 3. Rewrite de subdominio solo si es un subdominio REAL de producción (sugarludo.com)
   const isProductionDomain = hostname.endsWith('.sugarludo.com')
 
   if (!isProductionDomain) {
@@ -54,5 +79,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 }
