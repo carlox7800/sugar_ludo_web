@@ -914,30 +914,64 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
             {/* Sticky Footer */}
             <div className="p-4 bg-slate-900 border-t border-white/10 space-y-3 shrink-0">
               {selectedMail.category === 'support' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={replyInput}
-                    onChange={(e) => setReplyInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        handleSendReply()
-                      }
-                    }}
-                    placeholder="Escribe tu respuesta al cajero..."
-                    disabled={isSendingReply}
-                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400 disabled:opacity-50"
-                  />
-                  <button
-                    onClick={handleSendReply}
-                    disabled={!replyInput.trim() || isSendingReply}
-                    className="btn-3d px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0 cursor-pointer"
-                  >
-                    <Send className="size-3.5" />
-                    <span>{isSendingReply ? '...' : 'Enviar'}</span>
-                  </button>
-                </div>
+                (() => {
+                  const isCompleted = selectedMail.orderStatus === 'completed' || selectedMail.badge === 'Completado' || selectedMail.status === 'resolved'
+                  const isCancelled = selectedMail.orderStatus === 'cancelled' || selectedMail.orderStatus === 'canceled' || selectedMail.orderStatus === 'rejected' || selectedMail.badge === 'Cancelado'
+                  const isOpen = selectedMail.orderStatus === 'pending' || selectedMail.orderStatus === 'in_progress'
+
+                  if (isCompleted) {
+                    return (
+                      <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-3.5 flex items-start gap-3">
+                        <ShieldCheck className="size-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <p className="flex-1 text-[11px] text-emerald-200/90 leading-relaxed font-medium">
+                          Esta orden ha sido completada y conciliada en el libro mayor. Para cualquier consulta adicional, utiliza nuestro canal de Soporte Oficial.
+                        </p>
+                      </div>
+                    )
+                  }
+
+                  if (isCancelled) {
+                    return (
+                      <div className="rounded-2xl bg-rose-500/10 border border-rose-500/20 p-3.5 flex items-start gap-3">
+                        <Info className="size-4 text-rose-400 shrink-0 mt-0.5" />
+                        <p className="flex-1 text-[11px] text-rose-200/90 leading-relaxed font-medium">
+                          Esta orden ha sido cancelada. Para cualquier consulta adicional, contacta a Soporte.
+                        </p>
+                      </div>
+                    )
+                  }
+
+                  if (isOpen) {
+                    return (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={replyInput}
+                          onChange={(e) => setReplyInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault()
+                              handleSendReply()
+                            }
+                          }}
+                          placeholder="Escribe tu respuesta al cajero..."
+                          disabled={isSendingReply}
+                          className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400 disabled:opacity-50"
+                        />
+                        <button
+                          onClick={handleSendReply}
+                          disabled={!replyInput.trim() || isSendingReply}
+                          className="btn-3d px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <Send className="size-3.5" />
+                          <span>{isSendingReply ? '...' : 'Enviar'}</span>
+                        </button>
+                      </div>
+                    )
+                  }
+
+                  return null
+                })()
               )}
 
               <div className="flex gap-2">
