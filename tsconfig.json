@@ -44,6 +44,7 @@
     ".archive",
     "original_training.tsx",
     "src/main.tsx",
-    "vite.config.ts"
+    "vite.config.ts",
+    "tests"
   ]
 }

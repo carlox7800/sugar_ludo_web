@@ -1,6 +1,6 @@
 {
   "name": "sugar-ludo-web",
-  "version": "9.4.7",
+  "version": "9.4.8",
   "private": true,
   "main": "main.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "node server.js",
     "lint": "eslint .",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "bump": "node scripts/bump-version.js",
     "electron:build": "electron-builder -w"
   },

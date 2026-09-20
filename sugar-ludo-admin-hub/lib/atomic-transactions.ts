@@ -83,24 +83,8 @@ function getErrorMessage(err: unknown): string {
   return 'Error de transacción desconocido'
 }
 
-/**
- * Sanitizador universal que descarta recursivamente cualquier clave con valor `undefined`.
- * Previene la excepción fatal de Cloud Firestore: "Unsupported field value: undefined".
- */
-export function cleanFirestorePayload<T extends Record<string, unknown>>(data: T): T {
-  const result: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(data)) {
-    if (value === undefined) {
-      continue
-    }
-    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-      result[key] = cleanFirestorePayload(value as Record<string, unknown>)
-    } else {
-      result[key] = value
-    }
-  }
-  return result as T
-}
+import { cleanFirestorePayload } from './clean-firestore-payload'
+export { cleanFirestorePayload }
 
 
 /**
