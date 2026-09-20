@@ -14,6 +14,11 @@ import {
   SLA_VIP_WITHDRAW_MINUTES,
   SLA_DEPOSIT_MINUTES
 } from '../lib/support/account-inspector.ts'
+import {
+  evaluateIssuePreValidation,
+  AVAILABLE_ISSUES,
+  generateTicketNumber
+} from '../lib/support/pre-validation-engine.ts'
 
 describe('Suite: Base de Conocimiento Determinista (Tier 1 Support)', () => {
   it('debe contener las 4 categorías principales del sistema', () => {
@@ -198,3 +203,81 @@ describe('Suite: Live Account Inspector (Diagnóstico en Memoria 0ms)', () => {
     assert.ok(botMsg.includes('Depósito #ord_dep_'))
   })
 })
+
+describe('Suite: Pre-Validación Determinista y Gestión de Tickets (Tier 2)', () => {
+  const mockNow = 1758360000000
+  const mockUser = {
+    uid: 'usr_test_player',
+    displayName: 'Carlos Ludo',
+    coins: 4000,
+    escrowLockedCoins: 0
+  }
+
+  it('debe tener registradas incidencias para las 3 categorías principales', () => {
+    assert.ok(AVAILABLE_ISSUES.length >= 8)
+    const categories = new Set(AVAILABLE_ISSUES.map((i) => i.category))
+    assert.ok(categories.has('transactions'))
+    assert.ok(categories.has('gameplay'))
+    assert.ok(categories.has('account'))
+  })
+
+  it('debe pre-validar y resolver duda de salida con dado 6 sin abrir ticket', () => {
+    const result = evaluateIssuePreValidation('rule_exit_six', mockUser, [], mockNow)
+    assert.equal(result.canOpenTicket, false)
+    assert.ok(result.verdictTitle.includes('salida se realiza con dado 5'))
+    assert.ok(result.verdictExplanation.includes('Dado 5'))
+    assert.ok(result.verdictExplanation.includes('Dado 6'))
+  })
+
+  it('debe pre-validar y aclarar penalización de 3 dobles consecutivos sin abrir ticket', () => {
+    const result = evaluateIssuePreValidation('rule_doubles_penalty', mockUser, [], mockNow)
+    assert.equal(result.canOpenTicket, false)
+    assert.ok(result.verdictExplanation.includes('tercera vez consecutiva'))
+  })
+
+  it('debe bloquear apertura de ticket prematura si el depósito lleva menos de 30 minutos', () => {
+    const recentDeposit = {
+      id: 'dep_recent_01',
+      playerUid: 'usr_test_player',
+      type: 'deposit',
+      status: 'pending',
+      amountSugarCoins: 2000,
+      amountFiat: 20,
+      currency: 'USD',
+      createdAt: mockNow - (10 * 60 * 1000) // 10 minutos
+    }
+
+    const result = evaluateIssuePreValidation('dep_not_credited', mockUser, [recentDeposit], mockNow)
+    assert.equal(result.canOpenTicket, false)
+    assert.ok(result.verdictTitle.includes('tiempo normal de procesamiento'))
+    assert.equal(result.relatedOrderId, 'dep_recent_01')
+  })
+
+  it('debe habilitar ticket urgente si el retiro superó el SLA oficial', () => {
+    const delayedWithdraw = {
+      id: 'wit_delayed_01',
+      playerUid: 'usr_test_player',
+      type: 'withdraw',
+      status: 'assigned',
+      amountSugarCoins: 5000,
+      amountFiat: 50,
+      currency: 'USD',
+      createdAt: mockNow - (80 * 60 * 60 * 1000), // 80 horas (> 72h SLA)
+      isVip: false
+    }
+
+    const result = evaluateIssuePreValidation('wit_delayed', mockUser, [delayedWithdraw], mockNow)
+    assert.equal(result.canOpenTicket, true)
+    assert.equal(result.suggestedPriority, 'urgent')
+    assert.ok(result.verdictTitle.includes('Anomalía Confirmada'))
+    assert.equal(result.relatedOrderId, 'wit_delayed_01')
+  })
+
+  it('debe generar folios de ticket con formato TKT-YYYY-XXXX', () => {
+    const ticketNum = generateTicketNumber()
+    const currentYear = new Date().getFullYear()
+    assert.ok(ticketNum.startsWith(`TKT-${currentYear}-`))
+    assert.equal(ticketNum.length, 13) // TKT-2026-XXXX = 13 caracteres
+  })
+})
+

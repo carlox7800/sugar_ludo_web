@@ -1,54 +1,49 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   X,
-  Bot,
-  RotateCcw,
-  Send,
-  Search,
-  Sparkles,
   ShieldCheck,
   AlertTriangle,
   CheckCircle2,
   Clock,
+  ArrowRight,
+  ArrowLeft,
   Coins,
   Wallet,
   Gamepad2,
-  Wifi,
-  ChevronRight,
-  Info,
-  Headphones,
-  HelpCircle,
+  Lock,
+  Percent,
+  RotateCcw,
   Zap,
-  ArrowRight
+  WifiOff,
+  ShieldAlert,
+  Award,
+  MessageSquare,
+  HelpCircle,
+  FileText,
+  Send,
+  Loader2,
+  Sparkles,
+  ExternalLink,
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { getStoredLocalOrders } from '@/lib/wallet-service'
 import {
-  SUPPORT_CATEGORIES,
-  SUPPORT_TOPICS,
-  getKnowledgeTopic,
-  getTopicsByCategory,
-  searchKnowledgeBase,
-  KnowledgeTopic
-} from '@/lib/support/support-knowledge-base'
+  AVAILABLE_ISSUES,
+  IssueCategory,
+  PreValidationIssue,
+  PreValidationResult,
+  evaluateIssuePreValidation
+} from '@/lib/support/pre-validation-engine'
 import {
-  inspectAccount,
-  formatDiagnosisAsBotMessage,
-  AccountDiagnosisReport
-} from '@/lib/support/account-inspector'
-
-interface ChatMessage {
-  id: string
-  sender: 'bot' | 'user'
-  text: string
-  timestamp: number
-  topicId?: string
-  report?: AccountDiagnosisReport
-  suggestedTopicIds?: string[]
-  canEscalate?: boolean
-}
+  SupportTicketItem,
+  createSupportTicket,
+  subscribeToPlayerTickets
+} from '@/lib/support/ticket-service'
+import { SUPPORT_TOPICS, getKnowledgeTopic } from '@/lib/support/support-knowledge-base'
 
 interface VirtualSupportModalProps {
   isOpen: boolean
@@ -56,22 +51,34 @@ interface VirtualSupportModalProps {
   initialTopicId?: string
 }
 
+type ModalTab = 'report' | 'my_tickets' | 'guides'
+type WizardStep = 'select_category' | 'select_issue' | 'verdict' | 'ticket_form' | 'ticket_success'
+
 export function VirtualSupportModal({
   isOpen,
   onClose,
   initialTopicId
 }: VirtualSupportModalProps) {
   const { user } = useAuth()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [inputText, setInputText] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [isSearching, setIsSearching] = useState(false)
-  const [searchResults, setSearchResults] = useState<KnowledgeTopic[]>([])
-  const [escalationSubmitted, setEscalationSubmitted] = useState(false)
 
-  const chatBottomRef = useRef<HTMLDivElement>(null)
+  // Navegación de pestañas
+  const [activeTab, setActiveTab] = useState<ModalTab>('report')
 
-  // Cerrar con Escape
+  // Estado del Wizard de Reporte
+  const [wizardStep, setWizardStep] = useState<WizardStep>('select_category')
+  const [selectedCategory, setSelectedCategory] = useState<IssueCategory>('transactions')
+  const [selectedIssue, setSelectedIssue] = useState<PreValidationIssue | null>(null)
+  const [preValidationResult, setPreValidationResult] = useState<PreValidationResult | null>(null)
+
+  // Estado del formulario de Ticket
+  const [playerNotes, setPlayerNotes] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [createdTicket, setCreatedTicket] = useState<SupportTicketItem | null>(null)
+
+  // Lista de Tickets del jugador
+  const [myTickets, setMyTickets] = useState<SupportTicketItem[]>([])
+
+  // Cerrar con tecla Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -86,458 +93,700 @@ export function VirtualSupportModal({
     }
   }, [isOpen, onClose])
 
-  // Iniciar conversación cuando se abre el modal
+  // Suscripción en tiempo real a tickets de soporte del jugador
+  useEffect(() => {
+    if (!isOpen || !user?.uid) return
+    const unsub = subscribeToPlayerTickets(user.uid, (tickets) => {
+      setMyTickets(tickets)
+    })
+    return () => unsub()
+  }, [isOpen, user?.uid])
+
+  // Reset del wizard al abrir
   useEffect(() => {
     if (!isOpen) return
-
-    setEscalationSubmitted(false)
-    if (initialTopicId && SUPPORT_TOPICS[initialTopicId]) {
-      handleSelectTopic(initialTopicId)
-    } else if (messages.length === 0) {
-      initWelcomeMessage()
+    if (initialTopicId) {
+      // Si se invocó con un tema financiero específico
+      if (initialTopicId.startsWith('fin_')) {
+        setSelectedCategory('transactions')
+        const issue = AVAILABLE_ISSUES.find((i) => i.id === 'wit_delayed' || i.id === 'dep_not_credited')
+        if (issue) handleSelectIssue(issue)
+      } else {
+        setActiveTab('guides')
+      }
+    } else {
+      setWizardStep('select_category')
+      setSelectedIssue(null)
+      setPreValidationResult(null)
+      setPlayerNotes('')
+      setCreatedTicket(null)
     }
   }, [isOpen, initialTopicId])
 
-  // Scroll al fondo al llegar nuevos mensajes
-  useEffect(() => {
-    if (isOpen) {
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [messages, isOpen])
-
-  const initWelcomeMessage = () => {
-    const playerName = user?.nickname || user?.displayName || 'Jugador'
-    const welcomeMsg: ChatMessage = {
-      id: `welcome_${Date.now()}`,
-      sender: 'bot',
-      text: `¡Hola, **${playerName}**! Soy tu Asistente Virtual de Sugar Ludo (Tier 1).\n\nEstoy aquí para responder en **0ms y sin demoras** cualquier duda sobre depósitos, retiros, comisiones, reglas de juego o para realizar un diagnóstico completo del estado de tu cuenta.\n\n¿En qué te puedo orientar hoy?`,
-      timestamp: Date.now(),
-      suggestedTopicIds: ['fin_withdraw_fees', 'fin_parity', 'rule_three_doubles', 'conn_disconnect']
-    }
-    setMessages([welcomeMsg])
-  }
-
-  const handleReset = () => {
-    setInputText('')
-    setIsSearching(false)
-    setSearchResults([])
-    setEscalationSubmitted(false)
-    initWelcomeMessage()
-  }
-
-  // Ejecución de Diagnóstico de Cuenta en memoria
-  const handleRunDiagnostics = () => {
+  // Manejador de selección de problema y ejecución de pre-validación
+  const handleSelectIssue = (issue: PreValidationIssue) => {
+    setSelectedIssue(issue)
     const orders = getStoredLocalOrders()
-    const report = inspectAccount(user, orders)
-    const diagnosisText = formatDiagnosisAsBotMessage(report)
-
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: '🔍 Diagnosticar el estado de mi cuenta y órdenes activas.',
-      timestamp: Date.now()
-    }
-
-    const botMsg: ChatMessage = {
-      id: `bot_${Date.now() + 1}`,
-      sender: 'bot',
-      text: diagnosisText,
-      timestamp: Date.now() + 1,
-      report,
-      canEscalate: report.canEscalateToHuman,
-      suggestedTopicIds: report.hasEscrow ? ['fin_escrow', 'fin_withdraw_fees'] : ['fin_withdraw_fees', 'rule_captures']
-    }
-
-    setMessages((prev) => [...prev, userMsg, botMsg])
+    const result = evaluateIssuePreValidation(issue.id, user, orders)
+    setPreValidationResult(result)
+    setWizardStep('verdict')
   }
 
-  // Selección de un tema de la base de conocimiento
-  const handleSelectTopic = (topicId: string) => {
-    const topic = getKnowledgeTopic(topicId)
-    if (!topic) return
+  // Envío formal del Ticket
+  const handleSendTicket = async () => {
+    if (!user?.uid || !preValidationResult) return
+    setIsSubmitting(true)
 
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: topic.title,
-      timestamp: Date.now(),
-      topicId
+    try {
+      const ticket = await createSupportTicket({
+        playerUid: user.uid,
+        playerName: user.nickname || user.displayName || 'Jugador Sugar',
+        preValidation: preValidationResult,
+        playerNotes
+      })
+
+      setCreatedTicket(ticket)
+      setWizardStep('ticket_success')
+    } catch (err) {
+      console.error('[VirtualSupportModal] Error al crear ticket:', err)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    let responseText = `### ${topic.title}\n\n${topic.content}`
-    if (topic.highlights && topic.highlights.length > 0) {
-      responseText += `\n\n**Puntos Clave:**\n` + topic.highlights.map((h) => `• ${h}`).join('\n')
-    }
-
-    const botMsg: ChatMessage = {
-      id: `bot_${Date.now() + 1}`,
-      sender: 'bot',
-      text: responseText,
-      timestamp: Date.now() + 1,
-      topicId,
-      suggestedTopicIds: topic.relatedTopicIds || ['fin_parity', 'fin_withdraw_fees']
-    }
-
-    setMessages((prev) => [...prev, userMsg, botMsg])
-    setIsSearching(false)
-    setInputText('')
   }
 
-  // Envío de mensaje o búsqueda de texto
-  const handleSendMessage = (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    const query = inputText.trim()
-    if (!query) return
-
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: query,
-      timestamp: Date.now()
-    }
-
-    // Buscar en base de conocimiento local
-    const matches = searchKnowledgeBase(query)
-
-    let botResponse = ''
-    let suggestedTopicIds: string[] = []
-
-    if (matches.length > 0) {
-      const bestMatch = matches[0]
-      botResponse = `He encontrado información sobre tu consulta:\n\n### ${bestMatch.title}\n\n${bestMatch.content}`
-      suggestedTopicIds = matches.slice(1, 4).map((m) => m.id)
-    } else {
-      botResponse = `No encontré una respuesta exacta para "${query}".\n\nPuedes seleccionar uno de los temas oficiales en los botones inferiores o solicitar un diagnóstico directo de tu cuenta.`
-      suggestedTopicIds = ['fin_withdraw_fees', 'fin_parity', 'rule_captures', 'conn_disconnect']
-    }
-
-    const botMsg: ChatMessage = {
-      id: `bot_${Date.now() + 1}`,
-      sender: 'bot',
-      text: botResponse,
-      timestamp: Date.now() + 1,
-      suggestedTopicIds,
-      canEscalate: true
-    }
-
-    setMessages((prev) => [...prev, userMsg, botMsg])
-    setInputText('')
-    setIsSearching(false)
-  }
-
-  // Manejador de Escalamiento a Ticket Humano (Tier 2)
-  const handleEscalateToHuman = () => {
-    setEscalationSubmitted(true)
-    const userMsg: ChatMessage = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text: '⚠️ Deseo reportar un problema a un agente humano de soporte.',
-      timestamp: Date.now()
-    }
-
-    const botMsg: ChatMessage = {
-      id: `bot_${Date.now() + 1}`,
-      sender: 'bot',
-      text: `✅ **Solicitud de Escalamiento Registrada**\n\nHe recopilado el diagnóstico de tu cuenta y el resumen de esta sesión. Tu caso ha sido preparado para su asignación con el equipo de Disputas y Auditoría.\n\nUn agente de soporte revisará la trazabilidad contable de tu cuenta en el panel administrativo. Recuerda que todos tus fondos se encuentran asegurados por el libro mayor de Sugar Ludo.`,
-      timestamp: Date.now() + 1
-    }
-
-    setMessages((prev) => [...prev, userMsg, botMsg])
-  }
-
-  // Cambio en input para sugerencias en tiempo real
-  const handleInputChange = (val: string) => {
-    setInputText(val)
-    if (val.trim().length >= 2) {
-      const results = searchKnowledgeBase(val)
-      setSearchResults(results)
-      setIsSearching(results.length > 0)
-    } else {
-      setIsSearching(false)
-      setSearchResults([])
-    }
+  const handleResetWizard = () => {
+    setWizardStep('select_category')
+    setSelectedIssue(null)
+    setPreValidationResult(null)
+    setPlayerNotes('')
+    setCreatedTicket(null)
   }
 
   if (!isOpen) return null
 
+  const openTicketsCount = myTickets.filter(
+    (t) => t.status === 'open' || t.status === 'investigating'
+  ).length
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-      {/* Backdrop con Blur Cyberpunk */}
+      {/* Backdrop con Blur Cyber Candy */}
       <div
         onClick={onClose}
         className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity cursor-pointer"
       />
 
-      {/* Sheet Modal Principal */}
+      {/* Modal Card */}
       <div className="relative z-10 flex w-full max-w-2xl h-[88dvh] max-h-[750px] flex-col overflow-hidden rounded-3xl border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.8)] bg-[oklch(0.14_0.03_285/0.95)]">
         
-        {/* Barra de Arrastre Visual Mobile */}
+        {/* Barra de arrastre móvil */}
         <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
           <div className="h-1.5 w-12 rounded-full bg-white/20" />
         </div>
 
-        {/* Encabezado del Asistente */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-white/10 bg-slate-950/60 backdrop-blur-sm">
+        {/* Encabezado Principal */}
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10 bg-slate-950/70 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="relative flex size-10 items-center justify-center rounded-2xl bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)] border border-[var(--candy-cyan)]/40 shadow-[0_0_15px_rgba(6,182,212,0.3)]">
-              <Bot className="size-5" />
-              <span className="absolute -top-0.5 -right-0.5 flex size-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full size-2.5 bg-emerald-500" />
-              </span>
+            <div className="flex size-10 items-center justify-center rounded-2xl bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)] border border-[var(--candy-cyan)]/30 shadow-[0_0_15px_rgba(6,182,212,0.25)]">
+              <ShieldCheck className="size-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-display text-base font-extrabold uppercase tracking-wide text-white">
-                  Asistente Virtual
-                </h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  Tier 1 • 0ms
-                </span>
-              </div>
+              <h2 className="font-display text-base font-extrabold uppercase tracking-wide text-white">
+                Centro de Soporte y Ayuda
+              </h2>
               <p className="text-[11px] text-muted-foreground">
-                Soporte inteligente y diagnóstico de cuenta en tiempo real
+                Resolución de incidencias y gestión de tickets oficiales
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleReset}
-              className="btn-3d flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-muted-foreground hover:text-white transition-all cursor-pointer"
-              title="Reiniciar conversación"
-            >
-              <RotateCcw className="size-4" />
-            </button>
-            <button
-              onClick={onClose}
-              className="btn-3d flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-muted-foreground hover:text-white transition-all cursor-pointer"
-              aria-label="Cerrar soporte"
-            >
-              <X className="size-5" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="btn-3d flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-muted-foreground hover:text-white transition-all cursor-pointer"
+            aria-label="Cerrar soporte"
+          >
+            <X className="size-5" />
+          </button>
         </div>
 
-        {/* Acceso Rápido: Botón Destacado de Diagnóstico Instantáneo */}
-        <div className="px-4 sm:px-6 py-2.5 bg-slate-900/80 border-b border-white/5 flex items-center justify-between gap-3 overflow-x-auto custom-scrollbar shrink-0">
+        {/* Navegación por Pestañas */}
+        <div className="px-4 sm:px-6 pt-3 pb-2 border-b border-white/5 bg-slate-900/60 flex items-center gap-2 shrink-0 overflow-x-auto custom-scrollbar">
           <button
-            onClick={handleRunDiagnostics}
-            className="btn-3d flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/30 text-cyan-300 font-bold text-xs shrink-0 cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.15)]"
+            onClick={() => {
+              setActiveTab('report')
+              handleResetWizard()
+            }}
+            className={`btn-3d px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'report'
+                ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                : 'bg-white/5 text-muted-foreground hover:text-white border border-white/10'
+            }`}
           >
-            <Sparkles className="size-3.5 text-cyan-400 animate-pulse" />
-            <span>Diagnosticar mi Cuenta (0ms)</span>
+            <ShieldAlert className="size-3.5" />
+            <span>Reportar Problema</span>
           </button>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={() => handleSelectTopic('fin_withdraw_fees')}
-              className="btn-3d px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-[11px] font-semibold text-white/80 hover:text-white hover:bg-white/10 shrink-0 cursor-pointer"
-            >
-              Retiros 5% / 10%
-            </button>
-            <button
-              onClick={() => handleSelectTopic('fin_parity')}
-              className="btn-3d px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-[11px] font-semibold text-white/80 hover:text-white hover:bg-white/10 shrink-0 cursor-pointer"
-            >
-              Tasa 1 USDT = 100 SC
-            </button>
-            <button
-              onClick={() => handleSelectTopic('rule_three_doubles')}
-              className="btn-3d px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-[11px] font-semibold text-white/80 hover:text-white hover:bg-white/10 shrink-0 cursor-pointer"
-            >
-              Regla 3 Dobles
-            </button>
-          </div>
+          <button
+            onClick={() => setActiveTab('my_tickets')}
+            className={`btn-3d px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'my_tickets'
+                ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                : 'bg-white/5 text-muted-foreground hover:text-white border border-white/10'
+            }`}
+          >
+            <FileText className="size-3.5" />
+            <span>Mis Tickets</span>
+            {openTicketsCount > 0 && (
+              <span className="size-4.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] flex items-center justify-center ml-0.5">
+                {openTicketsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('guides')}
+            className={`btn-3d px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+              activeTab === 'guides'
+                ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                : 'bg-white/5 text-muted-foreground hover:text-white border border-white/10'
+            }`}
+          >
+            <HelpCircle className="size-3.5" />
+            <span>Reglamento y Guías</span>
+          </button>
         </div>
 
-        {/* Flujo de Conversación (Scrollable Body) */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar">
-          {messages.map((msg) => {
-            const isBot = msg.sender === 'bot'
-            return (
-              <div
-                key={msg.id}
-                className={`flex gap-3 ${isBot ? 'items-start' : 'items-end justify-end'}`}
-              >
-                {isBot && (
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)] border border-[var(--candy-cyan)]/30 mt-1">
-                    <Bot className="size-4" />
-                  </div>
-                )}
+        {/* ========================================================================= */}
+        {/* PESTAÑA 1: REPORTAR PROBLEMA (WIZARD GUIADO POR INCIDENCIAS) */}
+        {/* ========================================================================= */}
+        {activeTab === 'report' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar flex flex-col">
+            
+            {/* PASO 1: SELECCIONAR CATEGORÍA */}
+            {wizardStep === 'select_category' && (
+              <div className="space-y-4 animate-in fade-in">
+                <div className="text-center sm:text-left space-y-1">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    ¿Qué tipo de problema deseas resolver?
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Selecciona una categoría para iniciar la validación de tu caso:
+                  </p>
+                </div>
 
-                <div
-                  className={`max-w-[85%] rounded-2xl p-4 text-xs leading-relaxed space-y-2.5 shadow-md ${
-                    isBot
-                      ? 'bg-slate-900/90 border border-white/10 text-white/95'
-                      : 'bg-cyan-500 text-slate-950 font-medium ml-auto rounded-br-none'
-                  }`}
-                >
-                  {/* Contenido formateado en párrafos */}
-                  <div className="whitespace-pre-line space-y-2">
-                    {msg.text.split('\n\n').map((para, i) => (
-                      <p key={i}>
-                        {para.split('\n').map((line, j) => {
-                          // Renderizado simple de negritas
-                          const parts = line.split(/(\*\*.*?\*\*)/g)
-                          return (
-                            <React.Fragment key={j}>
-                              {parts.map((p, k) => {
-                                if (p.startsWith('**') && p.endsWith('**')) {
-                                  return (
-                                    <strong
-                                      key={k}
-                                      className={isBot ? 'font-bold text-white' : 'font-black text-slate-950'}
-                                    >
-                                      {p.slice(2, -2)}
-                                    </strong>
-                                  )
-                                }
-                                return p
-                              })}
-                              {j < line.length - 1 && <br />}
-                            </React.Fragment>
-                          )
-                        })}
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {/* Tarjeta 1: Transacciones */}
+                  <button
+                    onClick={() => {
+                      setSelectedCategory('transactions')
+                      setWizardStep('select_issue')
+                    }}
+                    className="btn-3d p-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-cyan-500/10 hover:border-cyan-500/40 text-left transition-all cursor-pointer flex flex-col justify-between group"
+                  >
+                    <div className="flex size-11 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 group-hover:scale-105 transition-transform mb-3">
+                      <Wallet className="size-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-display text-sm font-bold text-white group-hover:text-cyan-300">
+                        Transacciones P2P
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Depósitos, retiros y saldo retenido en custodia.
                       </p>
-                    ))}
-                  </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-[11px] font-semibold text-cyan-400 mt-4">
+                      <span>Seleccionar</span>
+                      <ChevronRight className="size-3.5" />
+                    </div>
+                  </button>
 
-                  {/* Tarjeta Visual de Diagnóstico de Cuenta (si aplica) */}
-                  {msg.report && msg.report.isLoggedIn && (
-                    <div className="mt-3 p-3.5 rounded-xl bg-slate-950/80 border border-white/10 space-y-2.5 text-[11px]">
-                      <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                        <span className="font-bold text-slate-300">Balance Verificado:</span>
-                        <span className="font-mono font-extrabold text-cyan-400">
-                          {msg.report.availableCoins.toLocaleString()} SC
-                        </span>
+                  {/* Tarjeta 2: Reglas de Juego */}
+                  <button
+                    onClick={() => {
+                      setSelectedCategory('gameplay')
+                      setWizardStep('select_issue')
+                    }}
+                    className="btn-3d p-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-magenta-500/10 hover:border-magenta-500/40 text-left transition-all cursor-pointer flex flex-col justify-between group"
+                  >
+                    <div className="flex size-11 items-center justify-center rounded-xl bg-pink-500/20 text-pink-400 group-hover:scale-105 transition-transform mb-3">
+                      <Gamepad2 className="size-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-display text-sm font-bold text-white group-hover:text-pink-300">
+                        Reglas y Partidas
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Salida de fichas, dados dobles y desconexiones.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-[11px] font-semibold text-pink-400 mt-4">
+                      <span>Seleccionar</span>
+                      <ChevronRight className="size-3.5" />
+                    </div>
+                  </button>
+
+                  {/* Tarjeta 3: Cuenta y Saldo */}
+                  <button
+                    onClick={() => {
+                      setSelectedCategory('account')
+                      setWizardStep('select_issue')
+                    }}
+                    className="btn-3d p-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-amber-500/10 hover:border-amber-500/40 text-left transition-all cursor-pointer flex flex-col justify-between group"
+                  >
+                    <div className="flex size-11 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 group-hover:scale-105 transition-transform mb-3">
+                      <Coins className="size-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-display text-sm font-bold text-white group-hover:text-amber-300">
+                        Cuenta y Saldo
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Discrepancia en balance, premios de torneos u otros.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-[11px] font-semibold text-amber-400 mt-4">
+                      <span>Seleccionar</span>
+                      <ChevronRight className="size-3.5" />
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* PASO 2: SELECCIONAR PROBLEMA ESPECÍFICO */}
+            {wizardStep === 'select_issue' && (
+              <div className="space-y-4 animate-in fade-in">
+                <button
+                  onClick={() => setWizardStep('select_category')}
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="size-3.5" />
+                  <span>Volver a categorías</span>
+                </button>
+
+                <div>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    Selecciona tu caso específico
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    El sistema comprobará los datos de tu cuenta para darte una solución inmediata:
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {AVAILABLE_ISSUES.filter((i) => i.category === selectedCategory).map((issue) => (
+                    <button
+                      key={issue.id}
+                      onClick={() => handleSelectIssue(issue)}
+                      className="btn-3d w-full p-3.5 rounded-2xl border border-white/10 bg-slate-900/80 hover:bg-slate-800 hover:border-cyan-500/30 text-left transition-all cursor-pointer flex items-center justify-between gap-3 group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-9 items-center justify-center rounded-xl bg-white/5 text-cyan-400 group-hover:bg-cyan-500/20 transition-colors shrink-0">
+                          {issue.category === 'transactions' && <Wallet className="size-4" />}
+                          {issue.category === 'gameplay' && <Gamepad2 className="size-4" />}
+                          {issue.category === 'account' && <Coins className="size-4" />}
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-white group-hover:text-cyan-300">
+                            {issue.title}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {issue.subtitle}
+                          </div>
+                        </div>
                       </div>
+                      <ChevronRight className="size-4 text-muted-foreground group-hover:text-cyan-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                      {msg.report.hasEscrow && (
-                        <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                          <span className="font-bold text-amber-300">En Custodia (Escrow):</span>
-                          <span className="font-mono font-extrabold text-amber-400">
-                            {msg.report.escrowLockedCoins.toLocaleString()} SC
-                          </span>
+            {/* PASO 3: DIAGNÓSTICO Y VEREDICTO DETERMINISTA */}
+            {wizardStep === 'verdict' && preValidationResult && (
+              <div className="space-y-4 animate-in fade-in flex-1 flex flex-col justify-between">
+                <div className="space-y-4">
+                  <button
+                    onClick={() => setWizardStep('select_issue')}
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    <span>Elegir otro problema</span>
+                  </button>
+
+                  {/* Tarjeta de Veredicto */}
+                  <div
+                    className={`rounded-2xl p-4 sm:p-5 border space-y-3 ${
+                      preValidationResult.canOpenTicket
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-100'
+                        : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-100'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {preValidationResult.canOpenTicket ? (
+                        <div className="flex size-9 items-center justify-center rounded-xl bg-rose-500/20 text-rose-400 shrink-0 mt-0.5">
+                          <AlertTriangle className="size-5" />
+                        </div>
+                      ) : (
+                        <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
+                          <CheckCircle2 className="size-5" />
                         </div>
                       )}
-
-                      <div className="flex items-center justify-between pt-0.5">
-                        <span className="font-medium text-muted-foreground">Estado Operativo:</span>
-                        <span
-                          className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
-                            msg.report.statusBadge.variant === 'emerald'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : msg.report.statusBadge.variant === 'rose'
-                              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          }`}
-                        >
-                          {msg.report.statusBadge.label}
-                        </span>
+                      <div>
+                        <h4 className="font-display text-sm font-extrabold text-white">
+                          {preValidationResult.verdictTitle}
+                        </h4>
+                        {preValidationResult.ruleArticleReference && (
+                          <span className="inline-block mt-0.5 text-[10px] font-semibold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-500/30">
+                            {preValidationResult.ruleArticleReference}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  )}
 
-                  {/* Chips Sugeridos debajo de respuestas del bot */}
-                  {isBot && msg.suggestedTopicIds && msg.suggestedTopicIds.length > 0 && (
-                    <div className="pt-2 border-t border-white/10 flex flex-wrap gap-1.5">
-                      <span className="text-[10px] text-muted-foreground w-full font-semibold">
-                        Temas relacionados:
-                      </span>
-                      {msg.suggestedTopicIds.map((tid) => {
-                        const top = getKnowledgeTopic(tid)
-                        if (!top) return null
-                        return (
-                          <button
-                            key={tid}
-                            onClick={() => handleSelectTopic(tid)}
-                            className="btn-3d px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-400/40 text-[10px] font-semibold text-cyan-300 transition-all cursor-pointer flex items-center gap-1"
-                          >
-                            <span>{top.shortLabel}</span>
-                            <ChevronRight className="size-3 opacity-60" />
-                          </button>
-                        )
-                      })}
+                    <div className="text-xs leading-relaxed text-slate-200 whitespace-pre-line pl-12">
+                      {preValidationResult.verdictExplanation}
                     </div>
-                  )}
 
-                  {/* Botón de Escalamiento a Ticket Humano si aplica */}
-                  {isBot && msg.canEscalate && !escalationSubmitted && (
-                    <div className="pt-3 border-t border-rose-500/20">
+                    {preValidationResult.actionableSteps && preValidationResult.actionableSteps.length > 0 && (
+                      <div className="pt-2 pl-12 border-t border-white/10 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Recomendaciones:
+                        </span>
+                        {preValidationResult.actionableSteps.map((step, idx) => (
+                          <p key={idx} className="text-[11px] text-slate-300">
+                            • {step}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Acciones del Veredicto */}
+                <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row gap-2 shrink-0">
+                  {preValidationResult.canOpenTicket ? (
+                    <button
+                      onClick={() => setWizardStep('ticket_form')}
+                      className="btn-3d flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-black text-xs transition-all shadow-[0_0_20px_rgba(244,63,94,0.3)] cursor-pointer"
+                    >
+                      <ShieldAlert className="size-4" />
+                      <span>Abrir Ticket Oficial de Soporte</span>
+                    </button>
+                  ) : (
+                    <>
                       <button
-                        onClick={handleEscalateToHuman}
-                        className="btn-3d w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-xs transition-all cursor-pointer shadow-[0_0_15px_rgba(244,63,94,0.15)]"
+                        onClick={handleResetWizard}
+                        className="btn-3d flex-1 py-3 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all cursor-pointer"
                       >
-                        <AlertTriangle className="size-3.5 text-rose-400" />
-                        <span>¿Deseas reportar un problema a un agente humano?</span>
+                        Entendido, duda resuelta
                       </button>
-                    </div>
+                      <button
+                        onClick={() => setWizardStep('ticket_form')}
+                        className="btn-3d py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 font-bold text-xs transition-all cursor-pointer"
+                      >
+                        Mi caso es diferente (Abrir Ticket)
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
-            )
-          })}
-          <div ref={chatBottomRef} />
-        </div>
+            )}
 
-        {/* Autocomplete desplegable si hay búsqueda activa */}
-        {isSearching && searchResults.length > 0 && (
-          <div className="mx-4 sm:mx-6 mb-2 p-2 bg-slate-900 border border-cyan-500/40 rounded-2xl shadow-xl space-y-1 max-h-40 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2">
-            <div className="text-[10px] font-bold text-cyan-400 px-2 py-1 uppercase tracking-wider flex items-center gap-1">
-              <Search className="size-3" />
-              Sugerencias de la Base de Conocimiento:
-            </div>
-            {searchResults.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => handleSelectTopic(item.id)}
-                className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 text-xs text-white font-medium flex items-center justify-between group transition-colors cursor-pointer"
-              >
-                <span>{item.title}</span>
-                <ChevronRight className="size-3 text-muted-foreground group-hover:text-cyan-400" />
-              </button>
-            ))}
+            {/* PASO 4: FORMULARIO DE TICKET FORMAL */}
+            {wizardStep === 'ticket_form' && preValidationResult && (
+              <div className="space-y-4 animate-in fade-in flex-1 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <button
+                    onClick={() => setWizardStep('verdict')}
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    <span>Volver al diagnóstico</span>
+                  </button>
+
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <ShieldAlert className="size-4 text-cyan-400" />
+                      Formulario de Apertura de Ticket Oficial
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Tu solicitud será enviada directamente al panel de auditoría y soporte:
+                    </p>
+                  </div>
+
+                  {/* Resumen Automático del Sistema */}
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-white/10 space-y-1.5 text-xs">
+                    <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">
+                      Resumen del Caso (Generado por el Sistema):
+                    </span>
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
+                      {preValidationResult.systemSummary}
+                    </p>
+                  </div>
+
+                  {/* Campo de notas del jugador */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-white">
+                      Detalles Adicionales del Jugador:
+                    </label>
+                    <textarea
+                      value={playerNotes}
+                      onChange={(e) => setPlayerNotes(e.target.value)}
+                      placeholder="Indica cualquier dato adicional (ej. número de referencia bancaria, hora aproximada o lo que consideres importante)..."
+                      rows={4}
+                      className="w-full bg-slate-900/90 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400 transition-colors custom-scrollbar"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-white/10 flex gap-2">
+                  <button
+                    onClick={() => setWizardStep('verdict')}
+                    disabled={isSubmitting}
+                    className="btn-3d py-2.5 px-4 rounded-xl border border-white/10 bg-white/5 text-muted-foreground hover:text-white text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    onClick={handleSendTicket}
+                    disabled={isSubmitting || !playerNotes.trim()}
+                    className="btn-3d flex-1 py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.3)]"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        <span>Generando Ticket...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="size-4" />
+                        <span>Confirmar y Enviar Ticket</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* PASO 5: CONSTANCIA OFICIAL DE TICKET ENVIADO */}
+            {wizardStep === 'ticket_success' && createdTicket && (
+              <div className="space-y-5 animate-in zoom-in-95 flex-1 flex flex-col justify-center items-center text-center p-4">
+                <div className="flex size-16 items-center justify-center rounded-3xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+                  <ShieldCheck className="size-8" />
+                </div>
+
+                <div className="space-y-1.5 max-w-md">
+                  <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                    Ticket Registrado Exitosamente
+                  </span>
+                  <h3 className="font-display text-xl font-extrabold text-white">
+                    {createdTicket.ticketNumber}
+                  </h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Tu caso ha sido canalizado con el equipo de soporte y auditoría. Puedes hacer seguimiento de su estado en la pestaña de Mis Tickets.
+                  </p>
+                </div>
+
+                <div className="w-full max-w-sm p-3.5 rounded-2xl bg-slate-900 border border-white/10 text-xs text-left space-y-2">
+                  <div className="flex justify-between border-b border-white/10 pb-1.5">
+                    <span className="text-muted-foreground">Estado Inicial:</span>
+                    <span className="font-bold text-amber-400">Abierto / En Revisión</span>
+                  </div>
+                  <div className="flex justify-between border-b border-white/10 pb-1.5">
+                    <span className="text-muted-foreground">Prioridad:</span>
+                    <span className="font-bold uppercase text-cyan-400">{createdTicket.priority}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Fecha de Creación:</span>
+                    <span className="font-medium text-white">{new Date(createdTicket.createdAt).toLocaleTimeString()}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 w-full max-w-sm pt-2">
+                  <button
+                    onClick={() => {
+                      setActiveTab('my_tickets')
+                    }}
+                    className="btn-3d flex-1 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all cursor-pointer"
+                  >
+                    Ver Mis Tickets
+                  </button>
+                  <button
+                    onClick={onClose}
+                    className="btn-3d flex-1 py-3 rounded-xl border border-white/10 bg-white/5 text-muted-foreground hover:text-white font-bold text-xs transition-all cursor-pointer"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
-        {/* Input Bar con Envío y Consulta Instantánea */}
-        <div className="p-3 sm:p-4 bg-slate-950/90 border-t border-white/10 shrink-0">
-          <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => handleInputChange(e.target.value)}
-                placeholder="Escribe tu duda (ej. retiro, comisión, dados)..."
-                className="w-full bg-slate-900/90 border border-white/10 rounded-xl pl-3.5 pr-8 py-2.5 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400 transition-colors"
-              />
-              {inputText && (
-                <button
-                  type="button"
-                  onClick={() => handleInputChange('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
+        {/* ========================================================================= */}
+        {/* PESTAÑA 2: MIS TICKETS (BANDEJA DE SEGUIMIENTO EN VIVO) */}
+        {/* ========================================================================= */}
+        {activeTab === 'my_tickets' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-white/5">
+              <div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Historial de Tickets Oficiales
+                </h3>
+                <p className="text-[11px] text-muted-foreground">
+                  Monitorea el avance de tus reportes y las resoluciones del staff
+                </p>
+              </div>
+              <span className="text-xs font-mono font-bold text-cyan-400">
+                {myTickets.length} Caso(s)
+              </span>
             </div>
 
-            <button
-              type="submit"
-              disabled={!inputText.trim()}
-              className="btn-3d px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0 cursor-pointer"
-            >
-              <Send className="size-3.5" />
-              <span className="hidden sm:inline">Consultar</span>
-            </button>
-          </form>
+            {myTickets.length === 0 ? (
+              <div className="py-16 text-center space-y-3">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-white/5 text-muted-foreground mx-auto">
+                  <FileText className="size-6" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-white">No tienes tickets abiertos</h4>
+                  <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                    Si presentas alguna dificultad o anomalía con una partida o transacción, repórtala en la primera pestaña.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveTab('report')
+                    handleResetWizard()
+                  }}
+                  className="btn-3d px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-all cursor-pointer"
+                >
+                  Reportar un Problema
+                </button>
+              </div>
+            ) : (
+              myTickets.map((ticket) => {
+                const isOpen = ticket.status === 'open' || ticket.status === 'investigating'
+                const isResolvedPlayer = ticket.status === 'resolved_player'
 
-          {/* Pie informativo de costo $0.00 */}
-          <div className="flex items-center justify-center gap-2 pt-2 text-[10px] text-muted-foreground font-medium">
-            <ShieldCheck className="size-3 text-emerald-400" />
-            <span>Motor Determinista Tier 1 • Costo $0.00 • Datos en Memoria</span>
+                return (
+                  <div
+                    key={ticket.id}
+                    className="p-4 rounded-2xl border border-white/10 bg-slate-900/90 space-y-3 shadow-md"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display font-extrabold text-sm text-cyan-400">
+                          {ticket.ticketNumber}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {new Date(ticket.createdAt).toLocaleDateString('es-ES', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
+
+                      <span
+                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                          ticket.status === 'open'
+                            ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                            : ticket.status === 'investigating'
+                            ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
+                            : isResolvedPlayer
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                            : 'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                        }`}
+                      >
+                        {ticket.status === 'open' && 'En Espera de Asignación'}
+                        {ticket.status === 'investigating' && 'En Investigación de Auditoría'}
+                        {ticket.status === 'resolved_player' && 'Resuelto a Favor del Jugador'}
+                        {ticket.status === 'resolved_cashier' && 'Cerrado / Resuelto por Cajero'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-xs font-bold text-white">
+                        {ticket.reason.replace(/\[TKT-.*?\]\s*/, '')}
+                      </div>
+                      {ticket.playerNotes && (
+                        <p className="text-[11px] text-muted-foreground bg-slate-950/60 p-2.5 rounded-xl border border-white/5">
+                          "{ticket.playerNotes}"
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Notas de resolución del Administrador */}
+                    {ticket.resolutionNotes && (
+                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-1 text-xs">
+                        <div className="flex items-center gap-1.5 font-bold text-emerald-400 text-[11px]">
+                          <ShieldCheck className="size-3.5" />
+                          <span>Dictamen de Auditoría:</span>
+                        </div>
+                        <p className="text-[11px] text-emerald-200">
+                          {ticket.resolutionNotes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
           </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* PESTAÑA 3: REGLAMENTO Y GUÍAS RÁPIDAS */}
+        {/* ========================================================================= */}
+        {activeTab === 'guides' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar space-y-3">
+            <div className="pb-2 border-b border-white/5">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                Reglamento y Directrices de Sugar Ludo
+              </h3>
+              <p className="text-[11px] text-muted-foreground">
+                Artículos oficiales que rigen las partidas, la economía y el juego limpio
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              {Object.values(SUPPORT_TOPICS).map((topic) => (
+                <div
+                  key={topic.id}
+                  className="p-3.5 rounded-2xl border border-white/10 bg-slate-900/80 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-display font-bold text-xs text-white">
+                      {topic.title}
+                    </span>
+                    <span className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-500/20">
+                      {topic.category === 'financial' ? 'Finanzas' : topic.category === 'gameplay' ? 'Reglas' : 'Conexión'}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-line">
+                    {topic.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Footer Informativo Institucional */}
+        <div className="p-3 bg-slate-950/90 border-t border-white/10 flex items-center justify-between text-[10px] text-muted-foreground font-medium shrink-0">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="size-3.5 text-emerald-400" />
+            <span>Soporte Oficial Sugar Ludo • Libro Mayor Inmutable</span>
+          </div>
+
+          <span className="text-slate-400">
+            {user?.uid ? `ID: ${user.uid.slice(0, 8)}` : 'Sesión Invitado'}
+          </span>
         </div>
 
       </div>
