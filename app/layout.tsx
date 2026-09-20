@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Inter, Baloo_2 } from 'next/font/google'
+import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister'
 import './globals.css'
 import '../src/index.css'
 
@@ -43,6 +44,7 @@ export default function RootLayout({
   return (
     <html lang="es" className={`dark ${inter.variable} ${baloo.variable}`}>
       <body className="bg-background font-sans antialiased">
+        <ServiceWorkerRegister />
         {children}
         {process.env.VERCEL && <Analytics />}
       </body>

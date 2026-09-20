@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 const OUT_DIR = path.join(__dirname, 'out');
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -439,27 +440,48 @@ const server = http.createServer((req, res) => {
     const isDownload = ['.exe', '.apk', '.zip'].includes(ext);
     const filename = path.basename(filePath);
 
+    // Determinar política de caché HTTP granular
+    let cacheControl = 'public, max-age=86400'; // Default 1 día
+    const isHtml = ext === '.html' || filePath.endsWith('index.html');
+    const isNextStatic = pathname.startsWith('/_next/static/');
+    const isPwaFile = pathname === '/manifest.json' || pathname === '/sw.js';
+    const isHeavyMedia = ['.mp3', '.audio', '.woff', '.woff2', '.ttf', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.ico'].includes(ext);
+
+    if (isDownload) {
+      cacheControl = 'no-store';
+    } else if (isHtml) {
+      // HTML y SPA fallback: siempre frescos para garantizar bundles actualizados tras despliegues
+      cacheControl = 'no-cache, no-store, must-revalidate';
+    } else if (isNextStatic) {
+      // Next.js static chunks (con hash de contenido inmutable)
+      cacheControl = 'public, max-age=31536000, immutable';
+    } else if (isPwaFile) {
+      // Manifest y Service Worker: revalidación inmediata
+      cacheControl = 'public, max-age=0, must-revalidate';
+    } else if (isHeavyMedia) {
+      // Assets pesados (música, sprites, fuentes): 30 días de caché con SWR
+      cacheControl = 'public, max-age=2592000, stale-while-revalidate=86400';
+    }
+
     const headers = {
       'Content-Type': mimeType,
-      'Content-Length': stat.size,
       'Access-Control-Allow-Origin': '*',
-      ...(isDownload ? {
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Cache-Control': 'no-store',
-      } : {
-        'Cache-Control': 'public, max-age=3600',
-      }),
+      'Cache-Control': cacheControl,
+      ...(isDownload ? { 'Content-Disposition': `attachment; filename="${filename}"` } : {})
     };
 
     // 4. Handle HEAD requests without piping body
     if (req.method === 'HEAD') {
+      headers['Content-Length'] = stat.size;
       res.writeHead(200, headers);
       res.end();
       return;
     }
 
-    // 5. Serve File Stream
-    res.writeHead(200, headers);
+    // 5. Serve File Stream con compresión streaming para texto (.html, .js, .css, .json, .svg)
+    const isCompressible = ['.html', '.js', '.css', '.json', '.svg', '.webmanifest'].includes(ext);
+    const acceptEncoding = req.headers['accept-encoding'] || '';
+
     const stream = fs.createReadStream(filePath);
     stream.on('error', (err) => {
       console.error('Stream error:', err);
@@ -468,7 +490,20 @@ const server = http.createServer((req, res) => {
       }
       res.end();
     });
-    stream.pipe(res);
+
+    if (isCompressible && /\bgzip\b/.test(acceptEncoding)) {
+      headers['Content-Encoding'] = 'gzip';
+      res.writeHead(200, headers);
+      stream.pipe(zlib.createGzip()).pipe(res);
+    } else if (isCompressible && /\bdeflate\b/.test(acceptEncoding)) {
+      headers['Content-Encoding'] = 'deflate';
+      res.writeHead(200, headers);
+      stream.pipe(zlib.createDeflate()).pipe(res);
+    } else {
+      headers['Content-Length'] = stat.size;
+      res.writeHead(200, headers);
+      stream.pipe(res);
+    }
 
   } catch (error) {
     console.error('Request handler error:', error);
