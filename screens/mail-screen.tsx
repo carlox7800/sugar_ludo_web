@@ -921,22 +921,46 @@ export function MailScreen({ onBack }: { onBack: () => void }) {
 
                   if (isCompleted) {
                     return (
-                      <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-3.5 flex items-start gap-3">
-                        <ShieldCheck className="size-4 text-emerald-400 shrink-0 mt-0.5" />
-                        <p className="flex-1 text-[11px] text-emerald-200/90 leading-relaxed font-medium">
-                          Esta orden ha sido completada y conciliada en el libro mayor. Para cualquier consulta adicional, utiliza nuestro canal de Soporte Oficial.
-                        </p>
+                      <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <ShieldCheck className="size-4 text-emerald-400 shrink-0 mt-0.5" />
+                          <p className="flex-1 text-[11px] text-emerald-200/90 leading-relaxed font-medium">
+                            Esta orden ha sido completada y conciliada en el libro mayor. Para cualquier consulta adicional, utiliza nuestro canal de Soporte Oficial.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (typeof window !== 'undefined') {
+                              window.dispatchEvent(new CustomEvent('sugar_open_support', { detail: { topicId: 'fin_withdraw_fees' } }))
+                            }
+                          }}
+                          className="btn-3d px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 font-bold text-xs shrink-0 cursor-pointer"
+                        >
+                          Abrir Asistente
+                        </button>
                       </div>
                     )
                   }
 
                   if (isCancelled) {
                     return (
-                      <div className="rounded-2xl bg-rose-500/10 border border-rose-500/20 p-3.5 flex items-start gap-3">
-                        <Info className="size-4 text-rose-400 shrink-0 mt-0.5" />
-                        <p className="flex-1 text-[11px] text-rose-200/90 leading-relaxed font-medium">
-                          Esta orden ha sido cancelada. Para cualquier consulta adicional, contacta a Soporte.
-                        </p>
+                      <div className="rounded-2xl bg-rose-500/10 border border-rose-500/20 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <Info className="size-4 text-rose-400 shrink-0 mt-0.5" />
+                          <p className="flex-1 text-[11px] text-rose-200/90 leading-relaxed font-medium">
+                            Esta orden ha sido cancelada. Para cualquier consulta adicional, contacta a Soporte.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (typeof window !== 'undefined') {
+                              window.dispatchEvent(new CustomEvent('sugar_open_support', { detail: { topicId: 'fin_escrow' } }))
+                            }
+                          }}
+                          className="btn-3d px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 font-bold text-xs shrink-0 cursor-pointer"
+                        >
+                          Abrir Asistente
+                        </button>
                       </div>
                     )
                   }

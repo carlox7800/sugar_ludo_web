@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Settings, Volume2, VolumeX, Smartphone, Palette, Copy, Check, LogOut, Info, Download, ExternalLink } from 'lucide-react'
+import { X, Settings, Volume2, VolumeX, Smartphone, Palette, Copy, Check, LogOut, Info, Download, ExternalLink, Headphones } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 import { globalLogger } from '@/lib/logger'
 import { getSocket } from '@/lib/socket'
@@ -225,6 +225,30 @@ HISTORIAL CRONOLÓGICO DE EVENTOS:
 
           {/* Utilities */}
           <div className="flex flex-col gap-3 pt-1">
+            <button
+              onClick={() => {
+                onClose()
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('sugar_open_support'))
+                }
+              }}
+              className="btn-3d flex items-center justify-between rounded-2xl border border-[var(--candy-cyan)]/40 bg-[var(--candy-cyan)]/10 px-4 py-3 text-sm font-bold text-[var(--candy-cyan)] hover:bg-[var(--candy-cyan)]/20 transition-all shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex size-9 items-center justify-center rounded-xl bg-[var(--candy-cyan)]/20 text-[var(--candy-cyan)]">
+                  <Headphones className="size-4.5" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="font-display text-sm font-bold text-foreground">Asistente Virtual & Soporte</span>
+                  <span className="text-[10px] text-muted-foreground">Diagnóstico de cuenta y dudas en 0ms</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 text-xs font-bold text-[var(--candy-cyan)] uppercase tracking-wider">
+                <span>Abrir</span>
+                <ExternalLink className="size-3.5" />
+              </div>
+            </button>
+
             <a
               href={LANDING_PORTAL_URL}
               target="_blank"

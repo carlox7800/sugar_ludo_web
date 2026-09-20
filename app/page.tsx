@@ -30,6 +30,7 @@ import { VoiceProvider, useVoiceChat } from '@/lib/voice-context'
 import { LoginModal } from '@/components/login-modal'
 import { NicknameSetupModal } from '@/components/nickname-setup-modal'
 import { DuelChallengeModal } from '@/components/duel-challenge-modal'
+import { VirtualSupportModal } from '@/components/support/VirtualSupportModal'
 import { getSocket } from '@/lib/socket'
 import { globalLogger } from '@/lib/logger'
 import { preloadStoreAssets } from '@/lib/store-service'
@@ -139,12 +140,25 @@ function PageContent() {
   // UI States
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isSupportOpen, setIsSupportOpen] = useState(false)
+  const [supportInitialTopic, setSupportInitialTopic] = useState<string | undefined>(undefined)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
   const [isExitModalOpen, setIsExitModalOpen] = useState(false)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [incomingChallenge, setIncomingChallenge] = useState<DuelChallengeItem | null>(null)
 
   const [duelAutoJoinCode, setDuelAutoJoinCode] = useState<string | null>(null)
+
+  // Escucha de apertura de Asistente Virtual / Soporte desde cualquier componente
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleOpenSupport = (e: any) => {
+      setSupportInitialTopic(e?.detail?.topicId)
+      setIsSupportOpen(true)
+    }
+    window.addEventListener('sugar_open_support', handleOpenSupport)
+    return () => window.removeEventListener('sugar_open_support', handleOpenSupport)
+  }, [])
 
   // Escucha de tecla ESC (Desktop Electron y navegador) para desplegar modal propio Cyber Candy
   useEffect(() => {
@@ -604,6 +618,11 @@ function PageContent() {
         <SettingsModal 
           isOpen={isSettingsOpen} 
           onClose={() => setIsSettingsOpen(false)} 
+        />
+        <VirtualSupportModal
+          isOpen={isSupportOpen}
+          onClose={() => setIsSupportOpen(false)}
+          initialTopicId={supportInitialTopic}
         />
         <LoginModal 
           isOpen={isLoginModalOpen} 
