@@ -3,6 +3,7 @@ export type LogLevel =
   | 'GAME-FLOW' 
   | 'TOKENS' 
   | 'ERROR' 
+  | 'CRITICAL'
   | 'SYSTEM' 
   | 'ROLL' 
   | 'CAPTURE' 
@@ -122,11 +123,42 @@ class Logger {
 
     this.schedulePersist();
     
-    // Solo mostramos ERRORs por consola de forma obligatoria, los demás opcional
-    if (level === 'ERROR') {
+    // Solo mostramos ERRORs o CRITICALs por consola de forma obligatoria, los demás opcional
+    if (level === 'ERROR' || level === 'CRITICAL') {
       console.error(`[${entry.timestamp}] [${level}] ${message}`, details ? details : '');
     } else {
       console.log(`[${entry.timestamp}] [${level}] ${message}`, details ? details : '');
+    }
+  }
+
+  private sendTelemetryAlert(level: 'ERROR' | 'CRITICAL' | 'WARN', message: string, details?: any) {
+    if (typeof window === 'undefined') return;
+    try {
+      const telemetryUrl = process.env.NEXT_PUBLIC_ADMIN_HUB_URL 
+        ? `${process.env.NEXT_PUBLIC_ADMIN_HUB_URL}/api/telemetry` 
+        : 'https://admin.sugarludo.com/api/telemetry';
+
+      const payload = JSON.stringify({
+        level,
+        source: 'game-client',
+        message,
+        details,
+        timestamp: Date.now()
+      });
+
+      if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(telemetryUrl, blob);
+      } else if (typeof fetch === 'function') {
+        fetch(telemetryUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      }
+    } catch {
+      // Silencioso: la telemetría jamás bloquea la experiencia del juego
     }
   }
 
@@ -156,6 +188,14 @@ class Logger {
 
   public error(message: string, details?: any) {
     this.log('ERROR', message, details);
+    if (typeof message === 'string' && (message.includes('transaccion') || message.includes('wallet') || message.includes('no controlado'))) {
+      this.sendTelemetryAlert('ERROR', message, details);
+    }
+  }
+
+  public critical(message: string, details?: any) {
+    this.log('CRITICAL', message, details);
+    this.sendTelemetryAlert('CRITICAL', message, details);
   }
 
   public getLogs(): LogEntry[] {

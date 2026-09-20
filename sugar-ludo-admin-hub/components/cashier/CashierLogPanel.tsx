@@ -19,7 +19,19 @@ export function CashierLogPanel() {
     const unsubscribe = cashierLogger.subscribe(() => {
       setLogs([...cashierLogger.getLogs()])
     })
-    return () => unsubscribe()
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault()
+        setIsOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [])
 
   if (!isMounted) return null
