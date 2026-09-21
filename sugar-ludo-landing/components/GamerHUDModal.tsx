@@ -86,7 +86,7 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
                 <div>
                   <h4 className="font-bold text-white text-sm">Descarga el Instalador Oficial</h4>
                   <p className="text-xs text-white/70 mt-0.5">
-                    Guarda el archivo <code>SugarLudo-Setup.exe</code> (~248 MB) en tu PC.
+                    Guarda el archivo <code>SugarLudo-v9.5.4-Setup.exe</code> (~248 MB) en tu PC.
                   </p>
                 </div>
               </div>
@@ -127,7 +127,7 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
                 <div>
                   <h4 className="font-bold text-white text-sm">Descarga el Paquete APK</h4>
                   <p className="text-xs text-white/70 mt-0.5">
-                    Descarga directa de <code>SugarLudo.apk</code> (~47 MB) con gráficos optimizados para móviles.
+                    Descarga directa de <code>SugarLudo-v9.5.4.apk</code> (~47 MB) con gráficos optimizados para móviles.
                   </p>
                 </div>
               </div>
@@ -171,6 +171,8 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
 
           <a
             href={downloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             download
             className={`w-full sm:w-auto px-7 py-3 rounded-2xl font-black uppercase tracking-wider text-center shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 ${
               isWin 

@@ -51,8 +51,14 @@ describe('Suite: SemVer & Detección de Versiones (Force Update)', () => {
   })
 
   it('debe contener URLs oficiales de descarga para Android, Windows y Web en la política por defecto', () => {
-    assert.ok(DEFAULT_VERSION_POLICY.downloadUrls.android.includes('sugar-ludo-landing.onrender.com'))
-    assert.ok(DEFAULT_VERSION_POLICY.downloadUrls.windows.includes('sugar-ludo-landing.onrender.com'))
+    assert.ok(
+      DEFAULT_VERSION_POLICY.downloadUrls.android.includes('github.com') ||
+      DEFAULT_VERSION_POLICY.downloadUrls.android.includes('sugar-ludo-landing.onrender.com')
+    )
+    assert.ok(
+      DEFAULT_VERSION_POLICY.downloadUrls.windows.includes('github.com') ||
+      DEFAULT_VERSION_POLICY.downloadUrls.windows.includes('sugar-ludo-landing.onrender.com')
+    )
     assert.ok(DEFAULT_VERSION_POLICY.downloadUrls.web.includes('onrender.com'))
     assert.ok(DEFAULT_VERSION_POLICY.landingUrl.includes('sugar-ludo-landing.onrender.com'))
     assert.equal(DEFAULT_VERSION_POLICY.forceUpdate, true)

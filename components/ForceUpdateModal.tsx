@@ -92,6 +92,17 @@ export function ForceUpdateModal({
     }
   }
 
+  // Apertura segura en ventana externa / navegador del host (Electron shell.openExternal o target="_blank")
+  const openExternal = (targetUrl: string) => {
+    if (typeof window === 'undefined') return
+    const electron = (window as any).electronAuth
+    if (electron && typeof electron.openExternalUrl === 'function') {
+      electron.openExternalUrl(targetUrl)
+    } else {
+      window.open(targetUrl, '_blank')
+    }
+  }
+
   // Manejador de descarga adaptativo a la plataforma
   const handleDownload = () => {
     const { downloadUrls, landingUrl } = currentInfo
@@ -99,14 +110,10 @@ export function ForceUpdateModal({
 
     if (platform === 'android') {
       const targetUrl = downloadUrls.android || `${fallbackLanding}/#download`
-      if (typeof window !== 'undefined') {
-        window.open(targetUrl, '_blank')
-      }
+      openExternal(targetUrl)
     } else if (platform === 'desktop') {
       const targetUrl = downloadUrls.windows || `${fallbackLanding}/#download`
-      if (typeof window !== 'undefined') {
-        window.open(targetUrl, '_blank')
-      }
+      openExternal(targetUrl)
     } else {
       // En Web se fuerza la recarga completa para invalidar caches
       if (typeof window !== 'undefined') {
@@ -218,9 +225,7 @@ export function ForceUpdateModal({
             <button
               onClick={() => {
                 const url = currentInfo.landingUrl || 'https://sugar-ludo-landing.onrender.com'
-                if (typeof window !== 'undefined') {
-                  window.open(url, '_blank')
-                }
+                openExternal(url)
               }}
               className="flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/5 py-2.5 px-3 font-display text-xs font-bold text-slate-300 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
             >
