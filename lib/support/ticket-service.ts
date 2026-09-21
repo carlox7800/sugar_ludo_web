@@ -14,10 +14,20 @@ import {
   query,
   where,
   onSnapshot,
-  limit,
-  orderBy
+  limit
 } from 'firebase/firestore'
-import { PreValidationResult } from './pre-validation-engine'
+import { APP_VERSION } from '../version'
+import { globalLogger } from '../logger'
+import type { PreValidationResult, IssueDomain } from './pre-validation-engine'
+
+export interface TicketTelemetrySnapshot {
+  clientPlatform: 'web' | 'android_capacitor' | 'electron_desktop'
+  appVersion: string
+  userAgent: string
+  lastRoomCode?: string
+  recentSocketLogs?: Array<{ timestamp: string; level: string; message: string }>
+  accountBalanceAtCreation?: { availableCoins: number; escrowCoins: number }
+}
 
 export interface SupportTicketItem {
   id: string
@@ -25,6 +35,7 @@ export interface SupportTicketItem {
   orderId: string
   type: 'deposit' | 'withdraw'
   orderType: string
+  domain: IssueDomain
   category: string
   playerUid: string
   playerName: string
@@ -38,11 +49,12 @@ export interface SupportTicketItem {
   playerNotes: string
   openedBy: 'player'
   openedAt: number
-  status: 'open' | 'investigating' | 'resolved_player' | 'resolved_cashier'
+  status: 'open' | 'investigating' | 'resolved_player' | 'resolved_cashier' | 'dismissed' | 'compensated'
   priority: 'low' | 'normal' | 'high' | 'urgent'
   resolvedBy?: string
   resolvedAt?: number
   resolutionNotes?: string
+  telemetrySnapshot?: TicketTelemetrySnapshot
   createdAt: number
   updatedAt: number
 }
@@ -56,6 +68,71 @@ export function generateTicketNumber(): string {
   const year = new Date().getFullYear()
   const randomChars = Math.random().toString(36).substring(2, 6).toUpperCase()
   return `TKT-${year}-${randomChars}`
+}
+
+/**
+ * Captura un snapshot instantáneo de telemetría técnica del cliente
+ */
+export function captureClientTelemetrySnapshot(
+  user?: { coins?: number; escrowLockedCoins?: number; inGameCoins?: number },
+  lastRoomCode?: string
+): TicketTelemetrySnapshot {
+  let clientPlatform: 'web' | 'android_capacitor' | 'electron_desktop' = 'web'
+  let userAgent = ''
+
+  if (typeof window !== 'undefined') {
+    userAgent = navigator?.userAgent || ''
+    if ((window as any)?.Capacitor?.isNativePlatform?.()) {
+      clientPlatform = 'android_capacitor'
+    } else if (userAgent.toLowerCase().includes('electron') || (window as any)?.electronAPI) {
+      clientPlatform = 'electron_desktop'
+    }
+  }
+
+  let recentSocketLogs: Array<{ timestamp: string; level: string; message: string }> = []
+  try {
+    const allLogs = globalLogger?.getLogs ? globalLogger.getLogs() : []
+    const relevant = allLogs.filter(
+      (l) => l.level === 'SOCKET' || l.level === 'ERROR' || l.level === 'CRITICAL' || l.level === 'GAME-FLOW'
+    )
+    recentSocketLogs = relevant.slice(-15).map((l) => ({
+      timestamp: l.timestamp,
+      level: l.level,
+      message: l.message
+    }))
+  } catch {
+    recentSocketLogs = []
+  }
+
+  return {
+    clientPlatform,
+    appVersion: APP_VERSION,
+    userAgent,
+    ...(lastRoomCode ? { lastRoomCode } : {}),
+    recentSocketLogs,
+    accountBalanceAtCreation: user
+      ? {
+          availableCoins: Number(user.coins || 0),
+          escrowCoins: Number(user.escrowLockedCoins || user.inGameCoins || 0)
+        }
+      : undefined
+  }
+}
+
+/**
+ * Limpia recursivamente claves undefined para prevenir errores fatales de Firestore
+ */
+function sanitizeFirestorePayload<T extends Record<string, any>>(obj: T): T {
+  const result: any = {}
+  for (const [key, val] of Object.entries(obj)) {
+    if (val === undefined) continue
+    if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+      result[key] = sanitizeFirestorePayload(val)
+    } else {
+      result[key] = val
+    }
+  }
+  return result
 }
 
 /**
@@ -91,13 +168,15 @@ export interface CreateTicketParams {
   playerName: string
   preValidation: PreValidationResult
   playerNotes: string
+  userBalance?: { coins?: number; escrowLockedCoins?: number; inGameCoins?: number }
+  lastRoomCode?: string
 }
 
 /**
  * Crea un ticket formal en Firestore 'dispute_cases' y en almacenamiento local
  */
 export async function createSupportTicket(params: CreateTicketParams): Promise<SupportTicketItem> {
-  const { playerUid, playerName, preValidation, playerNotes } = params
+  const { playerUid, playerName, preValidation, playerNotes, userBalance, lastRoomCode } = params
   const now = Date.now()
   const randomSuffix = Math.random().toString(36).substring(2, 6)
   const ticketId = `tkt_${now}_${randomSuffix}`
@@ -105,6 +184,12 @@ export async function createSupportTicket(params: CreateTicketParams): Promise<S
 
   const orderId = preValidation.relatedOrderId || 'none'
   const type = preValidation.relatedOrderType === 'withdraw' ? 'withdraw' : 'deposit'
+  const domain: IssueDomain = preValidation.domain || (
+    preValidation.category === 'transactions' ? 'financial' :
+    preValidation.category === 'gameplay' ? 'gameplay' : 'account'
+  )
+
+  const telemetry = captureClientTelemetrySnapshot(userBalance, lastRoomCode)
 
   const ticket: SupportTicketItem = {
     id: ticketId,
@@ -112,6 +197,7 @@ export async function createSupportTicket(params: CreateTicketParams): Promise<S
     orderId,
     type,
     orderType: preValidation.relatedOrderType || preValidation.category,
+    domain,
     category: preValidation.category,
     playerUid,
     playerName: playerName || 'Jugador Sugar',
@@ -127,6 +213,7 @@ export async function createSupportTicket(params: CreateTicketParams): Promise<S
     openedAt: now,
     status: 'open',
     priority: preValidation.suggestedPriority || 'normal',
+    telemetrySnapshot: telemetry,
     createdAt: now,
     updatedAt: now
   }
@@ -137,7 +224,7 @@ export async function createSupportTicket(params: CreateTicketParams): Promise<S
   // 2. Persistencia en Firestore (colección dispute_cases)
   try {
     const ticketRef = doc(db, 'dispute_cases', ticketId)
-    await setDoc(ticketRef, ticket)
+    await setDoc(ticketRef, sanitizeFirestorePayload(ticket))
   } catch (err) {
     console.warn('[TicketService] Advertencia al persistir en dispute_cases:', err)
   }
@@ -174,12 +261,18 @@ export function subscribeToPlayerTickets(
         (snap) => {
           const liveTickets: SupportTicketItem[] = snap.docs.map((d) => {
             const data = d.data() as any
+            const inferredDomain: IssueDomain = data.domain || (
+              data.category === 'transactions' || (data.orderId && data.orderId !== 'none') ? 'financial' :
+              data.category === 'gameplay' ? 'gameplay' : 'account'
+            )
+
             return {
               id: d.id,
               ticketNumber: data.ticketNumber || `TKT-${d.id.slice(-6).toUpperCase()}`,
               orderId: data.orderId || 'none',
               type: data.type || 'deposit',
               orderType: data.orderType || 'general',
+              domain: inferredDomain,
               category: data.category || 'account',
               playerUid: data.playerUid || playerUid,
               playerName: data.playerName || 'Jugador',
@@ -198,6 +291,7 @@ export function subscribeToPlayerTickets(
               resolvedBy: data.resolvedBy,
               resolvedAt: data.resolvedAt,
               resolutionNotes: data.resolutionNotes,
+              telemetrySnapshot: data.telemetrySnapshot,
               createdAt: Number(data.createdAt || Date.now()),
               updatedAt: Number(data.updatedAt || Date.now())
             }

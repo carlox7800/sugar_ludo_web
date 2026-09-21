@@ -22,6 +22,7 @@ export function generateTicketNumber(): string {
 }
 
 export type IssueCategory = 'transactions' | 'gameplay' | 'account'
+export type IssueDomain = 'financial' | 'gameplay' | 'account'
 
 export interface PreValidationIssue {
   id: string
@@ -33,6 +34,7 @@ export interface PreValidationIssue {
 
 export interface PreValidationResult {
   issueId: string
+  domain: IssueDomain
   category: IssueCategory
   title: string
   verdictTitle: string
@@ -53,86 +55,86 @@ export interface PreValidationResult {
 }
 
 export const AVAILABLE_ISSUES: PreValidationIssue[] = [
-  // --- TRANSACCIONES ---
+  // --- TRANSACCIONES Y PAGOS P2P ---
   {
     id: 'dep_not_credited',
     category: 'transactions',
-    title: 'Mi depósito no se ha acreditado',
-    subtitle: 'Realicé el pago al cajero pero mis monedas aún no aparecen',
+    title: 'Depósito P2P no acreditado',
+    subtitle: 'Transferencia realizada pendiente de acreditación en balance',
     iconName: 'ArrowDownCircle'
   },
   {
     id: 'wit_delayed',
     category: 'transactions',
-    title: 'Mi retiro está demorado',
-    subtitle: 'Solicité un retiro bancario o cripto y superó el tiempo estimado',
+    title: 'Retiro bancario o cripto demorado',
+    subtitle: 'Solicitud de retiro que superó el tiempo estimado de atención',
     iconName: 'Clock'
   },
   {
     id: 'escrow_funds_locked',
     category: 'transactions',
-    title: 'Tengo saldo retenido en custodia (Escrow)',
-    subtitle: 'Mis monedas aparecen bloqueadas o no disponibles para jugar',
+    title: 'Saldo en custodia preventiva (Escrow)',
+    subtitle: 'Monedas retenidas por orden en curso o pendiente de liberación',
     iconName: 'Lock'
   },
   {
     id: 'fee_calculation_query',
     category: 'transactions',
-    title: 'Duda sobre comisiones de retiro (5% vs 10%)',
-    subtitle: 'Quiero entender el descuento aplicado a mi orden',
+    title: 'Consulta sobre comisiones y paridad',
+    subtitle: 'Comisión de retiro (5% Estándar / 10% VIP) o tasa 1 USDT = 100 SC',
     iconName: 'Percent'
   },
 
-  // --- REGLAS DE JUEGO ---
+  // --- PARTIDAS EN VIVO Y JUGABILIDAD ---
+  {
+    id: 'conn_dropped_match',
+    category: 'gameplay',
+    title: 'Desconexión de red o pérdida de sala',
+    subtitle: 'Interrupción durante una partida con auditoría de telemetría',
+    iconName: 'WifiOff'
+  },
   {
     id: 'rule_exit_six',
     category: 'gameplay',
-    title: 'Mis fichas no salieron con el dado 6',
-    subtitle: 'Saqué un 6 en los dados pero el juego no me dejó sacar ficha',
+    title: 'Regla de salida de fichas (Dado 5 vs 6)',
+    subtitle: 'Requisitos del reglamento para liberar fichas de la base',
     iconName: 'HelpCircle'
   },
   {
     id: 'rule_doubles_penalty',
     category: 'gameplay',
-    title: 'Mi ficha regresó sola a la base',
-    subtitle: 'Una ficha volvió a la base sin que ningún rival la comiera',
+    title: 'Penalización por 3 dobles consecutivos',
+    subtitle: 'Ficha devuelta a la base por tres tiradas dobles seguidas',
     iconName: 'RotateCcw'
   },
   {
     id: 'rule_bonuses',
     category: 'gameplay',
-    title: 'Dudas sobre bonos de avance (+20 / +10)',
-    subtitle: 'Cómo se aplican los premios por capturas y llegadas a meta',
+    title: 'Bonificaciones de casillas (+20 / +10)',
+    subtitle: 'Avances adicionales por capturas de rivales y coronación en meta',
     iconName: 'Zap'
   },
-  {
-    id: 'conn_dropped_match',
-    category: 'gameplay',
-    title: 'Se cayó mi conexión durante una partida',
-    subtitle: 'Perdí la sala o la cuota de entrada por desconexión',
-    iconName: 'WifiOff'
-  },
 
-  // --- CUENTA Y SALDO ---
+  // --- CUENTA, SALDO Y SEGURIDAD ---
   {
     id: 'balance_discrepancy',
     category: 'account',
-    title: 'Mi balance de Sugar Coins no coincide',
-    subtitle: 'Noto una diferencia entre mis partidas y mi saldo actual',
+    title: 'Discrepancia en balance de Sugar Coins',
+    subtitle: 'Diferencia observada entre movimientos y saldo visible',
     iconName: 'ShieldAlert'
   },
   {
     id: 'tournament_reward_missing',
     category: 'account',
-    title: 'No recibí premio de torneo o cofre',
-    subtitle: 'Gané una posición premiada y no se acreditó en mi correo',
+    title: 'Recompensa de torneo no recibida',
+    subtitle: 'Premio ganado en evento o torneo pendiente en correo',
     iconName: 'Award'
   },
   {
     id: 'general_complaint',
     category: 'account',
-    title: 'Otro problema o consulta específica',
-    subtitle: 'Requiere revisión personalizada del equipo de soporte',
+    title: 'Otra incidencia o consulta técnica',
+    subtitle: 'Reporte personalizado para revisión del equipo de soporte',
     iconName: 'MessageSquare'
   }
 ]
@@ -149,7 +151,8 @@ export function evaluateIssuePreValidation(
   const diagnosis = inspectAccount(user, orders, currentTime)
   const playerName = diagnosis.playerName
 
-  switch (issueId) {
+  const rawResult: Omit<PreValidationResult, 'domain'> = (() => {
+    switch (issueId) {
     // ------------------------------------------------------------------------
     // 1. REGLA: Salida con dado 6
     // ------------------------------------------------------------------------
@@ -519,5 +522,18 @@ export function evaluateIssuePreValidation(
           'Un operador responderá a través del panel de soporte.'
         ]
       }
+    }
+  })()
+
+  const domain: IssueDomain =
+    rawResult.category === 'transactions'
+      ? 'financial'
+      : rawResult.category === 'gameplay'
+      ? 'gameplay'
+      : 'account'
+
+  return {
+    ...rawResult,
+    domain
   }
 }

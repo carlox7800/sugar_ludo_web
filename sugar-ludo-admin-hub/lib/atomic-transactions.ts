@@ -833,23 +833,32 @@ export async function resolveDisputeCaseAtomics(params: {
 
         if (disputeSnap.exists) {
           const disputeData = (disputeSnap.data() || {}) as DisputeData
-          const orderRef = adminDb.collection('cashier_orders').doc(disputeData.orderId || disputeId)
-          const playerRef = adminDb.collection('users').doc(disputeData.playerUid)
-          const cashierRef = adminDb.collection('cashier_profiles').doc(disputeData.cashierUid)
+          const orderRef = disputeData.orderId && disputeData.orderId !== 'none'
+            ? adminDb.collection('cashier_orders').doc(disputeData.orderId)
+            : null
+          const playerRef = disputeData.playerUid
+            ? adminDb.collection('users').doc(disputeData.playerUid)
+            : null
+          const cashierUid = disputeData.cashierUid && disputeData.cashierUid !== 'staff_support'
+            ? disputeData.cashierUid
+            : null
+          const cashierRef = cashierUid
+            ? adminDb.collection('cashier_profiles').doc(cashierUid)
+            : null
 
           const [playerSnap, cashierSnap] = await Promise.all([
-            transaction.get(playerRef),
-            transaction.get(cashierRef)
+            playerRef ? transaction.get(playerRef) : Promise.resolve(null),
+            cashierRef ? transaction.get(cashierRef) : Promise.resolve(null)
           ])
 
           const amountCoins = Number(disputeData.amountSugarCoins || 0)
 
           if (verdict === 'favor_player') {
-            if (playerSnap.exists) {
+            if (playerSnap && playerSnap.exists && playerRef) {
               const currentCoins = Number((playerSnap.data() as UserData)?.coins || 0)
               transaction.update(playerRef, { coins: currentCoins + amountCoins })
             }
-            if (cashierSnap.exists) {
+            if (cashierSnap && cashierSnap.exists && cashierRef) {
               const currentFloat = Number((cashierSnap.data() as CashierProfileData)?.floatBalanceCoins || 0)
               transaction.update(cashierRef, { floatBalanceCoins: Math.max(0, currentFloat - amountCoins) })
             }
@@ -860,9 +869,11 @@ export async function resolveDisputeCaseAtomics(params: {
               resolvedAt: now,
               resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Fondos acreditados.'
             })
-            transaction.update(orderRef, { status: 'completed', completedAt: now })
+            if (orderRef) {
+              transaction.update(orderRef, { status: 'completed', completedAt: now })
+            }
           } else {
-            if (cashierSnap.exists) {
+            if (cashierSnap && cashierSnap.exists && cashierRef) {
               const currentFloat = Number((cashierSnap.data() as CashierProfileData)?.floatBalanceCoins || 0)
               transaction.update(cashierRef, { floatBalanceCoins: currentFloat + amountCoins })
             }
@@ -873,7 +884,9 @@ export async function resolveDisputeCaseAtomics(params: {
               resolvedAt: now,
               resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el cajero. Fondos de garantía liberados.'
             })
-            transaction.update(orderRef, { status: 'cancelled', completedAt: now })
+            if (orderRef) {
+              transaction.update(orderRef, { status: 'cancelled', completedAt: now })
+            }
           }
         }
         return { success: true, message: `Veredicto ejecutado: ${verdict}` }

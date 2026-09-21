@@ -273,6 +273,23 @@ describe('Suite: Pre-Validación Determinista y Gestión de Tickets (Tier 2)', (
     assert.equal(result.relatedOrderId, 'wit_delayed_01')
   })
 
+  it('debe clasificar correctamente las incidencias en los 3 dominios operativos segregados', () => {
+    const gameplayResult = evaluateIssuePreValidation('rule_exit_six', mockUser, [], mockNow)
+    assert.equal(gameplayResult.domain, 'gameplay')
+
+    const disconnectResult = evaluateIssuePreValidation('conn_dropped_match', mockUser, [], mockNow)
+    assert.equal(disconnectResult.domain, 'gameplay')
+
+    const financialResult = evaluateIssuePreValidation('dep_not_credited', mockUser, [], mockNow)
+    assert.equal(financialResult.domain, 'financial')
+
+    const escrowResult = evaluateIssuePreValidation('escrow_funds_locked', mockUser, [], mockNow)
+    assert.equal(escrowResult.domain, 'financial')
+
+    const accountResult = evaluateIssuePreValidation('balance_discrepancy', mockUser, [], mockNow)
+    assert.equal(accountResult.domain, 'account')
+  })
+
   it('debe generar folios de ticket con formato TKT-YYYY-XXXX', () => {
     const ticketNum = generateTicketNumber()
     const currentYear = new Date().getFullYear()

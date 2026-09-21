@@ -105,8 +105,12 @@ export interface GameTelemetry {
 
 export interface DisputeCase {
   id: string
+  ticketNumber?: string
   orderId: string
   type: 'deposit' | 'withdraw'
+  domain?: 'financial' | 'gameplay' | 'account'
+  category?: string
+  priority?: 'low' | 'normal' | 'high' | 'urgent'
   playerUid: string
   playerName: string
   cashierUid: string
@@ -115,13 +119,23 @@ export interface DisputeCase {
   currency: string
   amountSugarCoins: number
   reason: string
+  systemSummary?: string
+  playerNotes?: string
   openedBy: 'player' | 'cashier'
   openedAt: number
-  status: 'open' | 'investigating' | 'resolved_player' | 'resolved_cashier'
+  status: 'open' | 'investigating' | 'resolved_player' | 'resolved_cashier' | 'dismissed' | 'compensated'
   resolutionNotes?: string
   resolvedBy?: string
   resolvedAt?: number
   evidenceReceiptUrl?: string
+  telemetrySnapshot?: {
+    clientPlatform: string
+    appVersion: string
+    userAgent: string
+    lastRoomCode?: string
+    recentSocketLogs?: Array<{ timestamp: string; level: string; message: string }>
+    accountBalanceAtCreation?: { availableCoins: number; escrowCoins: number }
+  }
 }
 
 export interface StoreItemPriceConfig {

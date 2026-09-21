@@ -142,7 +142,11 @@ export function VirtualSupportModal({
         playerUid: user.uid,
         playerName: user.nickname || user.displayName || 'Jugador Sugar',
         preValidation: preValidationResult,
-        playerNotes
+        playerNotes,
+        userBalance: {
+          coins: user.coins,
+          escrowLockedCoins: user.escrowLockedCoins
+        }
       })
 
       setCreatedTicket(ticket)
@@ -668,18 +672,26 @@ export function VirtualSupportModal({
               </div>
             ) : (
               myTickets.map((ticket) => {
-                const isOpen = ticket.status === 'open' || ticket.status === 'investigating'
-                const isResolvedPlayer = ticket.status === 'resolved_player'
-
                 return (
                   <div
                     key={ticket.id}
                     className="p-4 rounded-2xl border border-white/10 bg-slate-900/90 space-y-3 shadow-md"
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="font-display font-extrabold text-sm text-cyan-400">
                           {ticket.ticketNumber}
+                        </span>
+                        <span
+                          className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                            ticket.domain === 'financial'
+                              ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                              : ticket.domain === 'gameplay'
+                              ? 'bg-pink-500/10 text-pink-300 border-pink-500/30'
+                              : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                          }`}
+                        >
+                          {ticket.domain === 'financial' ? 'P2P Finanzas' : ticket.domain === 'gameplay' ? 'Partida / Reglas' : 'Cuenta / Saldo'}
                         </span>
                         <span className="text-[10px] text-muted-foreground font-mono">
                           {new Date(ticket.createdAt).toLocaleDateString('es-ES', {
@@ -697,8 +709,14 @@ export function VirtualSupportModal({
                             ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                             : ticket.status === 'investigating'
                             ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
-                            : isResolvedPlayer
+                            : ticket.status === 'resolved_player'
                             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                            : ticket.status === 'resolved_cashier'
+                            ? 'bg-slate-500/20 text-slate-300 border-slate-500/30'
+                            : ticket.status === 'dismissed'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                            : ticket.status === 'compensated'
+                            ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
                             : 'bg-slate-500/20 text-slate-400 border-slate-500/30'
                         }`}
                       >
@@ -706,6 +724,8 @@ export function VirtualSupportModal({
                         {ticket.status === 'investigating' && 'En Investigación de Auditoría'}
                         {ticket.status === 'resolved_player' && 'Resuelto a Favor del Jugador'}
                         {ticket.status === 'resolved_cashier' && 'Cerrado / Resuelto por Cajero'}
+                        {ticket.status === 'dismissed' && 'Desestimado por Auditoría'}
+                        {ticket.status === 'compensated' && 'Compensado por Cortesía'}
                       </span>
                     </div>
 
