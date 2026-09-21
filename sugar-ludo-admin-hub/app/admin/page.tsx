@@ -13,6 +13,7 @@ import { TreasuryVault, HouseProfitBreakdown } from '../../types/treasury'
 import { DetailedTelemetry } from '../../types/admin-expanded'
 import { EconomicHardResetModal, EconomicResetOptions } from '../../components/admin/EconomicHardResetModal'
 import { subscribeToAllPrivateChatsMeta } from '../../lib/staff-chat-service'
+import { subscribeToPendingDisputesCount } from '../../lib/disputes-service'
 import { db } from '../../lib/firebase'
 import { doc, onSnapshot, setDoc, collection, getDocs, query, limit, writeBatch, getCountFromServer } from 'firebase/firestore'
 import {
@@ -85,6 +86,7 @@ export default function AdminDashboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [serverPingMs, setServerPingMs] = useState(0)
   const [unreadStaffMessagesCount, setUnreadStaffMessagesCount] = useState(0)
+  const [pendingDisputesCount, setPendingDisputesCount] = useState(0)
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -92,7 +94,13 @@ export default function AdminDashboardPage() {
       const totalUnread = Object.values(metas).reduce((acc, m) => acc + (m.unreadByAdmin || 0), 0)
       setUnreadStaffMessagesCount(totalUnread)
     })
-    return () => unsubChat()
+    const unsubDisputes = subscribeToPendingDisputesCount((summary) => {
+      setPendingDisputesCount(summary.total)
+    })
+    return () => {
+      unsubChat()
+      unsubDisputes()
+    }
   }, [isAuthenticated])
 
   // Suscripción en tiempo real a 1 solo documento global_ledger (Spark Plan Costo $0.00)
@@ -853,10 +861,20 @@ export default function AdminDashboardPage() {
           {/* 3. Disputas */}
           <Link
             href="/admin/disputas"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all"
+            className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all"
+            title="Centro de Disputas y Soporte"
           >
             <ShieldAlert className="size-3.5" />
             <span>Disputas</span>
+            {pendingDisputesCount > 0 ? (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-mono font-black animate-pulse shadow-[0_0_12px_rgba(251,191,36,0.8)] ring-2 ring-amber-400/50">
+                {pendingDisputesCount}
+              </span>
+            ) : (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/10 text-slate-500 text-[10px] font-mono">
+                0
+              </span>
+            )}
           </Link>
 
           {/* 4. Control de Economía */}

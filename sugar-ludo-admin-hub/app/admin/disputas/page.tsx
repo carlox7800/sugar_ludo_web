@@ -36,6 +36,7 @@ import {
   Info
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { calculatePendingDisputesCounts } from '../../../lib/disputes-service'
 
 type DomainTab = 'financial' | 'gameplay' | 'account'
 type StatusFilter = 'all' | 'open' | 'investigating' | 'resolved'
@@ -169,13 +170,9 @@ export default function DisputasAdminPage() {
     })
   }, [disputes, activeTab, statusFilter, searchQuery])
 
-  // Contadores por dominio para las pestañas
-  const domainCounts = useMemo(() => {
-    return {
-      financial: disputes.filter((d) => d.domain === 'financial').length,
-      gameplay: disputes.filter((d) => d.domain === 'gameplay').length,
-      account: disputes.filter((d) => d.domain === 'account').length
-    }
+  // Contadores reactivos de tickets estrictamente pendientes por dominio
+  const domainPendingCounts = useMemo(() => {
+    return calculatePendingDisputesCounts(disputes)
   }, [disputes])
 
   // Apertura de modal de dictamen
@@ -319,11 +316,17 @@ export default function DisputasAdminPage() {
             <Wallet className="size-4" />
             <span>Disputas Financieras P2P</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                activeTab === 'financial' ? 'bg-slate-950 text-cyan-400' : 'bg-white/10 text-slate-300'
-              }`}
+              className={clsx(
+                'px-2.5 py-0.5 rounded-full text-[10px] font-black transition-all flex items-center gap-1.5',
+                domainPendingCounts.financial > 0
+                  ? 'bg-amber-400 text-slate-950 animate-pulse shadow-[0_0_12px_rgba(251,191,36,0.8)] ring-2 ring-amber-400/40'
+                  : 'bg-white/10 text-slate-400 border border-white/5'
+              )}
             >
-              {domainCounts.financial}
+              {domainPendingCounts.financial > 0 && (
+                <span className="size-1.5 rounded-full bg-slate-950 animate-ping" />
+              )}
+              <span>{domainPendingCounts.financial}</span>
             </span>
           </button>
 
@@ -338,11 +341,17 @@ export default function DisputasAdminPage() {
             <Gamepad2 className="size-4" />
             <span>Reportes de Partidas / Gameplay</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                activeTab === 'gameplay' ? 'bg-slate-950 text-pink-400' : 'bg-white/10 text-slate-300'
-              }`}
+              className={clsx(
+                'px-2.5 py-0.5 rounded-full text-[10px] font-black transition-all flex items-center gap-1.5',
+                domainPendingCounts.gameplay > 0
+                  ? 'bg-pink-400 text-slate-950 animate-pulse shadow-[0_0_12px_rgba(244,114,182,0.8)] ring-2 ring-pink-400/40'
+                  : 'bg-white/10 text-slate-400 border border-white/5'
+              )}
             >
-              {domainCounts.gameplay}
+              {domainPendingCounts.gameplay > 0 && (
+                <span className="size-1.5 rounded-full bg-slate-950 animate-ping" />
+              )}
+              <span>{domainPendingCounts.gameplay}</span>
             </span>
           </button>
 
@@ -357,11 +366,17 @@ export default function DisputasAdminPage() {
             <Coins className="size-4" />
             <span>Incidencias Técnicas / Cuenta</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                activeTab === 'account' ? 'bg-slate-950 text-amber-400' : 'bg-white/10 text-slate-300'
-              }`}
+              className={clsx(
+                'px-2.5 py-0.5 rounded-full text-[10px] font-black transition-all flex items-center gap-1.5',
+                domainPendingCounts.account > 0
+                  ? 'bg-amber-300 text-slate-950 animate-pulse shadow-[0_0_12px_rgba(252,211,77,0.8)] ring-2 ring-amber-300/40'
+                  : 'bg-white/10 text-slate-400 border border-white/5'
+              )}
             >
-              {domainCounts.account}
+              {domainPendingCounts.account > 0 && (
+                <span className="size-1.5 rounded-full bg-slate-950 animate-ping" />
+              )}
+              <span>{domainPendingCounts.account}</span>
             </span>
           </button>
         </div>
@@ -384,16 +399,23 @@ export default function DisputasAdminPage() {
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
                   statusFilter === st
                     ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                     : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
                 }`}
               >
-                {st === 'all' && 'Todos'}
-                {st === 'open' && 'Abiertos'}
-                {st === 'investigating' && 'En Investigación'}
-                {st === 'resolved' && 'Resueltos'}
+                <span>
+                  {st === 'all' && 'Todos'}
+                  {st === 'open' && 'Abiertos'}
+                  {st === 'investigating' && 'En Investigación'}
+                  {st === 'resolved' && 'Resueltos'}
+                </span>
+                {st === 'open' && domainPendingCounts[activeTab] > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black animate-pulse">
+                    {domainPendingCounts[activeTab]}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -409,7 +431,9 @@ export default function DisputasAdminPage() {
                 {activeTab === 'gameplay' && 'Auditoría de Salas y Telemetría de Motor'}
                 {activeTab === 'account' && 'Aclaratorias y Ajustes de Cuenta'}
               </span>
-              <span className="text-slate-500 font-mono">({filteredDisputes.length} Registros)</span>
+              <span className="text-slate-400 font-mono">
+                ({filteredDisputes.length} Registros • <span className={domainPendingCounts[activeTab] > 0 ? 'text-amber-400 font-bold' : 'text-slate-400'}>{domainPendingCounts[activeTab]} Pendientes</span>)
+              </span>
             </h2>
           </div>
 

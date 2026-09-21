@@ -19,6 +19,10 @@ import {
   AVAILABLE_ISSUES,
   generateTicketNumber
 } from '../lib/support/pre-validation-engine.ts'
+import {
+  calculatePendingDisputesCounts,
+  isPendingDisputeStatus
+} from '../sugar-ludo-admin-hub/lib/disputes-service.ts'
 
 describe('Suite: Base de Conocimiento Determinista (Tier 1 Support)', () => {
   it('debe contener las 4 categorías principales del sistema', () => {
@@ -297,4 +301,58 @@ describe('Suite: Pre-Validación Determinista y Gestión de Tickets (Tier 2)', (
     assert.equal(ticketNum.length, 13) // TKT-2026-XXXX = 13 caracteres
   })
 })
+
+describe('Suite: Contadores y Notificaciones de Disputas Pendientes en Admin Hub', () => {
+  it('debe identificar con precisión si un estado de ticket es pendiente o resuelto', () => {
+    // Casos pendientes
+    assert.equal(isPendingDisputeStatus('open'), true)
+    assert.equal(isPendingDisputeStatus('investigating'), true)
+    assert.equal(isPendingDisputeStatus(undefined), true)
+
+    // Casos resueltos / cerrados (NO pendientes)
+    assert.equal(isPendingDisputeStatus('resolved_player'), false)
+    assert.equal(isPendingDisputeStatus('resolved_cashier'), false)
+    assert.equal(isPendingDisputeStatus('dismissed'), false)
+    assert.equal(isPendingDisputeStatus('compensated'), false)
+  })
+
+  it('debe calcular los contadores reflejando estrictamente casos abiertos y bajando a 0 al resolver', () => {
+    const mockDisputes = [
+      { id: '1', domain: 'financial', status: 'open' },
+      { id: '2', domain: 'gameplay', status: 'investigating' },
+      { id: '3', domain: 'account', status: 'open' },
+      // Casos resueltos que NO deben inflar los contadores
+      { id: '4', domain: 'financial', status: 'resolved_cashier' },
+      { id: '5', domain: 'gameplay', status: 'resolved_player' },
+      { id: '6', domain: 'gameplay', status: 'dismissed' },
+      { id: '7', domain: 'account', status: 'compensated' }
+    ]
+
+    const counts = calculatePendingDisputesCounts(mockDisputes)
+    assert.equal(counts.financial, 1)
+    assert.equal(counts.gameplay, 1)
+    assert.equal(counts.account, 1)
+    assert.equal(counts.total, 3)
+
+    // Simular dictamen oficial sobre la disputa gameplay (pasa a resolved_player)
+    const afterResolvingGameplay = mockDisputes.map((d) =>
+      d.id === '2' ? { ...d, status: 'resolved_player' } : d
+    )
+
+    const updatedCounts = calculatePendingDisputesCounts(afterResolvingGameplay)
+    assert.equal(updatedCounts.financial, 1)
+    assert.equal(updatedCounts.gameplay, 0, 'El contador de gameplay debe bajar a 0 tras emitir dictamen')
+    assert.equal(updatedCounts.account, 1)
+    assert.equal(updatedCounts.total, 2)
+
+    // Simular resolución total de todos los casos
+    const allResolved = mockDisputes.map((d) => ({ ...d, status: 'resolved_player' }))
+    const zeroCounts = calculatePendingDisputesCounts(allResolved)
+    assert.equal(zeroCounts.financial, 0)
+    assert.equal(zeroCounts.gameplay, 0)
+    assert.equal(zeroCounts.account, 0)
+    assert.equal(zeroCounts.total, 0, 'El contador total debe ser 0 si no hay casos pendientes')
+  })
+})
+
 

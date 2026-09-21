@@ -37,9 +37,11 @@ import {
   LogOut,
   UserPlus,
   UserCog,
-  SlidersHorizontal
+  SlidersHorizontal,
+  ShieldAlert
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { subscribeToPendingDisputesCount } from '../../../lib/disputes-service'
 
 export default function AdminCajerosManagementPage() {
   const router = useRouter()
@@ -72,6 +74,13 @@ export default function AdminCajerosManagementPage() {
   const [selectedCashierForRecharge, setSelectedCashierForRecharge] = useState<any | null>(null)
   const [selectedCashierForPdf, setSelectedCashierForPdf] = useState<any | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
+  const [pendingDisputesCount, setPendingDisputesCount] = useState(0)
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const unsub = subscribeToPendingDisputesCount((s) => setPendingDisputesCount(s.total))
+    return () => unsub()
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (!isLoading && (!isAuthenticated || !adminUser)) {
@@ -368,6 +377,24 @@ export default function AdminCajerosManagementPage() {
             <UserPlus className="size-4" />
             <span>Registrar Nuevo Cajero</span>
           </button>
+
+          <Link
+            href="/admin/disputas"
+            className="relative p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all flex items-center gap-1.5"
+            title="Centro de Disputas y Soporte"
+          >
+            <ShieldAlert className="size-4" />
+            <span className="hidden sm:inline">Disputas</span>
+            {pendingDisputesCount > 0 ? (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-400 text-slate-950 text-[10px] font-mono font-black animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.8)]">
+                {pendingDisputesCount}
+              </span>
+            ) : (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/10 text-slate-500 text-[10px] font-mono">
+                0
+              </span>
+            )}
+          </Link>
 
           <button
             onClick={handleLogout}

@@ -28,8 +28,9 @@ import { XpMultipliersEditor } from '../../../components/admin/XpMultipliersEdit
 import { EventsAndRankingAccordion } from '../../../components/admin/EventsAndRankingAccordion'
 import { ScheduleUpdateModal } from '../../../components/admin/ScheduleUpdateModal'
 import { AccordionBlock } from '../../../components/ui/AccordionBlock'
-import { ArrowLeft, ShoppingBag, Coins, Percent, Save, CheckCircle, Flame, Tag, Calendar, Zap, Search, SlidersHorizontal, Sparkles, Smile, Trophy, Crown, Clock, User, LogOut } from 'lucide-react'
+import { ArrowLeft, ShoppingBag, Coins, Percent, Save, CheckCircle, Flame, Tag, Calendar, Zap, Search, SlidersHorizontal, Sparkles, Smile, Trophy, Crown, Clock, User, LogOut, ShieldAlert } from 'lucide-react'
 import { clsx } from 'clsx'
+import { subscribeToPendingDisputesCount } from '../../../lib/disputes-service'
 
 export default function EconomiaAdminPage() {
   const router = useRouter()
@@ -63,6 +64,13 @@ export default function EconomiaAdminPage() {
   const [applyMode, setApplyMode] = useState<'realtime' | 'scheduled'>('realtime')
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [notification, setNotification] = useState<string | null>(null)
+  const [pendingDisputesCount, setPendingDisputesCount] = useState(0)
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const unsub = subscribeToPendingDisputesCount((s) => setPendingDisputesCount(s.total))
+    return () => unsub()
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (!isLoading && (!isAuthenticated || !adminUser)) {
@@ -360,6 +368,24 @@ export default function EconomiaAdminPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            href="/admin/disputas"
+            className="relative p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all flex items-center gap-1.5"
+            title="Centro de Disputas y Soporte"
+          >
+            <ShieldAlert className="size-4" />
+            <span className="hidden sm:inline">Disputas</span>
+            {pendingDisputesCount > 0 ? (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-400 text-slate-950 text-[10px] font-mono font-black animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.8)]">
+                {pendingDisputesCount}
+              </span>
+            ) : (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/10 text-slate-500 text-[10px] font-mono">
+                0
+              </span>
+            )}
+          </Link>
+
           <Link
             href="/admin/perfil"
             className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
