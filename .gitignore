@@ -34,6 +34,9 @@ android/.gradle/
 *.log
 sugar-ludo-logs-*.txt
 *.tmp
+*.pdf
+*.csv
+informe-auditoria-*.html
 
 # Archivos multimedia (ahorro de tokens y peso)
 *.png

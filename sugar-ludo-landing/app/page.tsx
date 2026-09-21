@@ -103,7 +103,7 @@ export default function LandingPage() {
         </p>
 
         {/* Controles CTA Simétricos (1:1) de Alto Impacto */}
-        <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-6 w-full max-w-2xl">
+        <div id="download" className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-6 w-full max-w-2xl scroll-mt-24">
           {/* Botón Windows PC */}
           <GamerCTAButton
             onClick={() => openInstallGuide('windows')}

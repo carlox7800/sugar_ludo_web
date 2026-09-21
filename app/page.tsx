@@ -31,6 +31,8 @@ import { LoginModal } from '@/components/login-modal'
 import { NicknameSetupModal } from '@/components/nickname-setup-modal'
 import { DuelChallengeModal } from '@/components/duel-challenge-modal'
 import { VirtualSupportModal } from '@/components/support/VirtualSupportModal'
+import { ForceUpdateModal } from '@/components/ForceUpdateModal'
+import { checkAppVersion, VersionCheckResult } from '@/lib/version-checker'
 import { getSocket } from '@/lib/socket'
 import { globalLogger } from '@/lib/logger'
 import { preloadStoreAssets } from '@/lib/store-service'
@@ -94,6 +96,15 @@ function PageContent() {
       }
     }, 40)
     return () => clearInterval(interval)
+  }, [])
+
+  // Estado de gobernanza de versión (Force Update)
+  const [versionCheck, setVersionCheck] = useState<VersionCheckResult | null>(null)
+
+  useEffect(() => {
+    checkAppVersion()
+      .then((res) => setVersionCheck(res))
+      .catch((err) => console.warn('[PageContent] Error comprobando versión:', err))
   }, [])
   
   useEffect(() => {
@@ -680,6 +691,16 @@ function PageContent() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Modal Infranqueable de Actualización Obligatoria (Force Update) */}
+        {versionCheck && versionCheck.isForceUpdate && (
+          <ForceUpdateModal
+            versionInfo={versionCheck}
+            onRecheckSuccess={() => {
+              setVersionCheck(null)
+            }}
+          />
         )}
       </main>
     </PlayerProvider>

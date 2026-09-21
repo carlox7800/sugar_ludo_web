@@ -1,0 +1,13 @@
+{
+  "latestVersion": "9.5.4",
+  "minSupportedVersion": "9.5.4",
+  "forceUpdate": true,
+  "releaseDate": "2026-09-21",
+  "downloadUrls": {
+    "android": "https://sugar-ludo-landing.onrender.com/#download",
+    "windows": "https://sugar-ludo-landing.onrender.com/#download",
+    "web": "https://sugar-ludo-web.onrender.com"
+  },
+  "landingUrl": "https://sugar-ludo-landing.onrender.com",
+  "changelog": "Actualización obligatoria v9.5.4: Centro de soporte inteligente AAA, sistema de incidencias y ticketing formal, telemetría técnica en tiempo real y parches críticos de seguridad."
+}

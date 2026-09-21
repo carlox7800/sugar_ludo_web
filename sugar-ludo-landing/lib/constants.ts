@@ -1,8 +1,8 @@
 export const APP_VERSION = '9.5.4';
 
 // Rutas de descarga oficiales
-export const PC_DOWNLOAD_URL = process.env.NEXT_PUBLIC_PC_DOWNLOAD_URL || '/downloads/SugarLudo-Setup.exe';
-export const ANDROID_DOWNLOAD_URL = process.env.NEXT_PUBLIC_ANDROID_DOWNLOAD_URL || '/downloads/SugarLudo.apk';
+export const PC_DOWNLOAD_URL = process.env.NEXT_PUBLIC_PC_DOWNLOAD_URL || '/downloads/SugarLudo-v9.5.4-Setup.exe';
+export const ANDROID_DOWNLOAD_URL = process.env.NEXT_PUBLIC_ANDROID_DOWNLOAD_URL || '/downloads/SugarLudo-v9.5.4.apk';
 
 // Enlace directo al juego web desplegado
 export const WEB_GAME_URL = process.env.NEXT_PUBLIC_WEB_GAME_URL || 'https://sugar-ludo-web.onrender.com';
