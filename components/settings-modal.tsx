@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context'
 import { globalLogger } from '@/lib/logger'
 import { getSocket } from '@/lib/socket'
 import { APP_VERSION, LANDING_PORTAL_URL } from '@/lib/constants'
+import { copyToClipboardSilently } from '@/lib/utils'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -19,6 +20,7 @@ export function SettingsModal({ isOpen, onClose, onNavigateToLanding }: Settings
   const [vibration, setVibration] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'sugar'>('dark')
   const [copiedLogs, setCopiedLogs] = useState(false)
+  const [logStatusMsg, setLogStatusMsg] = useState('')
 
   const handleLogout = async () => {
     await logout()
@@ -74,7 +76,7 @@ export function SettingsModal({ isOpen, onClose, onNavigateToLanding }: Settings
     }
   }
 
-  const handleExportLogs = () => {
+  const handleExportLogs = async () => {
     const socket = getSocket()
     const header = `================================================================================
 SUGAR LUDO - REGISTRO DEL SISTEMA (DIAGNÓSTICO COMPLETO)
@@ -94,20 +96,83 @@ Socket Estado:     ${socket.connected ? `Conectado (ID: ${socket.id})` : 'Descon
 HISTORIAL CRONOLÓGICO DE EVENTOS:
 ================================================================================\n`
     const logs = globalLogger.exportLogs()
-    
-    // Create a blob and download it instead of just copying to clipboard to allow larger files
-    const blob = new Blob([header + logs], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `sugar-ludo-logs-${new Date().getTime()}.txt`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    const fullContent = header + logs
+    const fileName = `sugar-ludo-logs-${Date.now()}.txt`
 
-    setCopiedLogs(true)
-    setTimeout(() => setCopiedLogs(false), 2500)
+    // Detección de entorno Capacitor / Android Nativo
+    const isCapacitorNative = typeof window !== 'undefined' && (
+      !!(window as any).Capacitor?.isNativePlatform?.() ||
+      (window as any).Capacitor?.getPlatform?.() === 'android'
+    )
+
+    // En Android / Capacitor, usar Web Share API para abrir el diálogo oficial nativo
+    if (isCapacitorNative && typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        const file = new File([fullContent], fileName, { type: 'text/plain' })
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Sugar Ludo - Logs de Diagnóstico',
+            text: 'Registro de diagnóstico y telemetría de Sugar Ludo'
+          })
+          setCopiedLogs(true)
+          setLogStatusMsg('¡Exportado!')
+          setTimeout(() => {
+            setCopiedLogs(false)
+            setLogStatusMsg('')
+          }, 3000)
+          return
+        } else {
+          // Si el visor WebView no soporta File sharing, compartir texto plano
+          await navigator.share({
+            title: 'Sugar Ludo - Logs de Diagnóstico',
+            text: fullContent
+          })
+          setCopiedLogs(true)
+          setLogStatusMsg('¡Compartido!')
+          setTimeout(() => {
+            setCopiedLogs(false)
+            setLogStatusMsg('')
+          }, 3000)
+          return
+        }
+      } catch (shareErr: any) {
+        if (shareErr?.name === 'AbortError') {
+          // Usuario descartó la hoja de compartir (interacción natural)
+          return
+        }
+        console.warn('[SettingsModal] Fallback por excepción en navigator.share:', shareErr)
+      }
+    }
+
+    // Flujo estándar para Navegador Web y PC / Electron (Descarga directa de archivo .txt)
+    try {
+      const blob = new Blob([fullContent], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      setCopiedLogs(true)
+      setLogStatusMsg('¡Descargado!')
+      setTimeout(() => {
+        setCopiedLogs(false)
+        setLogStatusMsg('')
+      }, 3000)
+    } catch (downloadErr) {
+      // Respaldo de seguridad final: copiado silencioso al portapapeles
+      await copyToClipboardSilently(fullContent)
+      setCopiedLogs(true)
+      setLogStatusMsg('¡Copiado!')
+      setTimeout(() => {
+        setCopiedLogs(false)
+        setLogStatusMsg('')
+      }, 3000)
+    }
   }
 
   if (!isOpen) return null
@@ -281,10 +346,14 @@ HISTORIAL CRONOLÓGICO DE EVENTOS:
               </div>
               {copiedLogs ? (
                 <span className="flex items-center gap-1 text-xs font-bold text-[var(--candy-green)]">
-                  <Check className="size-3.5" /> ¡Copiado!
+                  <Check className="size-3.5" /> {logStatusMsg || '¡Completado!'}
                 </span>
               ) : (
-                <span className="text-xs text-muted-foreground">Copiar al portapapeles</span>
+                <span className="text-xs text-muted-foreground">
+                  {typeof window !== 'undefined' && (!!(window as any).Capacitor?.isNativePlatform?.() || (window as any).Capacitor?.getPlatform?.() === 'android')
+                    ? 'Compartir / Guardar'
+                    : 'Descargar archivo .txt'}
+                </span>
               )}
             </button>
 

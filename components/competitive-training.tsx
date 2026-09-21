@@ -154,15 +154,21 @@ export function CompetitiveTraining({
       setIsSearching(false)
       setLobbyTimer(60)
       
-      // REALIZAR COBRO DE SUGAR COINS AQUÍ (Diferido)
+      const roomId = gameData.roomId || gameData.id
+      const finalPlayers = [...(gameData.players || [])]
+      const pCount = finalPlayers.length || targetPlayersRef.current || quickPlayersRef.current || 2
+      const roomKey = `sugar_comp_fee_${roomId}`
+
+      // REALIZAR COBRO DE SUGAR COINS AQUÍ (Diferido con candado de idempotencia)
       if (entryCostRef.current > 0 && deductCoins) {
-        deductCoins(entryCostRef.current)
+        if (typeof window !== 'undefined' && roomId) {
+          sessionStorage.setItem(roomKey, 'true')
+        }
+        deductCoins(entryCostRef.current, `Entrada a partida competitiva (${pCount}J) - Sala #${roomId}`)
         entryCostRef.current = 0
       }
 
       showToast('¡Partida encontrada! Entrando a la mesa...')
-      
-      const finalPlayers = [...(gameData.players || [])]
 
       const enrichedGameData = {
         ...gameData,

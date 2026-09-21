@@ -22,6 +22,7 @@ import {
 } from 'firebase/firestore'
 import { auth, db, googleProvider } from './firebase'
 import { recordWalletTransaction } from './wallet-service'
+import { globalLogger } from './logger'
 
 export interface User {
   uid: string
@@ -56,7 +57,7 @@ interface AuthState {
   setNickname: (nickname: string) => Promise<void>
   setAvatar: (photoURL: string, deleteUrl?: string) => Promise<void>
   setWalletAddress: (address: string) => Promise<void>
-  deductCoins: (amount: number) => Promise<boolean>
+  deductCoins: (amount: number, reason?: string) => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined)
@@ -488,8 +489,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const deductCoins = async (amount: number): Promise<boolean> => {
-    if (!user) return false
+  const deductCoins = async (amount: number, reason?: string): Promise<boolean> => {
+    if (!user || amount <= 0) return false
     if ((user.coins ?? 200) < amount) return false
 
     if (user.isDev) {
@@ -498,9 +499,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return true
     } else {
       try {
-        // En cumplimiento de Zero-Trust, el cliente no muta directamente `coins` en Firestore.
-        // Actualizamos el estado reactivo local del usuario inmediatamente.
+        // 1. Actualización reactiva optimista local (0ms de latencia en UI)
         setUser((prev) => (prev ? { ...prev, coins: Math.max(0, (prev.coins ?? 200) - amount) } : null))
+
+        // 2. Débito atómico persistente en Firestore y registro en el historial de billetera
+        await recordWalletTransaction(user.uid, {
+          type: 'match_fee',
+          amount: -amount,
+          description: reason || 'Entrada a partida / Cuota de juego'
+        }, false)
+
+        globalLogger.wallet(`Débito atómico de ${amount} SC ejecutado con éxito`, { uid: user.uid, amount, reason })
         return true
       } catch (error) {
         console.error('Error al debitar monedas:', error)

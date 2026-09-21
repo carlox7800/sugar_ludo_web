@@ -112,13 +112,13 @@ export async function recordMatchResult(userId: string, matchData: Omit<MatchRec
       matchHistory: history,
     })
 
-    // 3. Record wallet transaction if coins were earned
+    // 3. Record wallet transaction if coins were earned (acreditación atómica en saldo y ledger)
     if (matchData.coinsEarned > 0) {
       await recordWalletTransaction(userId, {
         type: 'match_prize',
         amount: matchData.coinsEarned,
         description: `Premio: ${matchData.rank}º Lugar (${matchData.mode})`
-      }, true) // skipCoinUpdate = true
+      }, false) // skipCoinUpdate = false para acreditar el premio atómicamente
     }
   } catch (error) {
     console.error('Error al registrar resultado de la partida en Firestore:', error)

@@ -255,7 +255,13 @@ function PageContent() {
       }
       setOnlineGameData(enrichedGameData)
       // Use ref to read current screen value — avoids stale closure bug
-      setOnlineGameOrigin(currentScreen === 'amigos' ? 'amigos' : (currentScreen === 'online-training' ? 'online-training' : 'lobby'))
+      setOnlineGameOrigin(
+        currentScreen === 'amigos' 
+          ? 'amigos' 
+          : (currentScreen === 'online-training' 
+              ? 'online-training' 
+              : (currentScreen === 'competitive' ? 'competitive' : 'lobby'))
+      )
       setScreenAndRef('online-game')
     }
 

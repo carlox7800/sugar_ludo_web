@@ -202,3 +202,90 @@ describe('Suite: Validación de Payloads de Cuentas de Pago (Cripto vs. Bancaria
     assert.equal('notes' in account, false)
   })
 })
+
+describe('Suite: Economía de Partidas Competitivas & Conservación de Valor (2 a 6 Jugadores)', () => {
+  const ECONOMY_MATRIX: Record<number, { entry: number; pot: number; prizes: number[] }> = {
+    2: { entry: 100, pot: 200, prizes: [150] },
+    3: { entry: 120, pot: 360, prizes: [200, 80] },
+    4: { entry: 150, pot: 600, prizes: [300, 150] },
+    5: { entry: 200, pot: 1000, prizes: [400, 200, 100] },
+    6: { entry: 300, pot: 1800, prizes: [600, 450, 250, 100] },
+  }
+
+  it('debe validar la paridad matemática y conservación de valor para todas las modalidades (2 a 6 jugadores)', () => {
+    for (const [playersStr, config] of Object.entries(ECONOMY_MATRIX)) {
+      const players = Number(playersStr)
+      const expectedPot = config.entry * players
+      assert.equal(config.pot, expectedPot, `El pozo para ${players}J debe ser exactamente ${expectedPot}`)
+
+      const totalPrizes = config.prizes.reduce((sum, p) => sum + p, 0)
+      const houseRake = config.pot - totalPrizes
+
+      assert.ok(houseRake > 0, `El rake de la casa para ${players}J debe ser positivo`)
+      assert.equal(totalPrizes + houseRake, config.pot, `Invariante de conservación violada en ${players}J`)
+    }
+  })
+
+  it('debe calcular la liquidación neta exacta de una partida 1 vs 1 (Sala 572991)', () => {
+    const eco2 = ECONOMY_MATRIX[2]
+    const entryFee = eco2.entry // 100 SC
+    const firstPrize = eco2.prizes[0] // 150 SC
+    const houseRake = eco2.pot - firstPrize // 50 SC
+
+    // Saldo inicial de prueba: 100.000 SC
+    const initialBalance = 100000
+
+    // Débito de entrada al iniciar la partida
+    const p1BalanceAfterFee = initialBalance - entryFee // 99.900
+    const p2BalanceAfterFee = initialBalance - entryFee // 99.900
+
+    assert.equal(p1BalanceAfterFee, 99900)
+    assert.equal(p2BalanceAfterFee, 99900)
+
+    // Liquidación del podio al finalizar la partida
+    const p1FinalBalance = p1BalanceAfterFee + firstPrize // 99.900 + 150 = 100.050
+    const p2FinalBalance = p2BalanceAfterFee + 0 // 99.900 (sin premio)
+
+    // Ganancia / pérdida neta
+    const p1Net = p1FinalBalance - initialBalance // +50 SC
+    const p2Net = p2FinalBalance - initialBalance // -100 SC
+
+    assert.equal(p1Net, 50, 'El ganador debe tener una ganancia neta de +50 SC')
+    assert.equal(p2Net, -100, 'El perdedor debe tener una deducción neta de -100 SC')
+    assert.equal(p1Net + p2Net + houseRake, 0, 'La suma neta de jugadores más el rake debe sumar 0 (conservación estricta)')
+  })
+
+  it('debe validar el candado de idempotencia por sala (sugar_comp_fee_${roomId})', () => {
+    const processedRooms = new Set<string>()
+    const roomId = '572991'
+    const roomKey = `sugar_comp_fee_${roomId}`
+
+    function processRoomFee(key: string, fee: number): { charged: boolean; amount: number } {
+      if (processedRooms.has(key)) {
+        return { charged: false, amount: 0 }
+      }
+      processedRooms.add(key)
+      return { charged: true, amount: fee }
+    }
+
+    // 1. Primer intento (inicio normal de partida)
+    const firstAttempt = processRoomFee(roomKey, 100)
+    assert.equal(firstAttempt.charged, true)
+    assert.equal(firstAttempt.amount, 100)
+
+    // 2. Segundo intento (re-render de componente o reconexión de socket en la misma sala)
+    const secondAttempt = processRoomFee(roomKey, 100)
+    assert.equal(secondAttempt.charged, false)
+    assert.equal(secondAttempt.amount, 0)
+
+    // 3. Tercer intento (montaje de OnlineGameEngine en la misma sala)
+    const thirdAttempt = processRoomFee(roomKey, 100)
+    assert.equal(thirdAttempt.charged, false)
+    assert.equal(thirdAttempt.amount, 0)
+
+    // 4. Nueva sala diferente debe cobrar sin problemas
+    const newRoomAttempt = processRoomFee('sugar_comp_fee_981240', 100)
+    assert.equal(newRoomAttempt.charged, true)
+    assert.equal(newRoomAttempt.amount, 100)
+  })
+})

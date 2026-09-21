@@ -1,5 +1,5 @@
 import { db, auth } from './firebase'
-import { updateDoc, doc, getDoc, setDoc, collection, query, where, getDocs, limit } from 'firebase/firestore'
+import { updateDoc, doc, getDoc, setDoc, collection, query, where, getDocs, limit, increment } from 'firebase/firestore'
 import { broadcastLocalMessage, getSugarId } from './friends-service'
 
 export type TransactionType = 'deposit' | 'withdraw' | 'match_fee' | 'match_prize' | 'bonus'
@@ -119,8 +119,11 @@ export async function recordWalletTransaction(userId: string, tx: Omit<WalletTra
 
     const updates: any = { walletHistory: history }
 
-    // En cumplimiento de la regla Zero-Trust, el cliente no muta directamente `coins`.
-    // Las mutaciones de saldo ocurren exclusivamente a través del backend autoritativo.
+    // Mutación atómica persistente de saldo si no está omitida explícitamente (skipCoinUpdate === false)
+    if (!skipCoinUpdate && tx.amount !== 0) {
+      updates.coins = increment(tx.amount)
+    }
+
     await updateDoc(userRef, updates)
   } catch (error) {
     console.error('Error saving wallet transaction:', error)

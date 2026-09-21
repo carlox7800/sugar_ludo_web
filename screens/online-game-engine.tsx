@@ -113,7 +113,7 @@ export function OnlineGameEngine({
   onExit: () => void 
   modeType?: string
 }) {
-  const { user } = useAuth()
+  const { user, deductCoins } = useAuth()
   const socket = getSocket()
   const { 
     isMuted, 
@@ -125,6 +125,41 @@ export function OnlineGameEngine({
     isSpeakingMap, 
     joinVoiceRoom 
   } = useVoiceChat()
+
+  // CANDADO DE IDEMPOTENCIA PARA COBRO DE ENTRADA COMPETITIVA
+  const entryFeeChargedRef = useRef<boolean>(false)
+
+  useEffect(() => {
+    if (modeType !== 'competitive' || !user?.uid || entryFeeChargedRef.current) return
+
+    const roomId = gameData.roomId || (gameData as any).id
+    if (!roomId) return
+
+    // Evitar cobro doble si ya fue procesado en esta sesión para esta sala
+    const processedRoomsKey = `sugar_comp_fee_${roomId}`
+    if (typeof window !== 'undefined' && sessionStorage.getItem(processedRoomsKey)) {
+      entryFeeChargedRef.current = true
+      return
+    }
+
+    entryFeeChargedRef.current = true
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(processedRoomsKey, 'true')
+    }
+
+    const totalPlayers = (gameData.players?.length) || 2
+    const liveEco = getLiveEconomyMatrix()
+    const entryFee = liveEco[totalPlayers]?.entry || ECONOMY_MATRIX[totalPlayers]?.entry || 100
+
+    globalLogger.economy(`Cobro de entrada a partida competitiva (${totalPlayers}J)`, {
+      roomId,
+      entryFee,
+      totalPlayers,
+      uid: user.uid
+    })
+
+    deductCoins(entryFee, `Entrada a partida competitiva (${totalPlayers}J) - Sala #${roomId}`)
+  }, [modeType, user?.uid, gameData.roomId, gameData.players?.length, deductCoins])
 
   // Detect if current online session is Batalla de Amigos (Private Room)
   const isFriendsMatch = modeType !== 'competitive' && (!!gameData.roomCode || !!(gameData as any).isPrivate || (gameData.roomId && !gameData.roomId.startsWith('quick_') && !gameData.roomId.startsWith('comp_')))
@@ -343,6 +378,15 @@ export function OnlineGameEngine({
       .map((p) => p.name.replace(' (Tú)', ''))
 
     const xpGained = myRank === 1 ? 200 : myRank === 2 ? 100 : 50
+
+    globalLogger.economy(`Liquidación fin de partida ${isCompetitive ? 'COMPETITIVA' : 'ENTRENAMIENTO'}`, {
+      roomId: gameData.roomId,
+      myRank,
+      coinsEarned,
+      isCompetitive,
+      totalPlayers,
+      uid: user.uid
+    })
 
     recordMatchResult(user.uid, {
       mode: modeName,
