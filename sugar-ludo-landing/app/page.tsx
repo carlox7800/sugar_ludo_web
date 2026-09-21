@@ -35,6 +35,17 @@ export default function LandingPage() {
 
   const openInstallGuide = (platform: 'windows' | 'android') => {
     setModalPlatform(platform);
+    if (typeof window !== 'undefined') {
+      const targetUrl = platform === 'windows' ? PC_DOWNLOAD_URL : ANDROID_DOWNLOAD_URL;
+      const downloadLink = document.createElement('a');
+      downloadLink.href = targetUrl;
+      downloadLink.target = '_blank';
+      downloadLink.rel = 'noopener noreferrer';
+      downloadLink.download = '';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    }
   };
 
   const closeModal = () => {
