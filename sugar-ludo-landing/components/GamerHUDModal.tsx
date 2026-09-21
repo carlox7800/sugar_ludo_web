@@ -91,17 +91,20 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
                 </div>
               </div>
 
-              <div className="flex gap-4 p-4 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 items-start">
+              <div className="flex gap-4 p-4 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 items-start">
                 <div className="size-7 rounded-full bg-cyan-400 text-black font-black flex items-center justify-center shrink-0 text-sm">
                   2
                 </div>
-                <div>
+                <div className="w-full text-left">
                   <h4 className="font-bold text-cyan-300 text-sm flex items-center gap-2">
-                    <AlertCircle className="size-4 shrink-0" />
-                    Aviso de Windows SmartScreen
+                    <AlertCircle className="size-4 shrink-0 text-cyan-300" />
+                    Superar Pantalla de Windows SmartScreen
                   </h4>
-                  <p className="text-xs text-white/70 mt-0.5">
-                    Al ser un software independiente nuevo, pulsa en <strong>"Más información"</strong> y luego en <strong>"Ejecutar de todas formas"</strong>.
+                  <p className="text-xs text-white/80 mt-1 leading-relaxed">
+                    Si Windows despliega la pantalla azul de protección (<em>&quot;Windows protegió su PC&quot;</em>), pulsa sobre el enlace subrayado <span className="underline font-bold text-white bg-white/10 px-1.5 py-0.5 rounded">&quot;Más información&quot;</span> y luego haz clic en el botón <span className="font-bold text-cyan-300 bg-cyan-500/20 px-1.5 py-0.5 rounded border border-cyan-400/40">&quot;Ejecutar de todas formas&quot;</span>.
+                  </p>
+                  <p className="text-[11px] text-white/50 mt-1.5">
+                    El instalador oficial NSIS mostrará el asistente con la versión v{version} y te permitirá elegir la carpeta de instalación.
                   </p>
                 </div>
               </div>
@@ -171,9 +174,14 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
 
           <a
             href={downloadUrl}
-            target="_blank"
+            target={isWin ? '_blank' : undefined}
             rel="noopener noreferrer"
-            download
+            onClick={(e) => {
+              if (!isWin && typeof window !== 'undefined') {
+                e.preventDefault();
+                window.location.assign(downloadUrl);
+              }
+            }}
             className={`w-full sm:w-auto px-7 py-3 rounded-2xl font-black uppercase tracking-wider text-center shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 ${
               isWin 
                 ? 'bg-cyan-400 text-black hover:bg-cyan-300 shadow-cyan-500/30' 

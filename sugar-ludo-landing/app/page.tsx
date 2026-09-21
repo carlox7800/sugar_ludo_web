@@ -37,14 +37,14 @@ export default function LandingPage() {
     setModalPlatform(platform);
     if (typeof window !== 'undefined') {
       const targetUrl = platform === 'windows' ? PC_DOWNLOAD_URL : ANDROID_DOWNLOAD_URL;
-      const downloadLink = document.createElement('a');
-      downloadLink.href = targetUrl;
-      downloadLink.target = '_blank';
-      downloadLink.rel = 'noopener noreferrer';
-      downloadLink.download = '';
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
+      if (platform === 'android') {
+        // En Android móvil se utiliza window.location.assign para que el gestor de descargas nativo
+        // procese el APK directamente sin congelamientos en la barra de progreso
+        window.location.assign(targetUrl);
+      } else {
+        // En PC Windows se abre en ventana externa para iniciar la descarga sin interferir con la guía
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      }
     }
   };
 

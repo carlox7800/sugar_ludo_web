@@ -29,6 +29,16 @@
     "win": {
       "target": "nsis"
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sugar Ludo",
+      "uninstallDisplayName": "Sugar Ludo v${version}",
+      "artifactName": "SugarLudo-v${version}-Setup.${ext}"
+    },
     "files": [
       "out/**/*",
       "!out/downloads/**",
