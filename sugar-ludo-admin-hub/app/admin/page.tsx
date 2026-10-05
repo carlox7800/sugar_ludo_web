@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../lib/admin-auth-context'
-import { getStaffAuthHeaders } from '../../lib/auth-headers'
+import { getStaffAuthHeaders, getStaffAuthHeadersAsync } from '../../lib/auth-headers'
 import { APP_VERSION_TAG } from '../../lib/version'
 import { TreasuryBreakdownCard } from '../../components/admin/TreasuryBreakdownCard'
 import { DetailedTelemetryCard } from '../../components/admin/DetailedTelemetryCard'
@@ -226,41 +226,46 @@ export default function AdminDashboardPage() {
     try {
       // 1. Ejecutar Conciliación Patrimonial Autoritativa en el Backend (/api/admin/treasury/reconcile)
       try {
-        const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getStaffAuthHeaders('admin')
-          },
-          body: JSON.stringify({
-            adminUid: adminUser?.uid || 'adm_super',
-            adminName: adminUser?.displayName || 'Super Admin'
-          })
-        })
-        if (reconcileRes.ok) {
-          const recData = await reconcileRes.json()
-          if (recData.ledger) {
-            const l = recData.ledger
-            const playerUSD = Number(l.playerCustodyUSD ?? l.playerBalancesUSD ?? 0)
-            const playerCoins = Number(l.playerCustodyCoins ?? l.playerBalancesCoins ?? Math.round(playerUSD * 100))
-            const profitsUSD = Number(l.houseNetProfitsUSD ?? 0)
-            const profitsCoins = Number(l.houseNetProfitsCoins ?? Math.round(profitsUSD * 100))
-            const floatsUSD = Number(l.cashierFloatsUSD ?? 0)
-            const floatsCoins = Number(l.cashierFloatsCoins ?? Math.round(floatsUSD * 100))
-            const totalUSD = Number(l.totalVaultUSD ?? (playerUSD + profitsUSD))
-            const totalCoins = Number(l.totalVaultSugarCoins ?? Math.round(totalUSD * 100))
-
-            setVault({
-              totalVaultUSD: totalUSD,
-              totalVaultSugarCoins: totalCoins,
-              playerBalancesUSD: playerUSD,
-              playerBalancesCoins: playerCoins,
-              cashierFloatsUSD: floatsUSD,
-              cashierFloatsCoins: floatsCoins,
-              houseNetProfitsUSD: profitsUSD,
-              houseNetProfitsCoins: profitsCoins,
-              lastAuditedAt: l.lastAuditedAt || Date.now()
+        const authHeaders = await getStaffAuthHeadersAsync('admin')
+        // Si aún no hay credencial/token activo, dejamos que el listener reactivo onSnapshot
+        // mantenga actualizados los saldos desde global_ledger sin disparar 401
+        if (authHeaders.Authorization) {
+          const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...authHeaders
+            },
+            body: JSON.stringify({
+              adminUid: adminUser?.uid || 'adm_super',
+              adminName: adminUser?.displayName || 'Super Admin'
             })
+          })
+          if (reconcileRes.ok) {
+            const recData = await reconcileRes.json()
+            if (recData.ledger) {
+              const l = recData.ledger
+              const playerUSD = Number(l.playerCustodyUSD ?? l.playerBalancesUSD ?? 0)
+              const playerCoins = Number(l.playerCustodyCoins ?? l.playerBalancesCoins ?? Math.round(playerUSD * 100))
+              const profitsUSD = Number(l.houseNetProfitsUSD ?? 0)
+              const profitsCoins = Number(l.houseNetProfitsCoins ?? Math.round(profitsUSD * 100))
+              const floatsUSD = Number(l.cashierFloatsUSD ?? 0)
+              const floatsCoins = Number(l.cashierFloatsCoins ?? Math.round(floatsUSD * 100))
+              const totalUSD = Number(l.totalVaultUSD ?? (playerUSD + profitsUSD))
+              const totalCoins = Number(l.totalVaultSugarCoins ?? Math.round(totalUSD * 100))
+
+              setVault({
+                totalVaultUSD: totalUSD,
+                totalVaultSugarCoins: totalCoins,
+                playerBalancesUSD: playerUSD,
+                playerBalancesCoins: playerCoins,
+                cashierFloatsUSD: floatsUSD,
+                cashierFloatsCoins: floatsCoins,
+                houseNetProfitsUSD: profitsUSD,
+                houseNetProfitsCoins: profitsCoins,
+                lastAuditedAt: l.lastAuditedAt || Date.now()
+              })
+            }
           }
         }
       } catch (recErr) {
@@ -344,11 +349,12 @@ export default function AdminDashboardPage() {
     try {
       // 1. Ejecutar reseteo autoritativo en el backend (Super Admin API con Admin SDK)
       try {
+        const authHeaders = await getStaffAuthHeadersAsync('admin')
         const res = await fetch('/api/admin/treasury/reset', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...getStaffAuthHeaders('admin')
+            ...authHeaders
           },
           body: JSON.stringify({
             scope,
