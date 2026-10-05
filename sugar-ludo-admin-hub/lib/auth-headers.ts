@@ -38,9 +38,15 @@ export async function getStaffAuthHeadersAsync(_overrideRole?: 'cashier' | 'admi
 
   if (typeof window !== 'undefined') {
     try {
-      // Si Firebase Auth ya tiene currentUser o está inicializándose
+      // Esperar a que Firebase Auth restaure la sesión (evita 401 por carrera) con tope de 4s
+      if (auth && typeof (auth as any).authStateReady === 'function') {
+        await Promise.race([
+          (auth as any).authStateReady(),
+          new Promise((resolve) => setTimeout(resolve, 4000))
+        ])
+      }
       if (auth && auth.currentUser) {
-        const freshToken = await auth.currentUser.getIdToken()
+        const freshToken = await auth.currentUser.getIdToken(true)
         if (freshToken) {
           try {
             sessionStorage.setItem('sugar_staff_id_token', freshToken)

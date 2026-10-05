@@ -16,7 +16,7 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: Request) {
-  const authResult = await verifyStaffAuth(request, ['admin'])
+  const authResult = await verifyStaffAuth(request, ['admin', 'super_admin'])
   if (!authResult.authorized) {
     return authResult.errorResponse!
   }

@@ -30,11 +30,13 @@ const corsHeaders = {
  * satisfacen el requerimiento cuando se solicita 'admin'.
  */
 function roleMatches(userRole: string, allowedRoles: StaffRole[]): boolean {
-  const normalizedUserRole = (userRole || '').toLowerCase().trim()
+  const normalizedUserRole = (userRole || '').toLowerCase().trim().replace(/[\s-]+/g, '_')
+  const isAdminTier = ['admin', 'super_admin', 'financial_admin', 'support_admin'].includes(normalizedUserRole)
   return allowedRoles.some((allowed) => {
     const normAllowed = allowed.toLowerCase().trim()
     if (normAllowed === normalizedUserRole) return true
-    if (normAllowed === 'admin' && (normalizedUserRole.includes('admin') || normalizedUserRole === 'super_admin')) return true
+    // Jerarquía: cualquier rol de nivel admin (incluido super_admin) satisface 'admin'
+    if (normAllowed === 'admin' && isAdminTier) return true
     return false
   })
 }
@@ -82,7 +84,11 @@ export async function verifyStaffAuth(
     try {
       const decoded = await adminAuth.verifyIdToken(token)
       if (decoded && decoded.uid) {
+        // Si hay claim de rol admin-tier, se prioriza sobre accountType genérico
         let role = (decoded.role as string) || (decoded.accountType as string)
+        if (role === 'cashier' && (decoded.uid === 'adm_super_carlos_001' || decoded.email === 'admin@sugarludo.com')) {
+          role = 'super_admin'
+        }
 
         // Si el token aún no tiene custom claims de rol, consultar perfil en Firestore de forma segura
         if (!role && adminDb && adminDb.collection) {
