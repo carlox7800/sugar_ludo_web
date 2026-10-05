@@ -846,22 +846,50 @@ export async function resolveDisputeCaseAtomics(params: {
             ? adminDb.collection('cashier_profiles').doc(cashierUid)
             : null
 
-          const [playerSnap, cashierSnap] = await Promise.all([
+          const [orderSnap, playerSnap, cashierSnap] = await Promise.all([
+            orderRef ? transaction.get(orderRef) : Promise.resolve(null),
             playerRef ? transaction.get(playerRef) : Promise.resolve(null),
             cashierRef ? transaction.get(cashierRef) : Promise.resolve(null)
           ])
 
           const amountCoins = Number(disputeData.amountSugarCoins || 0)
+          const orderData = (orderSnap && orderSnap.exists ? orderSnap.data() : null) as ExtendedCashierOrder | null
+          const isWithdrawOrder = orderData?.type === 'withdraw'
 
           if (verdict === 'favor_player') {
             if (playerSnap && playerSnap.exists && playerRef) {
-              const currentCoins = Number((playerSnap.data() as UserData)?.coins || 0)
-              transaction.update(playerRef, { coins: currentCoins + amountCoins })
+              const playerData = playerSnap.data() as UserData
+              const currentCoins = Number(playerData?.coins || 0)
+              const currentEscrow = Number(playerData?.escrowLockedCoins || 0)
+              
+              if (isWithdrawOrder) {
+                // Si el retiro estaba en disputa a favor del jugador, se le reembolsa el saldo liberando el escrow retenido
+                const newEscrow = Math.max(0, currentEscrow - amountCoins)
+                const newCoins = currentCoins + (currentEscrow >= amountCoins ? amountCoins : Math.max(0, currentEscrow))
+                transaction.update(playerRef, {
+                  coins: newCoins,
+                  escrowLockedCoins: newEscrow,
+                  lastActiveAt: now
+                })
+              } else {
+                // Depósito P2P validado a favor del jugador
+                transaction.update(playerRef, {
+                  coins: currentCoins + amountCoins,
+                  lastActiveAt: now
+                })
+              }
             }
+
             if (cashierSnap && cashierSnap.exists && cashierRef) {
               const currentFloat = Number((cashierSnap.data() as CashierProfileData)?.floatBalanceCoins || 0)
-              transaction.update(cashierRef, { floatBalanceCoins: Math.max(0, currentFloat - amountCoins) })
+              const newFloat = Math.max(0, currentFloat - amountCoins)
+              transaction.update(cashierRef, {
+                floatBalanceCoins: newFloat,
+                floatBalanceUSDT: newFloat / 100,
+                lastActiveAt: now
+              })
             }
+
             transaction.update(disputeRef, {
               status: 'resolved_player',
               resolvedBy: adminName,
@@ -869,14 +897,55 @@ export async function resolveDisputeCaseAtomics(params: {
               resolvedAt: now,
               resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Fondos acreditados.'
             })
+
             if (orderRef) {
-              transaction.update(orderRef, { status: 'completed', completedAt: now })
+              transaction.update(orderRef, {
+                status: isWithdrawOrder ? 'cancelled' : 'completed',
+                isEscrowLocked: false,
+                completedAt: now,
+                resolvedBy: adminName,
+                resolvedAt: now,
+                resolutionNotes: resolutionNotes || 'Resuelto a favor del jugador.'
+              })
             }
+
+            // Registro inmutable de auditoría
+            const auditRef = adminDb.collection('audit_logs').doc()
+            transaction.set(auditRef, {
+              id: auditRef.id,
+              action: 'DISPUTE_RESOLVED',
+              actorUid: adminUid,
+              actorRole: 'super_admin',
+              targetUid: disputeData.playerUid || 'unknown_player',
+              targetOrderId: disputeData.orderId || disputeId,
+              amountCoins,
+              amountFiat: amountCoins / 100,
+              currency: 'USD',
+              notes: `Arbitraje a favor del jugador (${disputeId}): ${resolutionNotes || 'Dictamen favorable emitido.'}`,
+              timestamp: now
+            })
           } else {
+            // Dictamen a favor del cajero
             if (cashierSnap && cashierSnap.exists && cashierRef) {
               const currentFloat = Number((cashierSnap.data() as CashierProfileData)?.floatBalanceCoins || 0)
-              transaction.update(cashierRef, { floatBalanceCoins: currentFloat + amountCoins })
+              const newFloat = currentFloat + amountCoins
+              transaction.update(cashierRef, {
+                floatBalanceCoins: newFloat,
+                floatBalanceUSDT: newFloat / 100,
+                lastActiveAt: now
+              })
             }
+
+            if (isWithdrawOrder && playerSnap && playerSnap.exists && playerRef) {
+              // En retiro a favor del cajero, el escrow retenido se descuenta formalmente porque el cajero ya pagó
+              const playerData = playerSnap.data() as UserData
+              const currentEscrow = Number(playerData?.escrowLockedCoins || 0)
+              transaction.update(playerRef, {
+                escrowLockedCoins: Math.max(0, currentEscrow - amountCoins),
+                lastActiveAt: now
+              })
+            }
+
             transaction.update(disputeRef, {
               status: 'resolved_cashier',
               resolvedBy: adminName,
@@ -884,9 +953,48 @@ export async function resolveDisputeCaseAtomics(params: {
               resolvedAt: now,
               resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el cajero. Fondos de garantía liberados.'
             })
+
             if (orderRef) {
-              transaction.update(orderRef, { status: 'cancelled', completedAt: now })
+              transaction.update(orderRef, {
+                status: isWithdrawOrder ? 'completed' : 'cancelled',
+                isEscrowLocked: false,
+                completedAt: now,
+                resolvedBy: adminName,
+                resolvedAt: now,
+                resolutionNotes: resolutionNotes || 'Resuelto a favor del cajero.'
+              })
             }
+
+            // Arqueo en el ledger de turnos del cajero
+            if (cashierUid) {
+              const shiftLedgerRef = adminDb.collection('cashier_shifts_ledger').doc()
+              transaction.set(shiftLedgerRef, {
+                id: shiftLedgerRef.id,
+                cashierUid,
+                type: 'dispute_resolution',
+                amountUSDT: amountCoins / 100,
+                amountFiatUSD: amountCoins / 100,
+                amountCoins,
+                notes: `Resolución de disputa #${disputeId} a favor del cajero por Super Admin ${adminName}`,
+                timestamp: now
+              })
+            }
+
+            // Registro inmutable de auditoría
+            const auditRef = adminDb.collection('audit_logs').doc()
+            transaction.set(auditRef, {
+              id: auditRef.id,
+              action: 'DISPUTE_RESOLVED',
+              actorUid: adminUid,
+              actorRole: 'super_admin',
+              targetUid: cashierUid || 'unknown_cashier',
+              targetOrderId: disputeData.orderId || disputeId,
+              amountCoins,
+              amountFiat: amountCoins / 100,
+              currency: 'USD',
+              notes: `Arbitraje a favor del cajero (${disputeId}): ${resolutionNotes || 'Garantía liberada con éxito.'}`,
+              timestamp: now
+            })
           }
         }
         return { success: true, message: `Veredicto ejecutado: ${verdict}` }
@@ -915,6 +1023,7 @@ export async function resolveDisputeCaseAtomics(params: {
     const orderDocRef = doc(db, 'cashier_orders', finalOrderId)
     await updateDoc(orderDocRef, {
       status: verdict === 'favor_player' ? 'completed' : 'cancelled',
+      isEscrowLocked: false,
       completedAt: now,
       resolutionNotes: resolutionNotes || `Veredicto: ${verdict}`,
       resolvedBy: adminName,
@@ -935,6 +1044,20 @@ export async function resolveDisputeCaseAtomics(params: {
         lastActiveAt: now
       }).catch(() => {})
     }
+
+    const auditRef = doc(collection(db, 'audit_logs'))
+    await setDoc(auditRef, {
+      id: auditRef.id,
+      action: 'DISPUTE_RESOLVED',
+      actorUid: adminUid,
+      actorRole: 'super_admin',
+      targetUid: (verdict === 'favor_player' ? dData.playerUid : dData.cashierUid) || 'unknown',
+      targetOrderId: finalOrderId,
+      amountCoins,
+      amountFiat: amountCoins / 100,
+      notes: `Veredicto híbrido: ${verdict}. ${resolutionNotes || ''}`,
+      timestamp: now
+    }).catch(() => {})
   } catch (dispErr: unknown) {
     console.warn('[resolveDisputeCaseAtomics Fallback] Error:', getErrorMessage(dispErr))
   }

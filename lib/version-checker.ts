@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.6.2',
+  latestVersion: '9.6.3',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
   releaseDate: '2026-10-05',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.2/SugarLudo-v9.6.2.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.2/SugarLudo-v9.6.2-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.3/SugarLudo-v9.6.3.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.3/SugarLudo-v9.6.3-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.6.2: Tienda dinámica, consumibles y boosters con Remote Config y banners de eventos en vivo.'
+  changelog: 'Actualización v9.6.3: Refuerzo transaccional atómico P2P en caja, arbitraje de disputas auditado y balance de garantías blindado.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)

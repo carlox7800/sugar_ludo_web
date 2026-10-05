@@ -50,6 +50,15 @@ export async function POST(request: Request) {
 
       if (adminDb && adminDb.collection) {
         await adminDb.collection('dispute_cases').doc(disputeId).set(updatePayload, { merge: true })
+        await adminDb.collection('audit_logs').add({
+          action: 'DISPUTE_RESOLVED',
+          actorUid: adminUserUid,
+          actorRole: 'super_admin',
+          targetUid: playerUid || disputeId,
+          targetOrderId: disputeId,
+          notes: verdict === 'dismiss' ? `Caso desestimado: ${updatePayload.resolutionNotes}` : `Aclaratoria emitida: ${updatePayload.resolutionNotes}`,
+          timestamp: now
+        }).catch(() => {})
       } else {
         const dRef = doc(db, 'dispute_cases', disputeId)
         await setDoc(dRef, updatePayload, { merge: true })
@@ -90,6 +99,18 @@ export async function POST(request: Request) {
           const inc = admin?.firestore?.FieldValue?.increment ? admin.firestore.FieldValue.increment(amountCoins) : amountCoins
           await adminDb.collection('users').doc(targetPlayerUid).set({ coins: inc }, { merge: true }).catch(() => {})
         }
+        await adminDb.collection('audit_logs').add({
+          action: 'DISPUTE_RESOLVED',
+          actorUid: adminUserUid,
+          actorRole: 'super_admin',
+          targetUid: targetPlayerUid || 'unknown_player',
+          targetOrderId: disputeId,
+          amountCoins,
+          amountFiat: amountCoins / 100,
+          currency: 'USD',
+          notes: `Compensación goodwill por soporte: ${updatePayload.resolutionNotes}`,
+          timestamp: now
+        }).catch(() => {})
       } else {
         const dRef = doc(db, 'dispute_cases', disputeId)
         await setDoc(dRef, updatePayload, { merge: true })

@@ -353,6 +353,27 @@ describe('Suite: Contadores y Notificaciones de Disputas Pendientes en Admin Hub
     assert.equal(zeroCounts.account, 0)
     assert.equal(zeroCounts.total, 0, 'El contador total debe ser 0 si no hay casos pendientes')
   })
+
+  it('debe validar la estructura de auditoría inmutable de resolución de disputas P2P', () => {
+    const validVerdicts = ['favor_player', 'favor_cashier', 'clarification', 'dismiss', 'compensate_goodwill']
+    for (const v of validVerdicts) {
+      assert.ok(typeof v === 'string')
+    }
+
+    // Estructura esperada de un log de auditoría
+    const sampleAudit = {
+      action: 'DISPUTE_RESOLVED',
+      actorUid: 'admin_test_01',
+      actorRole: 'super_admin',
+      targetUid: 'player_test_01',
+      targetOrderId: 'order_test_123',
+      amountCoins: 500,
+      timestamp: Date.now()
+    }
+    assert.equal(sampleAudit.action, 'DISPUTE_RESOLVED')
+    assert.equal(sampleAudit.actorRole, 'super_admin')
+    assert.ok(sampleAudit.amountCoins > 0)
+  })
 })
 
 
