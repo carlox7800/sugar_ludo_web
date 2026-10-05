@@ -12,6 +12,7 @@ import {
   getDoc
 } from 'firebase/firestore'
 import { recordWalletTransaction } from './wallet-service'
+import { getLiveXpMultipliers } from './economy-service'
 
 export interface MatchRecord {
   id?: string
@@ -50,12 +51,18 @@ export async function recordMatchResult(userId: string, matchData: Omit<MatchRec
     const newLosses = currentLosses + (isWin ? 0 : 1)
     const newGames = currentGames + 1
     const newWinStreak = isWin ? currentWinStreak + 1 : 0
-    // Check active XP Boosters
+    // Check active XP Boosters and global events (Double XP)
     let xpMultiplier = 1
+    const liveXp = getLiveXpMultipliers()
+    if (liveXp.doubleXpActive) {
+      xpMultiplier *= 2
+    }
+
     if (Array.isArray(userData.activeBoosters)) {
       const validBoosters = userData.activeBoosters.filter((b: any) => b && Number(b.expiresAt) > Date.now())
       if (validBoosters.length > 0) {
-        xpMultiplier = Math.max(...validBoosters.map((b: any) => Number(b.multiplier) || 1), 1)
+        const boosterMult = Math.max(...validBoosters.map((b: any) => Number(b.multiplier) || 1), 1)
+        xpMultiplier *= boosterMult
       }
     }
 

@@ -24,12 +24,19 @@ export const DEFAULT_ECONOMY_MATRIX: Record<number, EconomyMatrixEntry> = {
   6: { entry: 300, pot: 1800, prizes: [600, 450, 250, 100] },
 }
 
+const LOCAL_STORAGE_KEY = 'sugar_global_economy_config'
+
 let liveEconomyMatrix: Record<number, EconomyMatrixEntry> = { ...DEFAULT_ECONOMY_MATRIX }
 let liveCoinPackages: any[] | null = null
 let liveSeasonRanking: any = null
 let liveTournaments: any[] | null = null
 const liveItemPrices = new Map<string, number>()
 let liveFees = { normalFee: 5.0, vipFee: 10.0 }
+let liveXpConfig = {
+  doubleXpActive: false,
+  goldRushMultiplier: 1,
+  tournamentBonusPct: 0
+}
 let isInitialized = false
 
 let lastConfig: any = null
@@ -59,6 +66,18 @@ export function initEconomyService() {
   if (typeof window === 'undefined' || isInitialized) return
   isInitialized = true
 
+  // 0. Carga inicial inmediata desde caché local persistente ($0.00 lecturas Firebase Spark, 0 ms)
+  try {
+    const cached = localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (cached) {
+      const parsed = JSON.parse(cached)
+      lastConfig = parsed
+      applyEconomyConfig(parsed, false)
+    }
+  } catch (e) {
+    console.warn('[EconomyService] Error cargando caché local:', e)
+  }
+
   // 1. Escuchar en TIEMPO REAL desde Firebase Firestore con pausa por visibilidad (Spark $0/mes)
   startEconomyListener()
   if (typeof document !== 'undefined') {
@@ -74,13 +93,13 @@ export function initEconomyService() {
     })
   }
 
-  // 2. Escuchar evento instantáneo por BroadcastChannel (0 ms)
+  // 2. Escuchar evento instantáneo por BroadcastChannel (0 ms entre pestañas/ventanas)
   try {
     if ('BroadcastChannel' in window) {
       const channel = new BroadcastChannel('sugar_ludo_social_channel')
       channel.onmessage = (event) => {
         if (event.data?.type === 'economy_settings_updated' && event.data.payload) {
-          applyEconomyConfig(event.data.payload)
+          applyEconomyConfig(event.data.payload, true)
         }
       }
     }
@@ -90,13 +109,14 @@ export function initEconomyService() {
   subscribeToP2PData((data: any) => {
     if (data && (data.dataType === 'economy_updated' || data.type === 'economy_updated')) {
       const config = data.config || data
-      applyEconomyConfig(config)
+      applyEconomyConfig(config, true)
     }
   })
 }
 
-function applyEconomyConfig(config: any) {
+function applyEconomyConfig(config: any, persistToCache = true) {
   if (!config) return
+  lastConfig = config
 
   if (config.matrix) {
     liveEconomyMatrix = { ...DEFAULT_ECONOMY_MATRIX, ...config.matrix }
@@ -152,6 +172,17 @@ function applyEconomyConfig(config: any) {
   if (typeof config.normalFee === 'number') liveFees.normalFee = config.normalFee
   if (typeof config.vipFee === 'number') liveFees.vipFee = config.vipFee
 
+  if (typeof config.doubleXpActive === 'boolean') liveXpConfig.doubleXpActive = config.doubleXpActive
+  if (typeof config.goldRushMultiplier === 'number') liveXpConfig.goldRushMultiplier = config.goldRushMultiplier
+  if (typeof config.tournamentBonusPct === 'number') liveXpConfig.tournamentBonusPct = config.tournamentBonusPct
+
+  // Guardar en caché persistente local (Esquema Híbrido Opción B)
+  if (persistToCache && typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config))
+    } catch {}
+  }
+
   // Notificar a componentes suscritos
   listeners.forEach((cb) => cb())
 }
@@ -169,6 +200,20 @@ export function getLiveCoinPackages(): any[] | null {
 export function getLiveItemPrice(itemId: string, defaultPrice: number): number {
   initEconomyService()
   return liveItemPrices.has(itemId) ? liveItemPrices.get(itemId)! : defaultPrice
+}
+
+export function getLiveConsumablesPrices(): Record<string, number> {
+  initEconomyService()
+  const obj: Record<string, number> = {}
+  liveItemPrices.forEach((val, key) => {
+    obj[key] = val
+  })
+  return obj
+}
+
+export function getLiveXpMultipliers() {
+  initEconomyService()
+  return liveXpConfig
 }
 
 export function getLiveWithdrawalFees() {

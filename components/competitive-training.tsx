@@ -10,13 +10,7 @@ import { getLiveEconomyMatrix, subscribeToEconomyUpdates, DEFAULT_ECONOMY_MATRIX
 
 const PLAYER_OPTIONS = [2, 3, 4, 5, 6]
 
-export const ECONOMY_MATRIX: Record<number, { entry: number; pot: number; prizes: number[] }> = {
-  2: { entry: 100, pot: 200, prizes: [150] },
-  3: { entry: 120, pot: 360, prizes: [200, 80] },
-  4: { entry: 150, pot: 600, prizes: [300, 150] },
-  5: { entry: 200, pot: 1000, prizes: [400, 200, 100] },
-  6: { entry: 300, pot: 1800, prizes: [600, 450, 250, 100] },
-}
+export const ECONOMY_MATRIX = DEFAULT_ECONOMY_MATRIX
 
 export function CompetitiveTraining({ 
   onBack, 

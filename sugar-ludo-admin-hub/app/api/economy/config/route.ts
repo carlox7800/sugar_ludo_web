@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
 import { verifyStaffAuth } from '@/lib/api-auth-guard'
+import { validateEconomyConfig, formatDualWritePayload } from '@/lib/economy-validator'
 
 // In-Memory cache en el proceso de Node.js
 let inMemoryEconomyConfig: any = null
@@ -36,7 +37,10 @@ export async function GET(request: Request) {
     // 2. Si no está en RAM, leer 1 sola vez el documento maestro /config/global_economy
     if (adminDb && adminDb.collection) {
       try {
-        const docSnap = await adminDb.collection('config').doc('global_economy').get()
+        let docSnap = await adminDb.collection('config').doc('global_economy').get()
+        if (!docSnap.exists) {
+          docSnap = await adminDb.collection('system_config').doc('economy_settings').get()
+        }
         if (docSnap.exists) {
           inMemoryEconomyConfig = docSnap.data()
           return NextResponse.json({
@@ -70,21 +74,32 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const payload = {
-      ...body,
-      updatedAt: Date.now()
+    
+    // Validación estricta de invariantes financieros (pot = premios + rake, límites 100-300 SC)
+    const validation = validateEconomyConfig(body)
+    if (!validation.valid) {
+      return NextResponse.json({
+        success: false,
+        error: 'Validación de economía fallida: invariantes financieros violados',
+        errors: validation.errors
+      }, { status: 400 })
     }
+
+    const payload = formatDualWritePayload(validation.sanitized)
 
     // 1. Actualizar Cache en Memoria RAM local del Hub
     inMemoryEconomyConfig = payload
 
-    // 2. Persistencia Maestra: 1 sola escritura en /config/global_economy en Firestore
+    // 2. Persistencia Maestra Dual-Write con Firebase Admin SDK (Cero reglas requeridas)
     try {
       if (adminDb && adminDb.collection) {
+        // Documento Canónico Centralizado
         await adminDb.collection('config').doc('global_economy').set(payload, { merge: true })
+        // Documento Legacy para clientes y listeners en ejecución
+        await adminDb.collection('system_config').doc('economy_settings').set(payload, { merge: true })
       }
     } catch (dbErr: any) {
-      console.warn('[EconomyConfig] Firestore set master doc notice:', dbErr.message)
+      console.warn('[EconomyConfig] Firestore dual-write notice:', dbErr.message)
     }
 
     // 3. Notificar y Sincronizar en RAM del Servidor de Render (POST /api/social/event)
@@ -109,7 +124,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Configuración económica persistida en Firestore y difundida en tiempo real vía SSE ($0.00 Firestore).',
+      message: 'Configuración económica validada, persistida atómicamente con Dual-Write y difundida vía SSE.',
       config: payload
     })
   } catch (err: any) {
