@@ -292,7 +292,9 @@ export default function AdminDashboardPage() {
             ...prev,
             serverLatencyMs: ping,
             totalRegisteredUsers: prev.totalRegisteredUsers || data.telemetry.totalRegisteredUsers,
-            totalDownloadsCount: Math.max(prev.totalRegisteredUsers || 0, data.telemetry.totalDownloadsCount || 0)
+            totalDownloadsCount: Math.max(prev.totalRegisteredUsers || 0, data.telemetry.totalDownloadsCount || 0),
+            criticalErrorsCount: data.telemetry.criticalErrorsCount ?? 0,
+            recentAlerts: data.telemetry.recentAlerts || []
           }))
         }
       }

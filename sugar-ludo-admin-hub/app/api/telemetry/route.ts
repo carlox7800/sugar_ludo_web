@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { APP_VERSION_TAG } from '../../../lib/version'
+import { adminDb } from '../../../lib/firebase-admin'
 
 export interface TelemetryAlertEvent {
   id: string
@@ -8,6 +9,8 @@ export interface TelemetryAlertEvent {
   level: 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL'
   source: 'game-client' | 'admin-hub' | 'server'
   message: string
+  stack?: string
+  fpsSnapshot?: number
   details?: unknown
   version?: string
 }
@@ -28,7 +31,9 @@ export async function OPTIONS() {
 }
 
 /**
- * Ingesta de Alertas Críticas & Anomalías (Game Client, Admin Hub, Server Relay)
+ * Ingesta de Alertas Críticas, Rendimiento & Anomalías (Game Client, Admin Hub, Server Relay)
+ * Escribe incidentes en Firestore con Firebase Admin SDK solo cuando es ERROR o CRITICAL,
+ * manteniendo el plan Spark al 100% de cuota gratuita.
  */
 export async function POST(request: Request) {
   try {
@@ -44,13 +49,29 @@ export async function POST(request: Request) {
       level: body.level || 'ERROR',
       source: body.source || 'game-client',
       message: String(body.message || 'Alerta sin descripción'),
+      stack: body.stack ? String(body.stack) : undefined,
+      fpsSnapshot: typeof body.fpsSnapshot === 'number' ? body.fpsSnapshot : undefined,
       details: body.details,
       version: body.version || APP_VERSION_TAG
     }
 
+    // 1. Guardar en buffer circular en memoria para lectura inmediata
     alertEventBuffer.unshift(event)
     if (alertEventBuffer.length > MAX_ALERT_BUFFER) {
       alertEventBuffer.pop()
+    }
+
+    // 2. Si es ERROR o CRITICAL, persistir en Firestore con Firebase Admin SDK para trazabilidad
+    if ((event.level === 'ERROR' || event.level === 'CRITICAL') && adminDb) {
+      try {
+        const incidentRef = adminDb.collection('telemetry_incidents').doc(event.id)
+        await incidentRef.set({
+          ...event,
+          createdAt: adminDb.FieldValue?.serverTimestamp ? adminDb.FieldValue.serverTimestamp() : new Date()
+        }, { merge: true })
+      } catch (dbErr) {
+        console.warn('[Telemetry] Advertencia al persistir incidente en Firestore con Admin SDK:', dbErr)
+      }
     }
 
     return NextResponse.json(
@@ -127,7 +148,7 @@ export async function GET() {
         activeMatchRooms,
         serverStatus,
         criticalErrorsCount,
-        recentAlerts: alertEventBuffer.slice(0, 15),
+        recentAlerts: alertEventBuffer.slice(0, 20),
         updatedAt: Date.now()
       }
     },

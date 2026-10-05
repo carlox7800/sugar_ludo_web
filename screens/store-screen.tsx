@@ -82,21 +82,31 @@ export function StoreScreen({ onBack }: { onBack: () => void }) {
       if (!cfg) return
       if (Array.isArray(cfg.items) && cfg.items.length > 0) {
         const priceMap = new Map<string, number>()
+        const activeMap = new Map<string, boolean>()
         cfg.items.forEach((it: any) => {
-          if (it && it.id && typeof it.priceCoins === 'number') {
-            priceMap.set(it.id, it.priceCoins)
+          if (it && it.id) {
+            if (typeof it.priceCoins === 'number') {
+              priceMap.set(it.id, it.priceCoins)
+            }
+            if (typeof it.isActive === 'boolean') {
+              activeMap.set(it.id, it.isActive)
+            }
           }
         })
 
-        setCustomItems((prev) =>
-          prev.map((item) => (priceMap.has(item.id) ? { ...item, priceSC: priceMap.get(item.id)! } : item))
-        )
-        setEmoteItems((prev) =>
-          prev.map((item) => (priceMap.has(item.id) ? { ...item, priceSC: priceMap.get(item.id)! } : item))
-        )
-        setBoosterItems((prev) =>
-          prev.map((item) => (priceMap.has(item.id) ? { ...item, priceSC: priceMap.get(item.id)! } : item))
-        )
+        const mapItem = (item: StoreItem) => {
+          const newPrice = priceMap.has(item.id) ? priceMap.get(item.id)! : item.priceSC
+          const isItemActive = activeMap.has(item.id) ? activeMap.get(item.id)! : true
+          return {
+            ...item,
+            priceSC: newPrice,
+            isActive: isItemActive
+          }
+        }
+
+        setCustomItems((prev) => prev.map(mapItem))
+        setEmoteItems((prev) => prev.map(mapItem))
+        setBoosterItems((prev) => prev.map(mapItem))
       }
 
       if (Array.isArray(cfg.packages) && cfg.packages.length > 0) {

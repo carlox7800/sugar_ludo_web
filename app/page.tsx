@@ -46,6 +46,7 @@ import {
   clearIncomingDuelInvite
 } from '@/lib/friends-service'
 import { initPresenceTracker, updatePlayerTelemetryState, mapScreenToTelemetryState } from '@/lib/presence-service'
+import { clientTelemetry } from '@/lib/telemetry'
 
 export type Screen =
   | 'lobby'
@@ -129,6 +130,7 @@ function PageContent() {
         document.documentElement.classList.remove('theme-sugar')
       }
       initPresenceTracker('lobby')
+      clientTelemetry.init()
     }
   }, [])
   

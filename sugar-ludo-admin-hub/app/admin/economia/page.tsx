@@ -102,6 +102,16 @@ export default function EconomiaAdminPage() {
     )
   }
 
+  const handleToggleItemActive = (id: string, active: boolean) => {
+    setItems((prev: StoreItemPriceConfig[]) =>
+      prev.map((it: StoreItemPriceConfig) =>
+        it.id === id
+          ? { ...it, isActive: active }
+          : it
+      )
+    )
+  }
+
   const handleUpdateCompetitiveTier = (
     playerCount: number,
     newEntryFeeSC: number,
@@ -744,7 +754,11 @@ export default function EconomiaAdminPage() {
                 <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
                   <Smile className="size-4 text-amber-400" /> EMOTES ANIMADOS (5 BASE GRATUITOS + 5 PREMIUM DE PAGO)
                 </h4>
-                <EmotesPriceEditor emotes={emotesList} onUpdateEmote={handlePriceChange} />
+                <EmotesPriceEditor
+                  emotes={emotesList}
+                  onUpdateEmote={handlePriceChange}
+                  onToggleActive={handleToggleItemActive}
+                />
               </div>
             )}
 
@@ -757,6 +771,7 @@ export default function EconomiaAdminPage() {
                 <XpMultipliersEditor
                   boosters={boostersList}
                   onUpdateBooster={handlePriceChange}
+                  onToggleActive={handleToggleItemActive}
                   doubleXpActive={doubleXpActive}
                   onToggleDoubleXp={setDoubleXpActive}
                   goldRushMultiplier={goldRushMultiplier}

@@ -7,6 +7,7 @@ import { Zap, Sparkles, Rocket, Clock, ShieldCheck, Flame } from 'lucide-react'
 interface XpMultipliersEditorProps {
   boosters: StoreItemPriceConfig[]
   onUpdateBooster: (id: string, newCoins: number) => void
+  onToggleActive?: (id: string, active: boolean) => void
   doubleXpActive: boolean
   onToggleDoubleXp: (active: boolean) => void
   goldRushMultiplier: number
@@ -18,6 +19,7 @@ interface XpMultipliersEditorProps {
 export function XpMultipliersEditor({
   boosters,
   onUpdateBooster,
+  onToggleActive,
   doubleXpActive,
   onToggleDoubleXp,
   goldRushMultiplier,
@@ -35,17 +37,29 @@ export function XpMultipliersEditor({
           <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
             <Zap className="size-4 text-cyan-400" /> POTENCIADORES DE XP REALES (CATÁLOGO OFICIAL)
           </span>
-          <span className="text-[10px] font-mono text-slate-400">Precios editables en SC y USDT</span>
+          <span className="text-[10px] font-mono text-slate-400">Precios y disponibilidad editables en vivo</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {realBoosters.map((item) => (
-            <div key={item.id} className="p-4 rounded-2xl bg-slate-950/90 border border-purple-500/20 space-y-3">
+            <div key={item.id} className={`p-4 rounded-2xl bg-slate-950/90 border space-y-3 transition-all ${item.isActive !== false ? 'border-purple-500/20' : 'border-rose-500/20 opacity-60'}`}>
               <div className="flex items-center justify-between">
                 <span className="text-2xl">{item.icon || '⚡'}</span>
-                <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 font-mono font-bold uppercase">
-                  {item.rarity || 'Booster'}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-mono font-bold uppercase ${item.isActive !== false ? 'bg-purple-500/10 text-purple-300' : 'bg-rose-500/10 text-rose-300'}`}>
+                    {item.isActive !== false ? (item.rarity || 'Booster') : 'Pausado'}
+                  </span>
+                  {onToggleActive && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleActive(item.id, item.isActive === false ? true : false)}
+                      className="text-[9px] px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer font-bold"
+                      title={item.isActive !== false ? 'Pausar disponibilidad en tienda' : 'Habilitar en tienda'}
+                    >
+                      {item.isActive !== false ? 'Pausar' : 'Activar'}
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>

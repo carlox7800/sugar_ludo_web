@@ -18,6 +18,19 @@ export interface DetailedTelemetry {
   serverLatencyMs: number
   activeMatchRooms: number
   serverStatus: 'online' | 'degraded' | 'offline'
+  criticalErrorsCount?: number
+  recentAlerts?: Array<{
+    id: string
+    timestamp: number
+    isoTime: string
+    level: 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL'
+    source: 'game-client' | 'admin-hub' | 'server'
+    message: string
+    stack?: string
+    fpsSnapshot?: number
+    details?: unknown
+    version?: string
+  }>
   updatedAt: number
 }
 

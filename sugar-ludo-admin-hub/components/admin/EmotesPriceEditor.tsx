@@ -7,9 +7,10 @@ import { Smile, Sparkles, CheckCircle2, Lock } from 'lucide-react'
 interface EmotesPriceEditorProps {
   emotes: StoreItemPriceConfig[]
   onUpdateEmote: (id: string, newCoins: number) => void
+  onToggleActive?: (id: string, active: boolean) => void
 }
 
-export function EmotesPriceEditor({ emotes, onUpdateEmote }: EmotesPriceEditorProps) {
+export function EmotesPriceEditor({ emotes, onUpdateEmote, onToggleActive }: EmotesPriceEditorProps) {
   // Los 5 emotes base gratuitos del juego (definidos en DEFAULT_BASE_EMOTE_IDS)
   const baseFreeEmotes = [
     { id: 'emote_lol_bounce', name: 'Risa en Bucle (LOL)', icon: '🤣', desc: 'Rebote elástico continuo' },
@@ -49,17 +50,29 @@ export function EmotesPriceEditor({ emotes, onUpdateEmote }: EmotesPriceEditorPr
           <span className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
             <Smile className="size-3.5 text-amber-400" /> 5 EMOTES PREMIUM DE PAGO (EDITABLES)
           </span>
-          <span className="text-[10px] font-mono text-slate-400">Precios en SC y USDT</span>
+          <span className="text-[10px] font-mono text-slate-400">Precios en SC y disponibilidad en vivo</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {premiumPaidEmotes.map((item) => (
-            <div key={item.id} className="p-3.5 rounded-2xl bg-slate-950/90 border border-amber-500/20 space-y-2">
+            <div key={item.id} className={`p-3.5 rounded-2xl bg-slate-950/90 border space-y-2 transition-all ${item.isActive !== false ? 'border-amber-500/20' : 'border-rose-500/20 opacity-60'}`}>
               <div className="flex items-center justify-between">
                 <span className="text-2xl">{item.icon || '✨'}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 font-mono uppercase font-bold">
-                  {item.rarity || 'Premium'}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-mono uppercase font-bold ${item.isActive !== false ? 'bg-amber-500/10 text-amber-300' : 'bg-rose-500/10 text-rose-300'}`}>
+                    {item.isActive !== false ? 'Activo' : 'Pausado'}
+                  </span>
+                  {onToggleActive && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleActive(item.id, item.isActive === false ? true : false)}
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer font-bold"
+                      title={item.isActive !== false ? 'Pausar disponibilidad en tienda' : 'Habilitar en tienda'}
+                    >
+                      {item.isActive !== false ? 'Pausar' : 'Activar'}
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-0.5">

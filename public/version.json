@@ -1,13 +1,13 @@
 {
-  "latestVersion": "9.6.1",
+  "latestVersion": "9.6.2",
   "minSupportedVersion": "9.6.0",
   "forceUpdate": true,
   "releaseDate": "2026-10-05",
   "downloadUrls": {
-    "android": "https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.1/SugarLudo-v9.6.1.apk",
-    "windows": "https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.1/SugarLudo-v9.6.1-Setup.exe",
+    "android": "https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.2/SugarLudo-v9.6.2.apk",
+    "windows": "https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.2/SugarLudo-v9.6.2-Setup.exe",
     "web": "https://sugar-ludo-web.onrender.com"
   },
   "landingUrl": "https://sugar-ludo-landing.onrender.com",
-  "changelog": "Actualización obligatoria v9.6.0: Endurecimiento de seguridad y autenticación real con Firebase Admin SDK, arquitectura integral de telemetría y control remoto en panel de administración."
+  "changelog": "Actualización v9.6.2: Tienda dinámica, emotes y boosters administrables en caliente con Remote Config y banners de eventos en vivo."
 }

@@ -37,6 +37,7 @@ export interface StoreItem {
     multiplier?: number
     durationHours?: number
   }
+  isActive?: boolean
 }
 
 export interface UserInventory {

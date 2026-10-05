@@ -36,7 +36,7 @@ import {
   fetchActiveTournaments, 
   registerUserInTournament 
 } from '@/lib/tournaments-service'
-import { getLiveSeasonRanking, subscribeToEconomyUpdates } from '@/lib/economy-service'
+import { getLiveSeasonRanking, getLiveXpMultipliers, subscribeToEconomyUpdates } from '@/lib/economy-service'
 
 function renderAvatar(avatar?: string, className = "size-full object-cover rounded-full") {
   if (!avatar) return '🎲'
@@ -63,11 +63,13 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null)
   const [seasonRankingConfig, setSeasonRankingConfig] = useState<any>(getLiveSeasonRanking())
+  const [liveXpMultipliers, setLiveXpMultipliers] = useState<any>(getLiveXpMultipliers())
   const [liveSeasonCountdown, setLiveSeasonCountdown] = useState('')
 
   useEffect(() => {
     const unsub = subscribeToEconomyUpdates(() => {
       setSeasonRankingConfig(getLiveSeasonRanking())
+      setLiveXpMultipliers(getLiveXpMultipliers())
       fetchActiveTournaments().then(setTournaments).catch(() => {})
     })
     return () => unsub()
@@ -220,6 +222,39 @@ export function EventsScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       </div>
+
+      {/* Dynamic Active Events Banner (Remote Config Live Switches) */}
+      {(liveXpMultipliers?.doubleXpActive || (liveXpMultipliers?.goldRushMultiplier && liveXpMultipliers.goldRushMultiplier > 1) || (liveXpMultipliers?.tournamentBonusPct && liveXpMultipliers.tournamentBonusPct > 0)) && (
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-[linear-gradient(135deg,oklch(0.18_0.06_300/0.8),oklch(0.14_0.04_45/0.8))] border border-white/10 shadow-lg animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/40 border border-white/10 text-xs font-black text-white shrink-0">
+            <Sparkles className="size-3.5 text-[var(--candy-gold)] animate-pulse" />
+            <span>EVENTOS EN VIVO</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {liveXpMultipliers.doubleXpActive && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold font-mono">
+                <Zap className="size-3 text-purple-400" />
+                <span>Doble XP 2X Activo</span>
+              </span>
+            )}
+
+            {liveXpMultipliers.goldRushMultiplier > 1 && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold font-mono">
+                <Flame className="size-3 text-amber-400" />
+                <span>Fiebre del Oro {liveXpMultipliers.goldRushMultiplier}X</span>
+              </span>
+            )}
+
+            {liveXpMultipliers.tournamentBonusPct > 0 && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold font-mono">
+                <Trophy className="size-3 text-cyan-400" />
+                <span>+{liveXpMultipliers.tournamentBonusPct}% Pozo Torneos</span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="grid grid-cols-3 gap-2 rounded-2xl bg-[oklch(1_0_0/0.03)] p-1.5 border border-border/80">

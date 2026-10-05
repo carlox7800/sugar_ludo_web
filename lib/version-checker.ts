@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.6.1',
+  latestVersion: '9.6.2',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
   releaseDate: '2026-10-05',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.1/SugarLudo-v9.6.1.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.1/SugarLudo-v9.6.1-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.2/SugarLudo-v9.6.2.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.2/SugarLudo-v9.6.2-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.6.1: Remote Config híbrido v2, control remoto económico de alta reactividad y telemetría avanzada.'
+  changelog: 'Actualización v9.6.2: Tienda dinámica, consumibles y boosters con Remote Config y banners de eventos en vivo.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)

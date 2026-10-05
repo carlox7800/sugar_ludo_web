@@ -116,4 +116,42 @@ describe('Fase 1: Control Remoto y Validación de Invariantes de Economía', () 
     assert.equal(DEFAULT_ECONOMY_MATRIX[6].entry, 300)
   })
 
+  it('FASE 3: debe validar y permitir activar/pausar consumibles y configurar precios en caliente', () => {
+    const consumablesPayload = {
+      competitiveMatrix: [
+        { playerCount: 2, entryFeeSC: 100, potSC: 200, prizesSC: [150] }
+      ],
+      items: [
+        { id: 'emote_toxic_salt', name: 'Lluvia de Sal', category: 'emote', priceCoins: 250, isActive: true },
+        { id: 'emote_ghost_rip', name: 'Fantasma RIP', category: 'emote', priceCoins: 200, isActive: false },
+        { id: 'booster_xp_2x_24h', name: 'XP Booster 2X (24 Horas)', category: 'booster', priceCoins: 120, isActive: true }
+      ],
+      doubleXpActive: true,
+      goldRushMultiplier: 3.0,
+      tournamentBonusPct: 25
+    }
+
+    const res = validateEconomyConfig(consumablesPayload)
+    assert.equal(res.valid, true)
+    assert.equal(res.sanitized.items.length, 3)
+    assert.equal(res.sanitized.items[0].priceCoins, 250)
+    assert.equal(res.sanitized.items[0].isActive, true)
+    assert.equal(res.sanitized.items[1].isActive, false)
+    assert.equal(res.sanitized.doubleXpActive, true)
+    assert.equal(res.sanitized.goldRushMultiplier, 3.0)
+    assert.equal(res.sanitized.tournamentBonusPct, 25)
+  })
+
+  it('FASE 3: debe rechazar multiplicadores Fiebre de Oro corruptos o fuera de rango (1x a 10x)', () => {
+    const corruptGoldRush = {
+      competitiveMatrix: [
+        { playerCount: 2, entryFeeSC: 100, potSC: 200, prizesSC: [150] }
+      ],
+      goldRushMultiplier: 25 // Excede el tope de 10x
+    }
+    const res = validateEconomyConfig(corruptGoldRush)
+    assert.equal(res.valid, false)
+    assert.match(res.errors[0], /Multiplicador Fiebre de Oro inválido/)
+  })
+
 })

@@ -31,6 +31,7 @@ let liveCoinPackages: any[] | null = null
 let liveSeasonRanking: any = null
 let liveTournaments: any[] | null = null
 const liveItemPrices = new Map<string, number>()
+const liveItemAvailability = new Map<string, boolean>()
 let liveFees = { normalFee: 5.0, vipFee: 10.0 }
 let liveXpConfig = {
   doubleXpActive: false,
@@ -155,8 +156,13 @@ function applyEconomyConfig(config: any, persistToCache = true) {
 
   if (Array.isArray(config.items)) {
     config.items.forEach((it: any) => {
-      if (it && it.id && typeof it.priceCoins === 'number') {
-        liveItemPrices.set(it.id, it.priceCoins)
+      if (it && it.id) {
+        if (typeof it.priceCoins === 'number') {
+          liveItemPrices.set(it.id, it.priceCoins)
+        }
+        if (typeof it.isActive === 'boolean') {
+          liveItemAvailability.set(it.id, it.isActive)
+        }
       }
     })
   }
@@ -200,6 +206,11 @@ export function getLiveCoinPackages(): any[] | null {
 export function getLiveItemPrice(itemId: string, defaultPrice: number): number {
   initEconomyService()
   return liveItemPrices.has(itemId) ? liveItemPrices.get(itemId)! : defaultPrice
+}
+
+export function getLiveItemAvailability(itemId: string, defaultActive = true): boolean {
+  initEconomyService()
+  return liveItemAvailability.has(itemId) ? liveItemAvailability.get(itemId)! : defaultActive
 }
 
 export function getLiveConsumablesPrices(): Record<string, number> {

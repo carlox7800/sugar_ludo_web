@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { DetailedTelemetry } from '../../types/admin-expanded'
-import { Download, Users, Bot, Globe, Trophy, Compass, Wifi, RotateCcw } from 'lucide-react'
+import { Download, Users, Bot, Globe, Trophy, Compass, Wifi, RotateCcw, Activity } from 'lucide-react'
 
 interface DetailedTelemetryCardProps {
   telemetry: DetailedTelemetry
@@ -123,6 +123,67 @@ export function DetailedTelemetryCard({ telemetry, onResetTelemetry }: DetailedT
           </div>
 
         </div>
+      </div>
+
+      {/* Incidentes, Salud y Rendimiento de Clientes */}
+      <div className="pt-4 border-t border-white/10 space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+            <Activity className="size-4 text-amber-400" /> SALUD DE CLIENTES & ALERTAS RECIENTES ({telemetry.criticalErrorsCount || 0} Incidentes Activos)
+          </h4>
+          <span className="text-[10px] text-slate-400 font-mono">
+            Estado Servidor: <strong className="text-emerald-400 uppercase">{telemetry.serverStatus}</strong>
+          </span>
+        </div>
+
+        {(!telemetry.recentAlerts || telemetry.recentAlerts.length === 0) ? (
+          <div className="p-4 rounded-2xl bg-slate-950/40 border border-white/5 text-center text-xs text-slate-400 font-mono">
+            ✓ 0 anomalías reportadas. Rendimiento de clientes a 60 FPS y 0 crashes activos.
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+            {telemetry.recentAlerts.map((alert) => (
+              <div
+                key={alert.id}
+                className="p-3 rounded-xl bg-slate-950/70 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+              >
+                <div className="flex items-start sm:items-center gap-2.5">
+                  <span
+                    className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-black uppercase ${
+                      alert.level === 'CRITICAL'
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        : alert.level === 'ERROR'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        : alert.level === 'WARN'
+                        ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+                        : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    }`}
+                  >
+                    {alert.level}
+                  </span>
+                  <div>
+                    <p className="font-bold text-slate-200">{alert.message}</p>
+                    {alert.stack && (
+                      <p className="text-[10px] text-slate-500 font-mono truncate max-w-xl">
+                        {alert.stack}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 text-[10px] font-mono text-slate-400 shrink-0">
+                  {typeof alert.fpsSnapshot === 'number' && (
+                    <span className="text-cyan-400">{alert.fpsSnapshot} FPS</span>
+                  )}
+                  <span>{alert.isoTime ? new Date(alert.isoTime).toLocaleTimeString() : ''}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-white/5 text-slate-400">
+                    {alert.version || 'v9.6.2'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
