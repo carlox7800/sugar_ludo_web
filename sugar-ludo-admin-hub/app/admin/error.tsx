@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import React, { useEffect } from 'react'
 import { AlertTriangle, RefreshCw, ArrowLeft } from 'lucide-react'
@@ -45,10 +45,10 @@ export default function AdminErrorBoundary({
             <RefreshCw className="size-4" /> Reintentar Carga
           </button>
           <Link
-            href="/cashier"
+            href="/admin"
             className="w-full sm:w-auto py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-semibold text-sm flex items-center justify-center gap-2 transition-all"
           >
-            <ArrowLeft className="size-4" /> Hub Cajeros
+            <ArrowLeft className="size-4" /> Dashboard Admin
           </Link>
         </div>
       </div>

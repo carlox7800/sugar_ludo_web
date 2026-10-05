@@ -132,17 +132,62 @@ export default function AdminCajerosManagementPage() {
     } catch {}
   }, [])
 
+  useEffect(() => {
+    if (!selectedChatCashierUid && cashierList.length > 0) {
+      setSelectedChatCashierUid(cashierList[0].uid)
+    }
+  }, [cashierList, selectedChatCashierUid])
+
+  // Escuchar difusión masiva y metadatos de chats privados
+  useEffect(() => {
+    const unsubBroadcast = subscribeToBroadcastMessages(setBroadcastMessages)
+    const unsubMetas = subscribeToAllPrivateChatsMeta(setChatMetas)
+    return () => {
+      unsubBroadcast()
+      unsubMetas()
+    }
+  }, [])
+
+  // Escuchar chat privado del cajero seleccionado y marcar como leído
+  useEffect(() => {
+    if (!selectedChatCashierUid) return
+
+    if (activeView === 'communications') {
+      markPrivateChatAsReadByAdmin(selectedChatCashierUid)
+      setChatMetas((prev) => {
+        if (!prev[selectedChatCashierUid] || prev[selectedChatCashierUid].unreadByAdmin === 0) return prev
+        return {
+          ...prev,
+          [selectedChatCashierUid]: {
+            ...prev[selectedChatCashierUid],
+            unreadByAdmin: 0
+          }
+        }
+      })
+    }
+
+    const unsubPrivate = subscribeToCashierPrivateMessages(selectedChatCashierUid, (msgs) => {
+      setPrivateMessages(msgs)
+      if (activeView === 'communications') {
+        markPrivateChatAsReadByAdmin(selectedChatCashierUid)
+        setChatMetas((prev) => {
+          if (!prev[selectedChatCashierUid] || prev[selectedChatCashierUid].unreadByAdmin === 0) return prev
+          return {
+            ...prev,
+            [selectedChatCashierUid]: {
+              ...prev[selectedChatCashierUid],
+              unreadByAdmin: 0
+            }
+          }
+        })
+      }
+    })
+    return () => unsubPrivate()
+  }, [selectedChatCashierUid, activeView])
+
   const handleLogout = () => {
     logout()
     router.push('/')
-  }
-
-  if (isLoading || !isAuthenticated || !adminUser) {
-    return (
-      <div className="min-h-screen bg-[#090d16] flex items-center justify-center text-cyan-400 font-mono text-xs">
-        Cargando módulo de cajeros...
-      </div>
-    )
   }
 
   const handleRecharge = async (cashierUid: string, amountUSDT: number, notes: string) => {
@@ -212,59 +257,6 @@ export default function AdminCajerosManagementPage() {
     }
   }
 
-  useEffect(() => {
-    if (!selectedChatCashierUid && cashierList.length > 0) {
-      setSelectedChatCashierUid(cashierList[0].uid)
-    }
-  }, [cashierList, selectedChatCashierUid])
-
-  // Escuchar difusión masiva y metadatos de chats privados
-  useEffect(() => {
-    const unsubBroadcast = subscribeToBroadcastMessages(setBroadcastMessages)
-    const unsubMetas = subscribeToAllPrivateChatsMeta(setChatMetas)
-    return () => {
-      unsubBroadcast()
-      unsubMetas()
-    }
-  }, [])
-
-  // Escuchar chat privado del cajero seleccionado y marcar como leído
-  useEffect(() => {
-    if (!selectedChatCashierUid) return
-
-    if (activeView === 'communications') {
-      markPrivateChatAsReadByAdmin(selectedChatCashierUid)
-      setChatMetas((prev) => {
-        if (!prev[selectedChatCashierUid] || prev[selectedChatCashierUid].unreadByAdmin === 0) return prev
-        return {
-          ...prev,
-          [selectedChatCashierUid]: {
-            ...prev[selectedChatCashierUid],
-            unreadByAdmin: 0
-          }
-        }
-      })
-    }
-
-    const unsubPrivate = subscribeToCashierPrivateMessages(selectedChatCashierUid, (msgs) => {
-      setPrivateMessages(msgs)
-      if (activeView === 'communications') {
-        markPrivateChatAsReadByAdmin(selectedChatCashierUid)
-        setChatMetas((prev) => {
-          if (!prev[selectedChatCashierUid] || prev[selectedChatCashierUid].unreadByAdmin === 0) return prev
-          return {
-            ...prev,
-            [selectedChatCashierUid]: {
-              ...prev[selectedChatCashierUid],
-              unreadByAdmin: 0
-            }
-          }
-        })
-      }
-    })
-    return () => unsubPrivate()
-  }, [selectedChatCashierUid, activeView])
-
   const handleSelectCashier = (uid: string) => {
     setSelectedChatCashierUid(uid)
     markPrivateChatAsReadByAdmin(uid)
@@ -301,6 +293,14 @@ export default function AdminCajerosManagementPage() {
       cashierName: target?.name || cashierUid,
       text
     })
+  }
+
+  if (isLoading || !isAuthenticated || !adminUser) {
+    return (
+      <div className="min-h-screen bg-[#090d16] flex items-center justify-center text-cyan-400 font-mono text-xs">
+        Cargando módulo de cajeros...
+      </div>
+    )
   }
 
   return (

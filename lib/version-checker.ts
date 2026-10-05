@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.6.5',
+  latestVersion: '9.6.6',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
   releaseDate: '2026-10-05',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.5/SugarLudo-v9.6.5.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.5/SugarLudo-v9.6.5-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.6/SugarLudo-v9.6.6.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.6/SugarLudo-v9.6.6-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.6.5: Corrección de condición de carrera en reconciliación de tesorería 401 y sincronización íntegra de credenciales de staff.'
+  changelog: 'Actualización v9.6.6: Corrección de crash de React Hooks #310 en Admin Hub y desacoplamiento de Error Boundary.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)
