@@ -3,8 +3,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { AdminUserProfile, CashierManagementProfile } from '../types/admin-expanded'
 import { MOCK_CASHIERS_MANAGEMENT } from './mock-admin-expanded'
-import { db } from './firebase'
+import { db, auth } from './firebase'
 import { doc, onSnapshot, setDoc, getDoc, increment } from 'firebase/firestore'
+import { signInWithCustomToken, signOut, onAuthStateChanged } from 'firebase/auth'
 
 interface AdminAuthContextType {
   // Admin Session
@@ -129,6 +130,22 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
+
+    // Mantener sincronizado el JWT ID Token legítimo de Firebase Auth
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const token = await user.getIdToken()
+          sessionStorage.setItem('sugar_staff_id_token', token)
+          localStorage.setItem('sugar_staff_id_token', token)
+        } catch {}
+      } else {
+        sessionStorage.removeItem('sugar_staff_id_token')
+        localStorage.removeItem('sugar_staff_id_token')
+      }
+    })
+
+    return () => unsubAuth()
   }, [])
 
   // 2. Sincronización en vivo con Firestore (system_config) multiplataforma
@@ -232,81 +249,114 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Login for Super Admin and Administrators
+  // Login for Super Admin and Administrators con Firebase Auth
   const login = async (identifier: string, pass: string): Promise<{ success: boolean; message: string }> => {
     const trimmedId = identifier.trim().toLowerCase()
-    const foundAdmin = adminList.find(
-      (a) => (a.username.toLowerCase() === trimmedId || a.email.toLowerCase() === trimmedId) && a.isActive
-    )
 
-    if (!foundAdmin) {
-      return { success: false, message: 'Usuario o correo de administrador no encontrado o inactivo.' }
+    try {
+      // 1. Validar en backend autoritativo y obtener Custom Token
+      const res = await fetch('/api/staff/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: trimmedId,
+          password: pass,
+          role: 'admin'
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        return { success: false, message: data.error || 'Credenciales de administrador incorrectas o no autorizadas.' }
+      }
+
+      // 2. Autenticar en Firebase Auth del cliente y persistir JWT idToken
+      if (data.customToken) {
+        const userCred = await signInWithCustomToken(auth, data.customToken)
+        const idToken = await userCred.user.getIdToken(true)
+        sessionStorage.setItem('sugar_staff_id_token', idToken)
+        localStorage.setItem('sugar_staff_id_token', idToken)
+      }
+
+      const foundAdmin = adminList.find(
+        (a) => (a.username.toLowerCase() === trimmedId || a.email.toLowerCase() === trimmedId) && a.isActive
+      ) || {
+        uid: data.profile?.uid || 'adm_super_carlos_001',
+        username: trimmedId.split('@')[0],
+        email: data.profile?.email || 'admin@sugarludo.com',
+        displayName: data.profile?.displayName || 'Administrador',
+        role: data.profile?.role || 'super_admin',
+        createdAt: Date.now(),
+        lastLoginAt: Date.now(),
+        isActive: true
+      }
+
+      const updatedAdmin = { ...foundAdmin, lastLoginAt: Date.now() }
+      setAdminUser(updatedAdmin)
+      localStorage.setItem('sugar_admin_session', JSON.stringify(updatedAdmin))
+
+      return { success: true, message: '¡Acceso concedido!' }
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Error al conectar con el servidor de autenticación.' }
     }
-
-    const storedPassKey = `sugar_admin_pass_${foundAdmin.uid}`
-    const storedPass = foundAdmin.password || localStorage.getItem(storedPassKey) || 'SugarAdmin2026!'
-
-    if (pass !== storedPass && pass !== 'SugarAdmin2026!') {
-      return { success: false, message: 'Contraseña incorrecta. Verifique sus credenciales.' }
-    }
-
-    const updatedAdmin = { ...foundAdmin, lastLoginAt: Date.now() }
-    setAdminUser(updatedAdmin)
-    localStorage.setItem('sugar_admin_session', JSON.stringify(updatedAdmin))
-
-    // Actualizar en Firestore
-    const updatedList = adminList.map((a) => (a.uid === foundAdmin.uid ? updatedAdmin : a))
-    setAdminList(updatedList)
-    persistAdminsToCloud(updatedList)
-
-    return { success: true, message: '¡Acceso concedido!' }
   }
 
-  // Login for Authorized Cashiers (Universal para PC y Teléfonos Móviles)
+  // Login for Authorized Cashiers con Firebase Auth
   const loginCashier = async (identifier: string, pass: string): Promise<{ success: boolean; message: string; cashier?: CashierManagementProfile }> => {
     const trimmedId = identifier.trim().toLowerCase()
-    
-    // 1. Verificar en lista en memoria
-    let currentAccounts = cashierList
-    
-    // 2. Si no se encuentra en memoria, consultar directamente a Firestore para soportar inicio inmediato en móvil
-    if (!currentAccounts.some(c => c.email.toLowerCase() === trimmedId || c.name.toLowerCase().includes(trimmedId) || c.uid.toLowerCase() === trimmedId)) {
-      try {
-        const snap = await getDoc(doc(db, 'system_config', 'cashier_accounts'))
-        if (snap.exists() && Array.isArray(snap.data()?.accounts)) {
-          currentAccounts = snap.data().accounts
-          setCashierList(currentAccounts)
-          localStorage.setItem('sugar_cashier_accounts', JSON.stringify(currentAccounts))
+
+    try {
+      // 1. Validar en backend autoritativo y obtener Custom Token
+      const res = await fetch('/api/staff/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: trimmedId,
+          password: pass,
+          role: 'cashier'
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        return { success: false, message: data.error || 'Credenciales de cajero incorrectas o no autorizadas.' }
+      }
+
+      // 2. Autenticar en Firebase Auth del cliente y persistir JWT idToken
+      if (data.customToken) {
+        const userCred = await signInWithCustomToken(auth, data.customToken)
+        const idToken = await userCred.user.getIdToken(true)
+        sessionStorage.setItem('sugar_staff_id_token', idToken)
+        localStorage.setItem('sugar_staff_id_token', idToken)
+      }
+
+      let foundCashier = cashierList.find(
+        (c) => c.email.toLowerCase() === trimmedId || c.name.toLowerCase().includes(trimmedId) || c.uid.toLowerCase() === trimmedId
+      )
+
+      if (!foundCashier) {
+        foundCashier = {
+          ...DEFAULT_CASHIER,
+          uid: data.profile?.uid || DEFAULT_CASHIER.uid,
+          email: data.profile?.email || DEFAULT_CASHIER.email,
+          name: data.profile?.displayName || DEFAULT_CASHIER.name
         }
-      } catch {}
+      }
+
+      localStorage.setItem('sugar_cashier_session', JSON.stringify(foundCashier))
+      return { success: true, message: '¡Acceso de cajero concedido!', cashier: foundCashier }
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Error al conectar con el servidor de autenticación.' }
     }
-
-    let foundCashier = currentAccounts.find(
-      (c) => c.email.toLowerCase() === trimmedId || c.name.toLowerCase().includes(trimmedId) || c.uid.toLowerCase() === trimmedId
-    )
-
-    if (!foundCashier && trimmedId === 'carlos.cajero@sugarludo.com') {
-      foundCashier = DEFAULT_CASHIER
-    }
-
-    if (!foundCashier) {
-      return { success: false, message: 'Cajero no registrado o correo incorrecto.' }
-    }
-
-    const storedPassKey = `sugar_cashier_pass_${foundCashier.uid}`
-    const storedPass = foundCashier.password || localStorage.getItem(storedPassKey) || 'CajeroSugar2026!'
-
-    if (pass !== storedPass && pass !== 'CajeroSugar2026!') {
-      return { success: false, message: 'Contraseña de cajero incorrecta.' }
-    }
-
-    localStorage.setItem('sugar_cashier_session', JSON.stringify(foundCashier))
-    return { success: true, message: '¡Acceso de cajero concedido!', cashier: foundCashier }
   }
 
   const logout = () => {
+    signOut(auth).catch(() => {})
+    sessionStorage.removeItem('sugar_staff_id_token')
+    localStorage.removeItem('sugar_staff_id_token')
     setAdminUser(null)
     localStorage.removeItem('sugar_admin_session')
+    localStorage.removeItem('sugar_cashier_session')
   }
 
   const updateCurrentAdmin = async (displayName: string, email: string, newPassword?: string): Promise<boolean> => {

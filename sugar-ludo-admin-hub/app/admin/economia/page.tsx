@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
+import { APP_VERSION_TAG } from '../../../lib/version'
 import { getStaffAuthHeaders } from '../../../lib/auth-headers'
 import { db } from '../../../lib/firebase'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
@@ -359,7 +360,11 @@ export default function EconomiaAdminPage() {
           </Link>
           <div>
             <h1 className="font-black text-base text-white tracking-wide flex items-center gap-2">
-              <ShoppingBag className="size-5 text-pink-400" /> CONTROL DE ECONOMÍA
+              <ShoppingBag className="size-5 text-pink-400" />
+              <span>CONTROL DE ECONOMÍA</span>
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono font-black">
+                {APP_VERSION_TAG}
+              </span>
             </h1>
             <p className="text-[11px] text-slate-400 font-mono">
               admin.sugarludo.com &bull; Modo Competitivo (Buy-in / Premios / Rake), Comisiones y Catálogo Real

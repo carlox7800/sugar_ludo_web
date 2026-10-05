@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { ShieldCheck, Download, X, Laptop, Smartphone, AlertCircle, ArrowRight } from 'lucide-react';
+import { APP_VERSION } from '@/lib/constants';
 
 interface GamerHUDModalProps {
   isOpen: boolean;
@@ -15,7 +16,7 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
   isOpen,
   onClose,
   platform,
-  version = '9.5.4',
+  version = APP_VERSION,
   downloadUrl,
 }) => {
   useEffect(() => {
@@ -86,7 +87,7 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
                 <div>
                   <h4 className="font-bold text-white text-sm">Descarga el Instalador Oficial</h4>
                   <p className="text-xs text-white/70 mt-0.5">
-                    Guarda el archivo <code>SugarLudo-v9.5.4-Setup.exe</code> (~248 MB) en tu PC.
+                    Guarda el archivo <code>{`SugarLudo-v${version}-Setup.exe`}</code> (~248 MB) en tu PC.
                   </p>
                 </div>
               </div>
@@ -130,7 +131,7 @@ export const GamerHUDModal: React.FC<GamerHUDModalProps> = ({
                 <div>
                   <h4 className="font-bold text-white text-sm">Descarga el Paquete APK</h4>
                   <p className="text-xs text-white/70 mt-0.5">
-                    Descarga directa de <code>SugarLudo-v9.5.4.apk</code> (~47 MB) con gráficos optimizados para móviles.
+                    Descarga directa de <code>{`SugarLudo-v${version}.apk`}</code> (~47 MB) con gráficos optimizados para móviles.
                   </p>
                 </div>
               </div>

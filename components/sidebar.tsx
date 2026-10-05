@@ -14,6 +14,7 @@ import { useAuth } from '@/lib/auth-context'
 import { db } from '@/lib/firebase'
 import { onSnapshot, collection, query, where, limit } from 'firebase/firestore'
 import { subscribeToFriendRequests, subscribeToIncomingDuelInvites } from '@/lib/friends-service'
+import { APP_VERSION } from '@/lib/constants'
 
 type NavItem = {
   label: string
@@ -219,6 +220,14 @@ export function Sidebar({ currentScreen = 'lobby', onNavigate }: SidebarProps) {
           />
         ))}
       </nav>
+
+      {/* Footer Version Info */}
+      <div className="mt-auto pt-3 border-t border-white/10 flex items-center justify-between px-2 text-[11px] text-white/50 font-mono">
+        <span className="font-semibold">Sugar Ludo</span>
+        <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-bold text-cyan-300">
+          v{APP_VERSION}
+        </span>
+      </div>
     </aside>
   )
 }

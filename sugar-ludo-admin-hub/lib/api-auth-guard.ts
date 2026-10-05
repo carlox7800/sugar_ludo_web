@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
-import { adminAuth, adminDb, hasAdminCredentials } from './firebase-admin'
-import { db } from './firebase'
+import { NextResponse } from 'next/server.js'
+import { adminAuth, adminDb, hasAdminCredentials } from './firebase-admin.ts'
+import { db } from './firebase.ts'
 import { doc, getDoc } from 'firebase/firestore'
 
 export type StaffRole = 'cashier' | 'admin' | 'super_admin' | 'financial_admin' | 'support_admin'
@@ -77,127 +77,66 @@ export async function verifyStaffAuth(
 
   let verifiedUser: AuthenticatedStaffUser | null = null
 
-  // 1. Intento vía Firebase Admin SDK si las credenciales están presentes
-  if (adminAuth && hasAdminCredentials) {
+  // 1. Verificación OBLIGATORIA vía Firebase Admin SDK
+  if (adminAuth) {
     try {
       const decoded = await adminAuth.verifyIdToken(token)
       if (decoded && decoded.uid) {
-        verifiedUser = {
-          uid: decoded.uid,
-          role: (decoded.role as string) || (decoded.accountType as string) || 'admin',
-          email: decoded.email,
-          name: (decoded.name as string) || (decoded.displayName as string)
+        let role = (decoded.role as string) || (decoded.accountType as string)
+
+        // Si el token aún no tiene custom claims de rol, consultar perfil en Firestore de forma segura
+        if (!role && adminDb && adminDb.collection) {
+          try {
+            const staffDoc = await adminDb.collection('staff_profiles').doc(decoded.uid).get()
+            if (staffDoc.exists) {
+              const data = staffDoc.data()
+              if (data?.isActive !== false) role = data?.role || 'admin'
+            } else {
+              const cashierDoc = await adminDb.collection('cashier_profiles').doc(decoded.uid).get()
+              if (cashierDoc.exists) {
+                const cData = cashierDoc.data()
+                if (cData?.isActive !== false) role = 'cashier'
+              }
+            }
+          } catch {}
         }
-      }
-    } catch {
-      // Si falla la verificación JWT de Firebase Admin, puede tratarse de un token de sesión híbrido
-    }
-  }
 
-  // 2. Intento de decodificación y validación de Token de Sesión Híbrido (Base64 / JSON)
-  if (!verifiedUser) {
-    try {
-      let decodedStr = ''
-      try {
-        decodedStr = Buffer.from(token, 'base64').toString('utf-8')
-      } catch {
-        decodedStr = token
-      }
+        // Fallback para administradores maestros por defecto identificados por UID/email
+        if (!role && (decoded.uid === 'adm_super_carlos_001' || decoded.email === 'admin@sugarludo.com')) {
+          role = 'super_admin'
+        } else if (!role && (decoded.uid === 'csh_carlosandroid_001' || decoded.email === 'carlos.cajero@sugarludo.com')) {
+          role = 'cashier'
+        }
 
-      if (decodedStr.startsWith('{') && decodedStr.endsWith('}')) {
-        const payload = JSON.parse(decodedStr)
-        if (payload && payload.uid && payload.role) {
-          const tokenTimestamp = Number(payload.timestamp || 0)
-          const maxAgeMs = 30 * 24 * 60 * 60 * 1000 // 30 días de vigencia de sesión
-
-          if (!tokenTimestamp || Date.now() - tokenTimestamp < maxAgeMs) {
-            let isValidInDb = false
-            const checkUid = payload.uid
-
-            // Si es un Super Admin o admin maestro por defecto
-            if (checkUid === 'adm_super_carlos_001' || checkUid.startsWith('adm_super') || payload.role === 'super_admin') {
-              isValidInDb = true
-            }
-
-            // Validar cajero en Firestore
-            if (!isValidInDb && (payload.role === 'cashier' || checkUid.startsWith('csh_'))) {
-              try {
-                if (adminDb && adminDb.collection) {
-                  const cSnap = await adminDb.collection('cashier_profiles').doc(checkUid).get()
-                  if (cSnap.exists) {
-                    const cData = cSnap.data()
-                    if (cData?.isActive !== false) isValidInDb = true
-                  }
-                }
-              } catch {}
-
-              // Fallback cliente Firestore
-              if (!isValidInDb) {
-                try {
-                  const cDocRef = doc(db, 'system_config', 'cashier_accounts')
-                  const cDocSnap = await getDoc(cDocRef)
-                  if (cDocSnap.exists()) {
-                    const accounts = cDocSnap.data()?.accounts || []
-                    const found = accounts.find((a: any) => a.uid === checkUid && a.isActive !== false)
-                    if (found) isValidInDb = true
-                  }
-                } catch {}
-              }
-
-              // Permitir cajero por defecto en caso de fallback inicial
-              if (!isValidInDb && (checkUid === 'csh_carlosandroid_001' || checkUid === 'csh_carlos_001')) {
-                isValidInDb = true
-              }
-            }
-
-            // Validar admin en Firestore
-            if (!isValidInDb && (payload.role.includes('admin') || checkUid.startsWith('adm_'))) {
-              try {
-                const aDocRef = doc(db, 'system_config', 'admin_accounts')
-                const aDocSnap = await getDoc(aDocRef)
-                if (aDocSnap.exists()) {
-                  const accounts = aDocSnap.data()?.accounts || []
-                  const found = accounts.find((a: any) => a.uid === checkUid && a.isActive !== false)
-                  if (found) isValidInDb = true
-                }
-              } catch {}
-
-              if (!isValidInDb && checkUid.startsWith('adm_')) {
-                isValidInDb = true
-              }
-            }
-
-            if (isValidInDb) {
-              verifiedUser = {
-                uid: payload.uid,
-                role: payload.role,
-                email: payload.email,
-                name: payload.name || payload.displayName
-              }
-            }
+        if (role) {
+          verifiedUser = {
+            uid: decoded.uid,
+            role,
+            email: decoded.email,
+            name: (decoded.name as string) || (decoded.displayName as string) || 'Staff'
           }
         }
       }
-    } catch {
-      // Error parseando token híbrido
+    } catch (err: any) {
+      console.warn('[verifyStaffAuth] Fallo en verificación de firma JWT de Firebase Admin:', err.message)
     }
   }
 
-  // 3. Si no se pudo verificar la identidad
+  // 2. Si no se pudo verificar la identidad criptográfica (tokens manipulados o sin firma válida)
   if (!verifiedUser) {
     return {
       authorized: false,
       errorResponse: NextResponse.json(
         {
           success: false,
-          error: 'Token de autorización inválido o sesión expirada.'
+          error: 'Acceso denegado: Token de autorización inválido, manipulado o no emitido por Firebase Auth.'
         },
         { status: 401, headers: corsHeaders }
       )
     }
   }
 
-  // 4. Verificación de permisos por rol
+  // 3. Verificación de permisos por rol
   if (allowedRoles && allowedRoles.length > 0) {
     const hasRole = roleMatches(verifiedUser.role, allowedRoles)
     if (!hasRole) {
@@ -222,46 +161,15 @@ export async function verifyStaffAuth(
 
 /**
  * Helper para clientes frontend del Admin Hub:
- * Construye los encabezados Authorization Bearer con la sesión activa
+ * Construye los encabezados Authorization Bearer con el JWT ID Token legítimo de Firebase Auth.
  */
-export function getStaffAuthHeaders(overrideRole?: string): Record<string, string> {
+export function getStaffAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {}
   try {
-    // Si hay sesión de admin
-    const adminSession = localStorage.getItem('sugar_admin_session')
-    if (adminSession) {
-      const parsed = JSON.parse(adminSession)
-      if (parsed?.uid) {
-        const tokenPayload = {
-          uid: parsed.uid,
-          role: overrideRole || parsed.role || 'admin',
-          email: parsed.email || '',
-          name: parsed.displayName || parsed.username || 'Admin',
-          timestamp: Date.now()
-        }
-        const token = btoa(JSON.stringify(tokenPayload))
-        return {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    }
-
-    // Si hay sesión de cajero
-    const cashierSession = localStorage.getItem('sugar_cashier_session')
-    if (cashierSession) {
-      const parsed = JSON.parse(cashierSession)
-      if (parsed?.uid) {
-        const tokenPayload = {
-          uid: parsed.uid,
-          role: overrideRole || 'cashier',
-          email: parsed.email || '',
-          name: parsed.name || 'Cajero',
-          timestamp: Date.now()
-        }
-        const token = btoa(JSON.stringify(tokenPayload))
-        return {
-          Authorization: `Bearer ${token}`
-        }
+    const token = sessionStorage.getItem('sugar_staff_id_token') || localStorage.getItem('sugar_staff_id_token')
+    if (token) {
+      return {
+        Authorization: `Bearer ${token}`
       }
     }
   } catch {}

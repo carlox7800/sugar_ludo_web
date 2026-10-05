@@ -78,7 +78,7 @@ export function AdminLoginForm() {
                   type="text"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="superadmin o admin@sugarludo.com"
+                  placeholder="admin@sugarludo.com"
                   className="w-full bg-slate-950 border border-white/10 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-mono transition-colors"
                   required
                 />

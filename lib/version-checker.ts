@@ -14,7 +14,7 @@ import { doc, getDoc } from 'firebase/firestore'
  * 
  * Simula que el cliente local ejecuta una versión obsoleta ('9.4.9') para
  * comprobar en vivo el bloqueo infranqueable y el flujo de descarga manual.
- * Para producción definitiva en v9.5.4, este valor debe ser null.
+ * Para producción definitiva en v9.6.0, este valor debe ser null.
  */
 export const MOCK_TEST_CLIENT_VERSION: string | null = null
 
@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.5.4',
-  minSupportedVersion: '9.5.4',
+  latestVersion: '9.6.0',
+  minSupportedVersion: '9.6.0',
   forceUpdate: true,
-  releaseDate: '2026-09-21',
+  releaseDate: '2026-10-05',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.5.4/SugarLudo-v9.5.4.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.5.4/SugarLudo-v9.5.4-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.0/SugarLudo-v9.6.0.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.0/SugarLudo-v9.6.0-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización obligatoria v9.5.4: Centro de soporte inteligente AAA, sistema de incidencias y parches críticos de seguridad.'
+  changelog: 'Actualización obligatoria v9.6.0: Endurecimiento de seguridad y autenticación real con Firebase Admin SDK, arquitectura integral de telemetría y control remoto en panel de administración.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)
@@ -67,7 +67,7 @@ let memoryCachedPolicy: VersionPolicy | null = null
  * Retorna la versión activa del cliente (considerando simulación de prueba)
  */
 export function getClientAppVersion(): string {
-  return MOCK_TEST_CLIENT_VERSION || APP_VERSION || '9.5.4'
+  return MOCK_TEST_CLIENT_VERSION || APP_VERSION || '9.6.0'
 }
 
 /**

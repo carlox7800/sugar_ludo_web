@@ -1,13 +1,13 @@
 {
-  "latestVersion": "9.5.4",
-  "minSupportedVersion": "9.5.4",
+  "latestVersion": "9.6.0",
+  "minSupportedVersion": "9.6.0",
   "forceUpdate": true,
-  "releaseDate": "2026-09-21",
+  "releaseDate": "2026-10-05",
   "downloadUrls": {
-    "android": "https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.5.4/SugarLudo-v9.5.4.apk",
-    "windows": "https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.5.4/SugarLudo-v9.5.4-Setup.exe",
+    "android": "https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.0/SugarLudo-v9.6.0.apk",
+    "windows": "https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.0/SugarLudo-v9.6.0-Setup.exe",
     "web": "https://sugar-ludo-web.onrender.com"
   },
   "landingUrl": "https://sugar-ludo-landing.onrender.com",
-  "changelog": "Actualización obligatoria v9.5.4: Centro de soporte inteligente AAA, sistema de incidencias y ticketing formal, telemetría técnica en tiempo real y parches críticos de seguridad."
+  "changelog": "Actualización obligatoria v9.6.0: Endurecimiento de seguridad y autenticación real con Firebase Admin SDK, arquitectura integral de telemetría y control remoto en panel de administración."
 }

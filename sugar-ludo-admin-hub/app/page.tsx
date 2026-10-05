@@ -172,7 +172,7 @@ export default function HubLandingPage() {
                   type="text"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder={accessMode === 'admin' ? 'superadmin o admin@sugarludo.com' : 'carlos.cajero@sugarludo.com'}
+                  placeholder={accessMode === 'admin' ? 'admin@sugarludo.com' : 'cajero@sugarludo.com'}
                   className="w-full bg-slate-950 border border-white/10 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 font-mono transition-colors"
                   required
                 />
@@ -228,12 +228,9 @@ export default function HubLandingPage() {
             </button>
           </form>
 
-          <div className="p-2 rounded-xl bg-slate-950/60 border border-white/5 text-[10px] text-slate-400 text-center font-mono leading-tight">
-            {accessMode === 'admin' ? (
-              <span>Credenciales: <strong className="text-cyan-300">superadmin</strong> / <strong className="text-cyan-300">SugarAdmin2026!</strong></span>
-            ) : (
-              <span>Credenciales: <strong className="text-pink-300">carlos.cajero@sugarludo.com</strong> / <strong className="text-pink-300">CajeroSugar2026!</strong></span>
-            )}
+          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-white/5 text-[10px] text-slate-400 text-center font-mono leading-tight flex items-center justify-center gap-2">
+            <ShieldCheck className="size-3.5 text-cyan-400 shrink-0" />
+            <span>Acceso confidencial para personal autorizado. Autenticación criptográfica con Firebase Auth.</span>
           </div>
         </div>
       </main>

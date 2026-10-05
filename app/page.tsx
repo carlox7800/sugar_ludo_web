@@ -33,6 +33,7 @@ import { DuelChallengeModal } from '@/components/duel-challenge-modal'
 import { VirtualSupportModal } from '@/components/support/VirtualSupportModal'
 import { ForceUpdateModal } from '@/components/ForceUpdateModal'
 import { checkAppVersion, VersionCheckResult } from '@/lib/version-checker'
+import { APP_VERSION } from '@/lib/constants'
 import { getSocket } from '@/lib/socket'
 import { globalLogger } from '@/lib/logger'
 import { preloadStoreAssets } from '@/lib/store-service'
@@ -431,7 +432,10 @@ function PageContent() {
                 <Loader2 className="size-3 animate-spin text-[var(--candy-cyan)]" />
                 Cargando Arena...
               </span>
-              <span>{splashProgress}%</span>
+              <span className="flex items-center gap-2">
+                <span className="text-[10px] text-cyan-400 font-bold">v{APP_VERSION}</span>
+                <span>{splashProgress}%</span>
+              </span>
             </div>
           </div>
 
@@ -552,6 +556,10 @@ function PageContent() {
           <h1 className="font-display text-3xl font-extrabold text-white tracking-tight mb-2">
             SUGAR <span className="text-[var(--candy-cyan)]">LUDO</span>
           </h1>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-xs font-mono font-bold text-cyan-300 mb-4">
+            <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span>v{APP_VERSION}</span>
+          </div>
           <p className="text-sm text-white/70 font-medium mb-6">
             Bienvenido a la Arena Oficial. Inicia sesión para jugar y competir.
           </p>

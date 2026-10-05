@@ -2,6 +2,7 @@
 
 import { Settings, Plus } from 'lucide-react'
 import { usePlayer } from '@/lib/player-context'
+import { APP_VERSION } from '@/lib/constants'
 
 export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => void; onStoreOpen?: () => void }) {
   const { coins, gems, level, xp, xpMax } = usePlayer()
@@ -70,7 +71,16 @@ export function TopBar({ onSettingsOpen, onStoreOpen }: { onSettingsOpen: () => 
           </button>
         </div>
 
-        {/* Settings button */}
+        {/* Version Badge & Settings button */}
+        <button
+          onClick={onSettingsOpen}
+          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 hover:border-cyan-500/40 text-[11px] font-mono font-bold text-white/70 hover:text-cyan-300 transition-all cursor-pointer shadow-inner"
+          title="Versión del Sistema y Ajustes"
+        >
+          <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          <span>v{APP_VERSION}</span>
+        </button>
+
         <button
           onClick={onSettingsOpen}
           className="btn-3d ml-0 sm:ml-1 flex size-9 sm:size-11 shrink-0 items-center justify-center rounded-full border border-[oklch(1_0_0/0.1)] bg-[oklch(1_0_0/0.05)] text-muted-foreground transition-colors hover:text-white shadow-[0_4px_10px_oklch(0_0_0/0.3)]"

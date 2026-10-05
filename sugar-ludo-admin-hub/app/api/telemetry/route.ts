@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { APP_VERSION_TAG } from '../../../lib/version'
 
 export interface TelemetryAlertEvent {
   id: string
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
       source: body.source || 'game-client',
       message: String(body.message || 'Alerta sin descripción'),
       details: body.details,
-      version: body.version || 'v9.4.9'
+      version: body.version || APP_VERSION_TAG
     }
 
     alertEventBuffer.unshift(event)
