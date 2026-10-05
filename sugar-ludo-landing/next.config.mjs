@@ -7,8 +7,8 @@ const nextConfig = {
   },
   turbopack: {},
   env: {
-    NEXT_PUBLIC_PC_DOWNLOAD_URL: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.3/SugarLudo-v9.6.3-Setup.exe',
-    NEXT_PUBLIC_ANDROID_DOWNLOAD_URL: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.3/SugarLudo-v9.6.3.apk',
+    NEXT_PUBLIC_PC_DOWNLOAD_URL: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.4/SugarLudo-v9.6.4-Setup.exe',
+    NEXT_PUBLIC_ANDROID_DOWNLOAD_URL: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.4/SugarLudo-v9.6.4.apk',
   },
 };
 
