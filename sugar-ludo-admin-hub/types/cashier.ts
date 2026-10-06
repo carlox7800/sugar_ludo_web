@@ -103,6 +103,27 @@ export interface CashierOrder {
   disputeOpenedBy?: string
   disputeResolvedBy?: string
   disputeResolutionNotes?: string
+
+  // Auditoría Antifraude Automatizada ($0.00 Spark)
+  fraudAudit?: FraudAuditResult
+}
+
+export interface FraudAuditResult {
+  status: 'certified' | 'low_turnover' | 'blocked'
+  score: number // 100 = certificado, 70 = bajo turnover, 0 = bloqueado por fraude
+  reason: string
+  details?: {
+    theoreticalMaxCoins?: number
+    currentCoins?: number
+    escrowLockedCoins?: number
+    totalDepositedCoins?: number
+    totalWonCoins?: number
+    totalMatchFeesCoins?: number
+    totalWithdrawnCoins?: number
+    turnoverRatio?: number
+    discrepancyDelta?: number
+  }
+  auditedAt: number
 }
 
 export interface CashierProfile {

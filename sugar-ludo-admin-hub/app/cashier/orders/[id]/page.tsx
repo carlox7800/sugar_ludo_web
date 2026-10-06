@@ -165,6 +165,35 @@ export default function OrderDetailPage() {
   const [isValidating, setIsValidating] = useState(false)
   const [isValidatingPayout, setIsValidatingPayout] = useState(false)
   const [isEscalating, setIsEscalating] = useState(false)
+  const [isAuditing, setIsAuditing] = useState(false)
+
+  const handleTriggerAudit = async () => {
+    if (!orderId || isAuditing) return
+    setIsAuditing(true)
+    try {
+      const res = await fetch(`/api/cashier/orders/${orderId}/audit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getStaffAuthHeaders() }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.fraudAudit) {
+          setOrder((prev) => prev ? { ...prev, fraudAudit: data.fraudAudit } : null)
+        }
+      }
+    } catch (e: unknown) {
+      console.warn('Error auditing order:', e)
+    } finally {
+      setIsAuditing(false)
+    }
+  }
+
+  // Auto-auditoría determinista para retiros pendientes que no tengan sello antifraude
+  useEffect(() => {
+    if (order && order.type === 'withdraw' && !order.fraudAudit && !isAuditing) {
+      handleTriggerAudit()
+    }
+  }, [order?.id, order?.type, order?.fraudAudit])
 
   // Sincronización en tiempo real de la orden desde Firestore
   useEffect(() => {
@@ -725,6 +754,9 @@ Conserva este mensaje como comprobante formal de la transacción.`
                 amountSugarCoins={order.amountSugarCoins}
                 amountFiatUSDT={order.amountFiat}
                 feePercent={isVipOrder ? 10.0 : 5.0}
+                fraudAudit={order.fraudAudit}
+                onReAudit={handleTriggerAudit}
+                isAuditing={isAuditing}
               />
             )}
 
@@ -735,7 +767,9 @@ Conserva este mensaje como comprobante formal de la transacción.`
               hasSufficientFloat={hasSufficientFloat}
               cashierFloatUSDT={cashierFloatUSDT}
               netPayoutUSD={netPayoutUSD}
+              fraudAudit={order.fraudAudit}
               onOpenPayout={() => setIsPayoutModalOpen(true)}
+              onEscalateDispute={() => setIsDisputeOpen(true)}
             />
 
             {/* Subcomponente 2: Receipt Preview Thumbnail & HD Modal Viewer */}

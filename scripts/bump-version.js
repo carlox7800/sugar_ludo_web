@@ -46,15 +46,25 @@ const TARGET_FILES = [
     }
   },
   {
-    name: 'sugar-ludo-landing/components/GamerHUDModal.tsx',
-    relPath: 'sugar-ludo-landing/components/GamerHUDModal.tsx',
+    name: 'public/version.json',
+    relPath: 'public/version.json',
     detect: (content) => {
-      const m = content.match(/version\s*=\s*(?:APP_VERSION|'([^']+)')/)
-      return m ? (m[1] || 'APP_VERSION') : null
+      const m = content.match(/"latestVersion":\s*"([^"]+)"/)
+      return m ? m[1] : null
     },
     update: (content, newVer) => {
-      // Usa APP_VERSION de constants.ts por defecto de forma dinámica, manteniendo consistencia
-      return content
+      return content.replace(/"latestVersion":\s*"[^"]+"/, `"latestVersion": "${newVer}"`)
+    }
+  },
+  {
+    name: 'lib/constants.ts',
+    relPath: 'lib/constants.ts',
+    detect: (content) => {
+      const m = content.match(/\/download\/v([^/]+)\//)
+      return m ? m[1] : null
+    },
+    update: (content, newVer) => {
+      return content.replace(/\/download\/v[^/]+\//g, `/download/v${newVer}/`)
     }
   },
   {

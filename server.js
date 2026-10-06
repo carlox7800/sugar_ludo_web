@@ -9,6 +9,7 @@ const HOST = '0.0.0.0';
 
 // ================= IN-MEMORY SOCIAL RELAY ($0.00 FIRESTORE) =================
 const memoryPresenceMap = new Map(); // uid -> { status, ts }
+const activeTelemetrySessions = new Map(); // sessionId -> { state, mode, latencyMs, ts }
 const sseClients = new Map(); // uid -> Set<http.ServerResponse>
 const pendingEvents = new Map(); // uid -> Array<event>
 
@@ -250,6 +251,14 @@ const server = http.createServer((req, res) => {
             });
             // Broadcast presence change to all clients
             broadcastToSSE(null, payload);
+          } else if (payload.type === 'telemetry_heartbeat') {
+            const sessId = payload.sessionId || payload.uid || clientIp;
+            activeTelemetrySessions.set(sessId, {
+              state: payload.state || 'playersInLobby',
+              mode: payload.mode || '4p',
+              latencyMs: typeof payload.latencyMs === 'number' ? payload.latencyMs : 35,
+              ts: Date.now()
+            });
           } else if (payload.type === 'presence_query') {
             // No action needed; will return presence in response
           } else if (payload.type === 'duel_invite' && payload.challenge) {
@@ -283,6 +292,93 @@ const server = http.createServer((req, res) => {
             'X-RateLimit-Reset': String(rl.resetTime)
           });
           res.end(JSON.stringify({ success: true, presence: currentMap }));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      });
+      return;
+    }
+
+    // 3.1. IN-MEMORY LIVE TELEMETRY QUERY ($0.00 FIRESTORE)
+    if ((pathname === '/api/telemetry/live' || pathname === '/api/telemetry') && req.method === 'GET') {
+      const now = Date.now();
+      for (const [id, sess] of activeTelemetrySessions.entries()) {
+        if (now - sess.ts > 60000) {
+          activeTelemetrySessions.delete(id);
+        }
+      }
+
+      let inLobby = 0, inAI = 0, inOnline = 0, inComp = 0;
+      let mode2p = 0, mode4p = 0, mode6p = 0;
+      let latencies = [];
+
+      for (const sess of activeTelemetrySessions.values()) {
+        if (sess.state === 'playersInLobby') inLobby++;
+        else if (sess.state === 'playersInAITraining') inAI++;
+        else if (sess.state === 'playersInOnlineTraining') inOnline++;
+        else if (sess.state === 'playersInCompetitive') inComp++;
+
+        if (sess.mode === '2p') mode2p++;
+        else if (sess.mode === '6p') mode6p++;
+        else mode4p++;
+
+        if (typeof sess.latencyMs === 'number') latencies.push(sess.latencyMs);
+      }
+
+      const totalOnline = inLobby + inAI + inOnline + inComp;
+      latencies.sort((a, b) => a - b);
+      const medianPing = latencies.length > 0 ? latencies[Math.floor(latencies.length / 2)] : 35;
+
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store'
+      });
+      res.end(JSON.stringify({
+        success: true,
+        telemetry: {
+          totalOnlinePlayers: totalOnline,
+          playersInLobby: inLobby,
+          playersInAITraining: inAI,
+          playersInOnlineTraining: inOnline,
+          playersInCompetitive: inComp,
+          activeMatchRooms: Math.ceil((inOnline + inComp) / 2),
+          modeDistribution: {
+            twoPlayers: mode2p,
+            fourPlayers: mode4p,
+            sixPlayers: mode6p,
+            aiTraining: inAI
+          },
+          medianPingMs: medianPing,
+          serverStatus: 'online',
+          timestamp: now
+        }
+      }));
+      return;
+    }
+
+    // 3.2. TELEMETRY HEARTBEAT DIRECT ENDPOINT ($0.00 FIRESTORE)
+    if (pathname === '/api/telemetry/heartbeat' && req.method === 'POST') {
+      let bodyStr = '';
+      req.on('data', chunk => { bodyStr += chunk; });
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(bodyStr || '{}');
+          const sessId = payload.sessionId || payload.uid || getClientIp(req);
+          activeTelemetrySessions.set(sessId, {
+            state: payload.state || 'playersInLobby',
+            mode: payload.mode || '4p',
+            latencyMs: typeof payload.latencyMs === 'number' ? payload.latencyMs : 35,
+            ts: Date.now()
+          });
+
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-store'
+          });
+          res.end(JSON.stringify({ success: true, registeredSession: sessId }));
         } catch (err) {
           res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           res.end(JSON.stringify({ success: false, error: err.message }));

@@ -1,7 +1,7 @@
 import { adminDb, admin, hasAdminCredentials } from './firebase-admin'
 import { db } from './firebase'
 import { doc, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
-import { CashierOrder, CashierProfile, DailyStats, AuditLog, PaymentMethodType, PaymentAccount } from '../types/cashier'
+import { CashierOrder, CashierProfile, DailyStats, AuditLog, PaymentMethodType, PaymentAccount, FraudAuditResult } from '../types/cashier'
 
 export interface PlayerWalletTransaction {
   id?: string
@@ -86,6 +86,102 @@ function getErrorMessage(err: unknown): string {
 import { cleanFirestorePayload } from './clean-firestore-payload'
 export { cleanFirestorePayload }
 
+export { evaluatePlayerBalanceAudit, type BalanceAuditParams } from './anti-fraud-evaluator'
+import { evaluatePlayerBalanceAudit } from './anti-fraud-evaluator'
+
+/**
+ * Realiza una auditoría antifraude bajo demanda para cualquier orden de retiro.
+ * Consume estrictamente 1 lectura de usuario ($0.00 Spark).
+ */
+export async function auditWithdrawalOrder(orderId: string): Promise<FraudAuditResult> {
+  const now = Date.now()
+  let orderData: CashierOrder | null = null
+  let playerUid = ''
+
+  // 1. Obtener la orden (Admin SDK o Cliente SDK)
+  if (adminDb && hasAdminCredentials) {
+    try {
+      const orderSnap = await adminDb.collection('cashier_orders').doc(orderId).get()
+      if (orderSnap.exists) {
+        orderData = { id: orderSnap.id, ...orderSnap.data() } as CashierOrder
+        playerUid = orderData.playerUid
+      }
+    } catch {}
+  }
+
+  if (!orderData) {
+    try {
+      const orderRef = doc(db, 'cashier_orders', orderId)
+      const snap = await getDoc(orderRef)
+      if (snap.exists()) {
+        orderData = { id: snap.id, ...snap.data() } as CashierOrder
+        playerUid = orderData.playerUid
+      }
+    } catch {}
+  }
+
+  if (!orderData) {
+    throw new Error(`La orden #${orderId} no existe`)
+  }
+
+  if (orderData.type !== 'withdraw') {
+    return {
+      status: 'certified',
+      score: 100,
+      reason: 'Las órdenes de depósito no requieren validación de retiro.',
+      auditedAt: now
+    }
+  }
+
+  if (orderData.fraudAudit && orderData.fraudAudit.status) {
+    return orderData.fraudAudit
+  }
+
+  // 2. Obtener datos del jugador (Exactamente 1 lectura de usuario)
+  let userData: UserData = {}
+  if (adminDb && hasAdminCredentials && playerUid) {
+    try {
+      const uSnap = await adminDb.collection('users').doc(playerUid).get()
+      if (uSnap.exists) {
+        userData = (uSnap.data() || {}) as UserData
+      }
+    } catch {}
+  }
+
+  if (!userData.coins && playerUid) {
+    try {
+      const uRef = doc(db, 'users', playerUid)
+      const uSnap = await getDoc(uRef)
+      if (uSnap.exists()) {
+        userData = (uSnap.data() || {}) as UserData
+      }
+    } catch {}
+  }
+
+  const result = evaluatePlayerBalanceAudit({
+    currentCoins: Number(userData.coins ?? 0),
+    escrowLockedCoins: Number(userData.escrowLockedCoins ?? orderData.amountSugarCoins ?? 0),
+    accountingSummary: (userData as any).accountingSummary,
+    walletHistory: Array.isArray(userData.walletHistory) ? userData.walletHistory : [],
+    welcomeBonus: Number(userData.welcomeBonus || 200)
+  })
+
+  // 3. Persistir el resultado de auditoría en la orden
+  if (adminDb && hasAdminCredentials) {
+    try {
+      await adminDb.collection('cashier_orders').doc(orderId).set({
+        fraudAudit: result
+      }, { merge: true })
+    } catch {}
+  } else {
+    try {
+      const oRef = doc(db, 'cashier_orders', orderId)
+      await setDoc(oRef, { fraudAudit: result }, { merge: true })
+    } catch {}
+  }
+
+  return result
+}
 
 /**
  * ============================================================================
@@ -514,6 +610,14 @@ export async function createWithdrawOrderWithEscrow(params: {
           lastActiveAt: now
         })
 
+        const fraudAudit = evaluatePlayerBalanceAudit({
+          currentCoins: newCoins,
+          escrowLockedCoins: (Number((playerSnap.data() as UserData)?.escrowLockedCoins || 0) + amountSugarCoins),
+          accountingSummary: (playerSnap.data() as any)?.accountingSummary,
+          walletHistory: updatedHistory,
+          welcomeBonus: Number((playerSnap.data() as UserData)?.welcomeBonus || 200)
+        })
+
         const orderRef = adminDb.collection('cashier_orders').doc(finalOrderId)
         const newOrder: CashierOrder = {
           id: finalOrderId,
@@ -537,7 +641,8 @@ export async function createWithdrawOrderWithEscrow(params: {
           createdAt: now,
           expiresAt: now + (48 * 3600 * 1000),
           isVip: Boolean(isVip),
-          isVipWithdraw: Boolean(isVip)
+          isVipWithdraw: Boolean(isVip),
+          fraudAudit
         }
         transaction.set(orderRef, cleanFirestorePayload(newOrder as unknown as Record<string, unknown>))
 
@@ -550,6 +655,7 @@ export async function createWithdrawOrderWithEscrow(params: {
   }
 
   // 2. Motor híbrido de respaldo (Plan Spark $0.00 / Render sin Service Account)
+  let fallbackFraudAudit: FraudAuditResult | undefined
   try {
     const userDocRef = doc(db, 'users', playerUid)
     const userSnap = await getDoc(userDocRef)
@@ -580,6 +686,14 @@ export async function createWithdrawOrderWithEscrow(params: {
         }
         updatedHistory = [withdrawTxEntry, ...existingHistory].slice(0, 50)
       }
+
+      fallbackFraudAudit = evaluatePlayerBalanceAudit({
+        currentCoins: newCoins,
+        escrowLockedCoins: newEscrow,
+        accountingSummary: (userData as any)?.accountingSummary,
+        walletHistory: updatedHistory,
+        welcomeBonus: Number(userData.welcomeBonus || 200)
+      })
 
       await updateDoc(userDocRef, {
         coins: newCoins,
@@ -615,7 +729,8 @@ export async function createWithdrawOrderWithEscrow(params: {
     createdAt: now,
     expiresAt: now + (48 * 3600 * 1000),
     isVip: Boolean(isVip),
-    isVipWithdraw: Boolean(isVip)
+    isVipWithdraw: Boolean(isVip),
+    fraudAudit: fallbackFraudAudit
   }
 
   const cleanedOrderPayload = cleanFirestorePayload(newOrder as unknown as Record<string, unknown>)
@@ -1093,6 +1208,10 @@ export async function completeWithdrawalOrder(params: {
           return { success: true, message: 'La orden ya se encuentra completada.' }
         }
 
+        if (order.fraudAudit?.status === 'blocked') {
+          throw new Error(`RETIRO BLOQUEADO POR AUDITORÍA: ${order.fraudAudit.reason || 'Discrepancia contable detectada. Escala esta orden a Super Admin.'}`)
+        }
+
         const amountCoins = Number(order.amountSugarCoins || 0)
         const commissionCoins = Number(order.cashierCommissionCoins || Math.round(amountCoins * 0.03))
         const totalFiatRequestedUSD = Number(order.amountFiat || (amountCoins / 100))
@@ -1283,6 +1402,10 @@ Conserva este mensaje como comprobante formal de la transacción.`
 
   if (order.status === 'completed') {
     return { success: true, message: 'La orden ya se encuentra completada.' }
+  }
+
+  if (order.fraudAudit?.status === 'blocked') {
+    throw new Error(`RETIRO BLOQUEADO POR AUDITORÍA: ${order.fraudAudit.reason || 'Discrepancia contable detectada. Escala esta orden a Super Admin.'}`)
   }
 
   const amountCoins = Number(order.amountSugarCoins || 0)

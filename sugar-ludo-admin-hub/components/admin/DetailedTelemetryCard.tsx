@@ -25,9 +25,15 @@ export function DetailedTelemetryCard({ telemetry, onResetTelemetry }: DetailedT
             <Download className="size-6" />
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Descargas Totales Registradas</span>
-            <p className="text-2xl font-black text-white font-mono">
-              {telemetry.totalDownloadsCount.toLocaleString()} <span className="text-xs font-normal text-slate-400 font-sans">(Android / PWA / Web)</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Descargas Totales Registradas</span>
+              <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-[9px] font-mono text-cyan-300 font-bold">Persistente</span>
+            </div>
+            <p className="text-2xl font-black text-white font-mono flex items-baseline gap-2">
+              <span>{telemetry.totalDownloadsCount.toLocaleString()}</span>
+              <span className="text-[11px] font-normal text-slate-400 font-mono">
+                (Android: {telemetry.downloadsAndroid ?? 7} • PC: {telemetry.downloadsWindows ?? 2} • Web: {telemetry.downloadsWebPwa ?? 1})
+              </span>
             </p>
           </div>
         </div>
@@ -38,9 +44,10 @@ export function DetailedTelemetryCard({ telemetry, onResetTelemetry }: DetailedT
             <span className="font-mono font-bold text-white text-sm">{telemetry.totalRegisteredUsers.toLocaleString()}</span>
           </div>
           <div className="h-6 w-px bg-white/10" />
-          <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-bold">
+          <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-bold" title="Ping medio de WebSocket">
             <Wifi className="size-4" />
-            <span>{telemetry.serverLatencyMs} ms</span>
+            <span>{telemetry.medianPingMs ?? telemetry.serverLatencyMs} ms</span>
+            <span className="text-[9px] text-slate-500 font-normal">WS Ping</span>
           </div>
           {onResetTelemetry && (
             <>
@@ -122,6 +129,36 @@ export function DetailedTelemetryCard({ telemetry, onResetTelemetry }: DetailedT
             <span className="text-[10px] text-slate-500 block">Mesas con dinero real y Rake activo</span>
           </div>
 
+        </div>
+
+        {/* Modalidades Activas (2J / 4J / 6J) y Tipo de Partida */}
+        <div className="p-3.5 rounded-2xl bg-slate-950/40 border border-white/5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Tableros Activos:</span>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 font-mono font-bold">
+                2P: {telemetry.modeDistribution?.twoPlayers ?? 0}
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono font-bold">
+                4P: {telemetry.modeDistribution?.fourPlayers ?? 0}
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono font-bold">
+                6P: {telemetry.modeDistribution?.sixPlayers ?? 0}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Formato:</span>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-mono font-bold flex items-center gap-1">
+                <Bot className="size-3 text-indigo-400" /> IA: {telemetry.modeDistribution?.aiGames ?? 0}
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 font-mono font-bold flex items-center gap-1">
+                <Globe className="size-3 text-pink-400" /> Online: {telemetry.modeDistribution?.onlineGames ?? 0}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

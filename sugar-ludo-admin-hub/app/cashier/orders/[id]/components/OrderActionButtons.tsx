@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { ShieldCheck, AlertTriangle, ShieldAlert, Send, RefreshCw, AlertCircle } from 'lucide-react'
-import { CashierOrder } from '@/types/cashier'
+import { CashierOrder, FraudAuditResult } from '@/types/cashier'
 import { cashierLogger } from '@/lib/cashier-logger'
 
 export interface OrderActionButtonsProps {
@@ -84,6 +84,10 @@ export const OrderActionButtons: React.FC<OrderActionButtonsProps> = ({
   }
 
   const handleOpenPayout = () => {
+    if (order.fraudAudit?.status === 'blocked') {
+      onNotify('⛔ Este retiro está bloqueado por inconsistencia contable. Debes escalarlo a Super Admin.')
+      return
+    }
     if (!hasSufficientFloat) return
     cashierLogger.click(`Botón Transferir Dinero y Liquidar Retiro (Abrir modal)`)
     setIsPayoutModalOpen(true)
@@ -460,7 +464,9 @@ export interface PayoutActionButtonProps {
   hasSufficientFloat: boolean
   cashierFloatUSDT: number
   netPayoutUSD: number
+  fraudAudit?: FraudAuditResult
   onOpenPayout: () => void
+  onEscalateDispute?: () => void
 }
 
 export const PayoutActionButton: React.FC<PayoutActionButtonProps> = ({
@@ -469,38 +475,89 @@ export const PayoutActionButton: React.FC<PayoutActionButtonProps> = ({
   hasSufficientFloat,
   cashierFloatUSDT,
   netPayoutUSD,
-  onOpenPayout
+  fraudAudit,
+  onOpenPayout,
+  onEscalateDispute
 }) => {
   if (!isWithdraw || isCompleted) return null
 
+  const isBlocked = fraudAudit?.status === 'blocked'
+  const isLowTurnover = fraudAudit?.status === 'low_turnover'
+
   return (
     <div className="pt-2 space-y-3">
-      {!hasSufficientFloat && (
-        <div className="p-4 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-xs space-y-2 shadow-[0_0_20px_rgba(244,63,94,0.2)] animate-in fade-in">
+      {/* 1. Bloqueo Infranqueable por Fraude / Inconsistencia Contable */}
+      {isBlocked ? (
+        <div className="p-4 rounded-2xl bg-rose-950/90 border border-rose-500/60 text-xs space-y-3 shadow-[0_0_25px_rgba(244,63,94,0.25)] animate-in fade-in">
           <div className="flex items-center gap-2 text-rose-400 font-black">
-            <AlertTriangle className="size-4 shrink-0 text-rose-400" />
-            <span className="uppercase tracking-wider">SALDO FLOTANTE INSUFICIENTE</span>
+            <ShieldAlert className="size-5 shrink-0 text-rose-400 animate-pulse" />
+            <span className="uppercase tracking-wider">RETIRO BLOQUEADO POR INCONSISTENCIA CONTABLE</span>
           </div>
-          <p className="text-rose-200/95 text-xs leading-relaxed font-sans">
-            Tu saldo de trabajo disponible es de <strong className="text-white font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-500/30">${cashierFloatUSDT.toFixed(2)} USDT</strong> y este retiro requiere liquidar <strong className="text-rose-300 font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-500/30">${netPayoutUSD.toFixed(2)} USDT</strong>.
-            No cuentas con saldo suficiente para pagar este retiro. Debes solicitar recarga al Administrador.
+          <p className="text-rose-200 text-xs leading-relaxed font-sans">
+            {fraudAudit.reason || 'El saldo solicitado excede las fuentes legítimas de fondos del jugador. El desembolso ha sido bloqueado preventivamente por seguridad.'}
           </p>
+          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-white/5 flex items-center justify-between text-[11px] font-mono text-rose-300">
+            <span>Score Antifraude: 0/100</span>
+            <span className="font-bold">DESEMBOLSO DESHABILITADO</span>
+          </div>
+          {onEscalateDispute && (
+            <button
+              type="button"
+              onClick={onEscalateDispute}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(244,63,94,0.4)] cursor-pointer"
+            >
+              <ShieldAlert className="size-4" />
+              <span>Escalar Inconsistencia a Super Admin</span>
+            </button>
+          )}
         </div>
-      )}
+      ) : (
+        <>
+          {/* 2. Alerta Informativa si el Turnover es Bajo */}
+          {isLowTurnover && (
+            <div className="p-3.5 rounded-2xl bg-amber-950/70 border border-amber-500/40 text-xs space-y-1 shadow-sm animate-in fade-in">
+              <div className="flex items-center gap-2 text-amber-400 font-black">
+                <AlertTriangle className="size-4 shrink-0 text-amber-400" />
+                <span className="uppercase tracking-wider">
+                  ADVERTENCIA: TURNOVER DE JUEGO BAJO ({fraudAudit.details?.turnoverRatio !== undefined ? Math.round(fraudAudit.details.turnoverRatio * 100) : 0}%)
+                </span>
+              </div>
+              <p className="text-amber-200 text-[11px] leading-relaxed">
+                {fraudAudit.reason} Liquidación permitida con confirmación del cajero.
+              </p>
+            </div>
+          )}
 
-      <button
-        type="button"
-        disabled={!hasSufficientFloat}
-        onClick={onOpenPayout}
-        className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-          !hasSufficientFloat
-            ? 'bg-slate-800/90 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed shadow-none'
-            : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 shadow-[0_0_25px_rgba(236,72,153,0.35)] cursor-pointer'
-        }`}
-      >
-        <Send className="size-4" />
-        <span>Transferir Dinero y Liquidar Retiro</span>
-      </button>
+          {/* 3. Alerta de Saldo Flotante Insuficiente */}
+          {!hasSufficientFloat && (
+            <div className="p-4 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-xs space-y-2 shadow-[0_0_20px_rgba(244,63,94,0.2)] animate-in fade-in">
+              <div className="flex items-center gap-2 text-rose-400 font-black">
+                <AlertTriangle className="size-4 shrink-0 text-rose-400" />
+                <span className="uppercase tracking-wider">SALDO FLOTANTE INSUFICIENTE</span>
+              </div>
+              <p className="text-rose-200/95 text-xs leading-relaxed font-sans">
+                Tu saldo de trabajo disponible es de <strong className="text-white font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-500/30">${cashierFloatUSDT.toFixed(2)} USDT</strong> y este retiro requiere liquidar <strong className="text-rose-300 font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-500/30">${netPayoutUSD.toFixed(2)} USDT</strong>.
+                No cuentas con saldo suficiente para pagar este retiro. Debes solicitar recarga al Administrador.
+              </p>
+            </div>
+          )}
+
+          {/* 4. Botón de Transferir Dinero y Liquidar Retiro */}
+          <button
+            type="button"
+            disabled={!hasSufficientFloat}
+            onClick={onOpenPayout}
+            className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+              !hasSufficientFloat
+                ? 'bg-slate-800/90 text-slate-500 border border-white/5 opacity-50 cursor-not-allowed shadow-none'
+                : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-slate-950 shadow-[0_0_25px_rgba(236,72,153,0.35)] cursor-pointer'
+            }`}
+          >
+            <Send className="size-4" />
+            <span>Transferir Dinero y Liquidar Retiro</span>
+          </button>
+        </>
+      )}
     </div>
   )
 }

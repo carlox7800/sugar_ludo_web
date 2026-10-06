@@ -16,8 +16,20 @@ export interface DetailedTelemetry {
 
   totalOnlinePlayers: number
   serverLatencyMs: number
+  medianPingMs?: number
   activeMatchRooms: number
   serverStatus: 'online' | 'degraded' | 'offline'
+  modeDistribution?: {
+    twoPlayers: number
+    fourPlayers: number
+    sixPlayers: number
+    aiTraining: number
+    aiGames?: number
+    onlineGames?: number
+  }
+  downloadsAndroid?: number
+  downloadsWindows?: number
+  downloadsWebPwa?: number
   criticalErrorsCount?: number
   recentAlerts?: Array<{
     id: string
