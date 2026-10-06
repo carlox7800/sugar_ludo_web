@@ -11,7 +11,7 @@ export interface CashierLedgerEntry {
   id: string
   cashierUid: string
   cashierName?: string
-  type: 'initial_shift' | 'withdrawal_payout' | 'recharge_float'
+  type: 'initial_shift' | 'withdrawal_payout' | 'recharge_float' | 'audit_reset' | 'economic_reset'
   orderId?: string
   referenceNumber?: string
   requestedFiatUSD?: number
@@ -67,8 +67,10 @@ export function CashierFloatHistoryModal({ isOpen, onClose, cashier, orders = []
           let normType: CashierLedgerEntry['type'] = 'initial_shift'
           if (raw.type === 'withdrawal_payout' || raw.type === 'withdraw_payout') {
             normType = 'withdrawal_payout'
-          } else if (raw.type === 'recharge_float' || raw.type === 'recharge') {
+          } else if (raw.type === 'recharge_float' || raw.type === 'recharge' || raw.type === 'capital_assignment') {
             normType = 'recharge_float'
+          } else if (raw.type === 'audit_reset' || raw.type === 'economic_reset' || raw.type === 'audit_debit') {
+            normType = 'audit_reset'
           }
 
           const resultingBal = raw.resultingBalanceUSDT !== undefined
@@ -248,6 +250,7 @@ export function CashierFloatHistoryModal({ isOpen, onClose, cashier, orders = []
             entries.map((entry) => {
               const isPayout = entry.type === 'withdrawal_payout'
               const isRecharge = entry.type === 'recharge_float'
+              const isAuditReset = entry.type === 'audit_reset' || entry.type === 'economic_reset'
               const isInitial = entry.type === 'initial_shift'
 
               const dateFormatted = new Date(entry.timestamp).toLocaleDateString('es-ES', {
@@ -265,19 +268,21 @@ export function CashierFloatHistoryModal({ isOpen, onClose, cashier, orders = []
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className={`p-2 rounded-xl shrink-0 ${
-                      isPayout 
+                      isAuditReset
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        : isPayout 
                         ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' 
                         : isRecharge 
                         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                         : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
                     }`}>
-                      {isPayout ? <ArrowDownLeft className="size-4" /> : isRecharge ? <Plus className="size-4" /> : <ArrowUpRight className="size-4" />}
+                      {isAuditReset ? <ArrowDownLeft className="size-4" /> : isPayout ? <ArrowDownLeft className="size-4" /> : isRecharge ? <Plus className="size-4" /> : <ArrowUpRight className="size-4" />}
                     </div>
 
                     <div className="min-w-0 space-y-0.5">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white text-xs">
-                          {isPayout ? 'Retiro Pagado y Liquidado' : isRecharge ? 'Recarga de Saldo Flotante' : 'Asignación de Turno Inicial'}
+                          {isAuditReset ? 'Reseteo Contable por Auditoría' : isPayout ? 'Retiro Pagado y Liquidado' : isRecharge ? 'Recarga de Saldo Flotante' : 'Asignación de Turno Inicial'}
                         </span>
                         {entry.orderId && (
                           <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-white/5 text-slate-400 font-mono">
@@ -287,7 +292,7 @@ export function CashierFloatHistoryModal({ isOpen, onClose, cashier, orders = []
                       </div>
 
                       <p className="text-[11px] text-slate-400 font-mono truncate">
-                        {entry.notes || (isPayout ? 'Liquidación de Retiro P2P' : 'Movimiento de Flotante')}
+                        {entry.notes || (isAuditReset ? 'Reseteo contable de saldo flotante por Auditoría' : isPayout ? 'Liquidación de Retiro P2P' : 'Movimiento de Flotante')}
                       </p>
 
                       <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
@@ -312,8 +317,8 @@ export function CashierFloatHistoryModal({ isOpen, onClose, cashier, orders = []
 
                   {/* Amounts & Resulting Balance */}
                   <div className="text-right shrink-0 space-y-0.5">
-                    <span className={`text-sm font-black font-mono block ${isPayout ? 'text-rose-400' : 'text-emerald-400'}`}>
-                      {entry.amountFiatUSD > 0 ? `+$${entry.amountFiatUSD.toFixed(2)}` : `-$${Math.abs(entry.amountFiatUSD).toFixed(2)}`} USDT
+                    <span className={`text-sm font-black font-mono block ${isAuditReset || isPayout ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {entry.amountFiatUSD < 0 || isAuditReset || isPayout ? `-$${Math.abs(entry.amountFiatUSD).toFixed(2)}` : `+$${entry.amountFiatUSD.toFixed(2)}`} USDT
                     </span>
                     <span className="text-[10px] font-mono text-slate-400 block">
                       Saldo: <strong className="text-white">${(entry.resultingBalanceUSDT ?? currentUSDT).toFixed(2)}</strong>

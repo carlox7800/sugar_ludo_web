@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.6.9',
+  latestVersion: '9.6.10',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
   releaseDate: '2026-10-06',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.9/SugarLudo-v9.6.9.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.9/SugarLudo-v9.6.9-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.10/SugarLudo-v9.6.10.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.10/SugarLudo-v9.6.10-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.6.9: Registro inmutable de asiento contable de reseteo en historial de transacciones de usuarios.'
+  changelog: 'Actualización v9.6.10: Trazabilidad contable en auditoría y arqueo de cajeros (asignación de saldo flotante y reseteo por auditoría).'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)

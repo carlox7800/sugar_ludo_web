@@ -97,6 +97,10 @@ export async function POST(request: Request) {
         if (!cashiersSnap.empty) {
           const batch = adminDb.batch()
           cashiersSnap.forEach((cDoc: any) => {
+            const cData = cDoc.data() || {}
+            const prevUSDT = Number(cData.floatBalanceUSDT ?? (cData.floatBalanceCoins ? cData.floatBalanceCoins / 100 : 0))
+            const prevCoins = Number(cData.floatBalanceCoins ?? Math.round(prevUSDT * 100))
+
             batch.update(cDoc.ref, {
               floatBalanceCoins: 0,
               floatBalanceUSDT: 0,
@@ -104,6 +108,27 @@ export async function POST(request: Request) {
               totalPaidWithdrawalsCoins: 0,
               lastResetAt: now
             })
+
+            // Asiento contable explícito de auditoría en el historial de arqueo del cajero
+            if (prevUSDT > 0 || prevCoins > 0) {
+              const shiftDocRef = adminDb.collection('cashier_shifts_ledger').doc()
+              batch.set(shiftDocRef, {
+                id: shiftDocRef.id,
+                cashierUid: cDoc.id,
+                cashierName: cData.name || 'Cajero',
+                type: 'audit_reset',
+                amountFiatUSD: -prevUSDT,
+                amountUSDT: -prevUSDT,
+                amountCoins: -prevCoins,
+                previousBalanceUSDT: prevUSDT,
+                newBalanceUSDT: 0,
+                resultingBalanceUSDT: 0,
+                resultingBalanceCoins: 0,
+                referenceNumber: `AUDIT-RESET-${cDoc.id.slice(0, 6).toUpperCase()}`,
+                notes: 'Reseteo contable de saldo flotante por Auditoría',
+                timestamp: now
+              })
+            }
           })
           await batch.commit()
         }
@@ -291,6 +316,10 @@ export async function POST(request: Request) {
         if (!cashiersSnap.empty) {
           const batch = adminDb.batch()
           cashiersSnap.forEach((cDoc: any) => {
+            const cData = cDoc.data() || {}
+            const prevUSDT = Number(cData.floatBalanceUSDT ?? (cData.floatBalanceCoins ? cData.floatBalanceCoins / 100 : 0))
+            const prevCoins = Number(cData.floatBalanceCoins ?? Math.round(prevUSDT * 100))
+
             batch.update(cDoc.ref, {
               floatBalanceCoins: 0,
               floatBalanceUSDT: 0,
@@ -298,6 +327,27 @@ export async function POST(request: Request) {
               totalPaidWithdrawalsCoins: 0,
               lastActiveAt: now
             })
+
+            // Asiento contable explícito de auditoría en el historial de arqueo del cajero
+            if (prevUSDT > 0 || prevCoins > 0) {
+              const shiftDocRef = adminDb.collection('cashier_shifts_ledger').doc()
+              batch.set(shiftDocRef, {
+                id: shiftDocRef.id,
+                cashierUid: cDoc.id,
+                cashierName: cData.name || 'Cajero',
+                type: 'audit_reset',
+                amountFiatUSD: -prevUSDT,
+                amountUSDT: -prevUSDT,
+                amountCoins: -prevCoins,
+                previousBalanceUSDT: prevUSDT,
+                newBalanceUSDT: 0,
+                resultingBalanceUSDT: 0,
+                resultingBalanceCoins: 0,
+                referenceNumber: `AUDIT-RESET-${cDoc.id.slice(0, 6).toUpperCase()}`,
+                notes: 'Reseteo contable de saldo flotante por Auditoría',
+                timestamp: now
+              })
+            }
           })
           await batch.commit()
         }
@@ -419,6 +469,10 @@ export async function POST(request: Request) {
       if (!cashiersSnap.empty) {
         const batch = writeBatch(db)
         cashiersSnap.forEach((cDoc) => {
+          const cData = cDoc.data() || {}
+          const prevUSDT = Number(cData.floatBalanceUSDT ?? (cData.floatBalanceCoins ? cData.floatBalanceCoins / 100 : 0))
+          const prevCoins = Number(cData.floatBalanceCoins ?? Math.round(prevUSDT * 100))
+
           batch.update(cDoc.ref, {
             floatBalanceCoins: 0,
             floatBalanceUSDT: 0,
@@ -426,6 +480,27 @@ export async function POST(request: Request) {
             totalPaidWithdrawalsCoins: 0,
             lastActiveAt: now
           })
+
+          // Asiento contable explícito de auditoría en el historial de arqueo del cajero
+          if (prevUSDT > 0 || prevCoins > 0) {
+            const shiftDocRef = doc(collection(db, 'cashier_shifts_ledger'))
+            batch.set(shiftDocRef, {
+              id: shiftDocRef.id,
+              cashierUid: cDoc.id,
+              cashierName: cData.name || 'Cajero',
+              type: 'audit_reset',
+              amountFiatUSD: -prevUSDT,
+              amountUSDT: -prevUSDT,
+              amountCoins: -prevCoins,
+              previousBalanceUSDT: prevUSDT,
+              newBalanceUSDT: 0,
+              resultingBalanceUSDT: 0,
+              resultingBalanceCoins: 0,
+              referenceNumber: `AUDIT-RESET-${cDoc.id.slice(0, 6).toUpperCase()}`,
+              notes: 'Reseteo contable de saldo flotante por Auditoría',
+              timestamp: now
+            })
+          }
         })
         await batch.commit()
       }
@@ -593,6 +668,10 @@ export async function POST(request: Request) {
       if (!cashiersSnap.empty) {
         const batch = writeBatch(db)
         cashiersSnap.forEach((cDoc) => {
+          const cData = cDoc.data() || {}
+          const prevUSDT = Number(cData.floatBalanceUSDT ?? (cData.floatBalanceCoins ? cData.floatBalanceCoins / 100 : 0))
+          const prevCoins = Number(cData.floatBalanceCoins ?? Math.round(prevUSDT * 100))
+
           batch.update(cDoc.ref, {
             floatBalanceCoins: 0,
             floatBalanceUSDT: 0,
@@ -600,6 +679,27 @@ export async function POST(request: Request) {
             totalPaidWithdrawalsCoins: 0,
             lastActiveAt: now
           })
+
+          // Asiento contable explícito de auditoría en el historial de arqueo del cajero
+          if (prevUSDT > 0 || prevCoins > 0) {
+            const shiftDocRef = doc(collection(db, 'cashier_shifts_ledger'))
+            batch.set(shiftDocRef, {
+              id: shiftDocRef.id,
+              cashierUid: cDoc.id,
+              cashierName: cData.name || 'Cajero',
+              type: 'audit_reset',
+              amountFiatUSD: -prevUSDT,
+              amountUSDT: -prevUSDT,
+              amountCoins: -prevCoins,
+              previousBalanceUSDT: prevUSDT,
+              newBalanceUSDT: 0,
+              resultingBalanceUSDT: 0,
+              resultingBalanceCoins: 0,
+              referenceNumber: `AUDIT-RESET-${cDoc.id.slice(0, 6).toUpperCase()}`,
+              notes: 'Reseteo contable de saldo flotante por Auditoría',
+              timestamp: now
+            })
+          }
         })
         await batch.commit()
       }

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
 import { APP_VERSION_TAG } from '../../../lib/version'
-import { getStaffAuthHeaders } from '../../../lib/auth-headers'
+import { getStaffAuthHeaders, getStaffAuthHeadersAsync } from '../../../lib/auth-headers'
 import { StaffChatMessage, ProcessedWithdrawalAudit, CashierManagementProfile } from '../../../types/admin-expanded'
 import { MOCK_WITHDRAWAL_AUDITS } from '../../../lib/mock-admin-expanded'
 import {
@@ -196,11 +196,12 @@ export default function AdminCajerosManagementPage() {
 
     try {
       // 1. Ejecutar recarga atómica en el backend autoritativo (se actualiza cashier_profiles, system_config, shift_ledger y global_ledger)
+      const authHeaders = await getStaffAuthHeadersAsync('admin')
       const res = await fetch('/api/cashier/orders/recharge/action', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getStaffAuthHeaders('admin')
+          ...authHeaders
         },
         body: JSON.stringify({
           action: 'recharge_float',
