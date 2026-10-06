@@ -347,6 +347,7 @@ export default function AdminDashboardPage() {
     const now = Date.now()
 
     try {
+      let serverResetSuccess = false
       // 1. Ejecutar reseteo autoritativo en el backend (Super Admin API con Admin SDK)
       try {
         const authHeaders = await getStaffAuthHeadersAsync('admin')
@@ -370,6 +371,7 @@ export default function AdminDashboardPage() {
           console.warn('[AdminReset] Server API notice, falling back to local batch:', resData.error)
         } else {
           console.log('[AdminReset] Server API ejecutó con éxito:', resData.message)
+          serverResetSuccess = true
         }
       } catch (apiErr) {
         console.warn('[AdminReset] No se pudo contactar endpoint API, ejecutando local:', apiErr)
@@ -386,7 +388,8 @@ export default function AdminDashboardPage() {
         }))
       }
 
-      // 2. Ejecutar reseteo según el alcance seleccionado
+      // 2. Ejecutar reseteo local solo como fallback si el backend no lo procesó autoritativamente
+      if (!serverResetSuccess) {
       if (scope === 'players_only') {
         const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
         const newVaultUSD = Math.max(0, vault.totalVaultUSD - vault.playerBalancesUSD)
@@ -739,6 +742,7 @@ export default function AdminDashboardPage() {
           }
         } catch {}
       }
+      } // fin if (!serverResetSuccess) fallback
 
       // Reinicio opcional de telemetría y contadores en vivo
       if (resetTelemetryMetrics) {
@@ -769,21 +773,23 @@ export default function AdminDashboardPage() {
         }
       }
 
-      // 3. Auditoría inmutable en audit_logs
-      try {
-        const auditRef = doc(collection(db, 'audit_logs'))
-        await setDoc(auditRef, {
-          id: auditRef.id,
-          action: 'ECONOMIC_HARD_RESET',
-          scope,
-          adminUid: adminUser?.uid || 'adm_super',
-          adminName: adminUser?.displayName || 'Super Admin',
-          previousVault: previousSnapshot,
-          purgeOrdersHistory,
-          purgeShiftLedger,
-          timestamp: now
-        })
-      } catch {}
+      // 3. Auditoría inmutable en audit_logs (solo si no fue ejecutada por el backend)
+      if (!serverResetSuccess) {
+        try {
+          const auditRef = doc(collection(db, 'audit_logs'))
+          await setDoc(auditRef, {
+            id: auditRef.id,
+            action: 'ECONOMIC_HARD_RESET',
+            scope,
+            adminUid: adminUser?.uid || 'adm_super',
+            adminName: adminUser?.displayName || 'Super Admin',
+            previousVault: previousSnapshot,
+            purgeOrdersHistory,
+            purgeShiftLedger,
+            timestamp: now
+          })
+        } catch {}
+      }
 
       // 4. Limpieza de cachés locales
       if (typeof window !== 'undefined') {
