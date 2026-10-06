@@ -106,7 +106,7 @@ export function CashierFloatHistoryModal({ isOpen, onClose, cashier, orders = []
         // Si aún no hay registros explícitos en Firestore, sintetizar a partir de órdenes completadas del cajero
         const synthEntries: CashierLedgerEntry[] = []
         const currentFloatUSDT = (cashier as any).floatBalanceUSDT ?? (cashier.floatBalanceCoins / 100)
-        const initialShiftUSDT = (cashier as any).initialShiftFloatUSDT ?? 300.0
+        const initialShiftUSDT = (cashier as any).initialShiftFloatUSDT ?? (currentFloatUSDT > 0 ? currentFloatUSDT : 0)
 
         // Retiros completados
         const cashierCompletedWithdrawals = orders.filter(
@@ -141,20 +141,22 @@ export function CashierFloatHistoryModal({ isOpen, onClose, cashier, orders = []
           })
         })
 
-        // Asignación inicial de turno
-        synthEntries.push({
-          id: `synth_init_${cashier.uid}`,
-          cashierUid: cashier.uid,
-          cashierName: cashier.name,
-          type: 'initial_shift',
-          amountFiatUSD: initialShiftUSDT,
-          amountCoins: Math.round(initialShiftUSDT * 100),
-          resultingBalanceUSDT: initialShiftUSDT,
-          resultingBalanceCoins: Math.round(initialShiftUSDT * 100),
-          referenceNumber: `SHIFT-${cashier.uid.slice(-6).toUpperCase()}`,
-          timestamp: cashier.assignedShiftAt || Date.now() - 3600000,
-          notes: 'Asignación Inicial de Saldo Flotante para el Turno'
-        })
+        // Asignación inicial de turno solo si initialShiftUSDT > 0
+        if (initialShiftUSDT > 0) {
+          synthEntries.push({
+            id: `synth_init_${cashier.uid}`,
+            cashierUid: cashier.uid,
+            cashierName: cashier.name,
+            type: 'initial_shift',
+            amountFiatUSD: initialShiftUSDT,
+            amountCoins: Math.round(initialShiftUSDT * 100),
+            resultingBalanceUSDT: initialShiftUSDT,
+            resultingBalanceCoins: Math.round(initialShiftUSDT * 100),
+            referenceNumber: `SHIFT-${cashier.uid.slice(-6).toUpperCase()}`,
+            timestamp: cashier.assignedShiftAt || Date.now() - 3600000,
+            notes: 'Asignación Inicial de Saldo Flotante para el Turno'
+          })
+        }
 
         synthEntries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
         setEntries(synthEntries)

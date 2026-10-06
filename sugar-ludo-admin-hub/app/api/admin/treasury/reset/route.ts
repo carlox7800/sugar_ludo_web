@@ -91,7 +91,19 @@ export async function POST(request: Request) {
     // 2. REINICIO DE CAJEROS SOLAMENTE (Flotante = 0, NO TOCA JUGADORES)
     // =========================================================================
     if (scope === 'cashiers_only') {
-      // 2.1. Resetear flotantes en cashier_profiles
+      // 2.0. Purga previa opcional de libro de turnos si fue solicitada
+      if (purgeShiftLedger) {
+        try {
+          const shiftsSnap = await adminDb.collection('cashier_shifts_ledger').limit(200).get()
+          if (!shiftsSnap.empty) {
+            const batch = adminDb.batch()
+            shiftsSnap.forEach((sDoc: any) => batch.delete(sDoc.ref))
+            await batch.commit()
+          }
+        } catch {}
+      }
+
+      // 2.1. Resetear flotantes en cashier_profiles y anexar asiento inmutable de auditoría
       try {
         const cashiersSnap = await adminDb.collection('cashier_profiles').get()
         if (!cashiersSnap.empty) {
@@ -159,18 +171,6 @@ export async function POST(request: Request) {
         cashierFloatsCoins: 0,
         lastAuditedAt: now
       }, { merge: true })
-
-      // 2.4. Purga opcional de libro de turnos
-      if (purgeShiftLedger) {
-        try {
-          const shiftsSnap = await adminDb.collection('cashier_shifts_ledger').limit(200).get()
-          if (!shiftsSnap.empty) {
-            const batch = adminDb.batch()
-            shiftsSnap.forEach((sDoc: any) => batch.delete(sDoc.ref))
-            await batch.commit()
-          }
-        } catch {}
-      }
     }
 
     // =========================================================================
@@ -310,7 +310,31 @@ export async function POST(request: Request) {
         console.warn('[AdminResetAPI] Reset users notice (Admin SDK):', uErr?.message)
       }
 
-      // Resetear cajeros
+      // Purgar órdenes previas si fue solicitado
+      if (purgeOrdersHistory) {
+        try {
+          const ordersSnap = await adminDb.collection('cashier_orders').limit(200).get()
+          if (!ordersSnap.empty) {
+            const batch = adminDb.batch()
+            ordersSnap.forEach((oDoc: any) => batch.delete(oDoc.ref))
+            await batch.commit()
+          }
+        } catch {}
+      }
+
+      // Purgar libro de turnos previo si fue solicitado (antes de generar el nuevo asiento de auditoría)
+      if (purgeShiftLedger) {
+        try {
+          const shiftsSnap = await adminDb.collection('cashier_shifts_ledger').limit(200).get()
+          if (!shiftsSnap.empty) {
+            const batch = adminDb.batch()
+            shiftsSnap.forEach((sDoc: any) => batch.delete(sDoc.ref))
+            await batch.commit()
+          }
+        } catch {}
+      }
+
+      // Resetear cajeros y anexar asiento inmutable de auditoría
       try {
         const cashiersSnap = await adminDb.collection('cashier_profiles').get()
         if (!cashiersSnap.empty) {
@@ -352,30 +376,6 @@ export async function POST(request: Request) {
           await batch.commit()
         }
       } catch {}
-
-      // Purgar órdenes si fue solicitado
-      if (purgeOrdersHistory) {
-        try {
-          const ordersSnap = await adminDb.collection('cashier_orders').limit(200).get()
-          if (!ordersSnap.empty) {
-            const batch = adminDb.batch()
-            ordersSnap.forEach((oDoc: any) => batch.delete(oDoc.ref))
-            await batch.commit()
-          }
-        } catch {}
-      }
-
-      // Purgar libro de turnos si fue solicitado
-      if (purgeShiftLedger) {
-        try {
-          const shiftsSnap = await adminDb.collection('cashier_shifts_ledger').limit(200).get()
-          if (!shiftsSnap.empty) {
-            const batch = adminDb.batch()
-            shiftsSnap.forEach((sDoc: any) => batch.delete(sDoc.ref))
-            await batch.commit()
-          }
-        } catch {}
-      }
     }
 
     // =========================================================================
@@ -464,6 +464,18 @@ export async function POST(request: Request) {
 
   // 2. REINICIO DE CAJEROS SOLAMENTE
   if (scope === 'cashiers_only') {
+    // 2.0. Purga opcional previa del libro de turnos si fue solicitada
+    if (purgeShiftLedger) {
+      try {
+        const shiftsSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
+        if (!shiftsSnap.empty) {
+          const batch = writeBatch(db)
+          shiftsSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+          await batch.commit()
+        }
+      } catch {}
+    }
+
     try {
       const cashiersSnap = await getDocs(collection(db, 'cashier_profiles'))
       if (!cashiersSnap.empty) {
@@ -516,17 +528,6 @@ export async function POST(request: Request) {
       cashierFloatsCoins: 0,
       lastAuditedAt: now
     }, { merge: true })
-
-    if (purgeShiftLedger) {
-      try {
-        const shiftsSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
-        if (!shiftsSnap.empty) {
-          const batch = writeBatch(db)
-          shiftsSnap.forEach((sDoc) => batch.delete(sDoc.ref))
-          await batch.commit()
-        }
-      } catch {}
-    }
   }
 
   // 2.5. REINICIO DE SALDOS DE JUGADORES SOLAMENTE (players_only en Modo Híbrido)
@@ -662,7 +663,36 @@ export async function POST(request: Request) {
       console.warn('[AdminResetAPI] Reset users notice (Hybrid):', uErr?.message)
     }
 
-    // 3.2. Resetear cajeros
+    // 3.2. Neutralizar órdenes de prueba si fue solicitado
+    if (purgeOrdersHistory) {
+      try {
+        const ordersSnap = await getDocs(query(collection(db, 'cashier_orders'), limit(150)))
+        if (!ordersSnap.empty) {
+          const batch = writeBatch(db)
+          ordersSnap.forEach((oDoc) => {
+            batch.update(oDoc.ref, {
+              reconcileExcluded: true,
+              excludedAt: now
+            })
+          })
+          await batch.commit()
+        }
+      } catch {}
+    }
+
+    // 3.3. Purgar libro de turnos previo si fue solicitado (antes de anexar el nuevo asiento de auditoría)
+    if (purgeShiftLedger) {
+      try {
+        const shiftsSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
+        if (!shiftsSnap.empty) {
+          const batch = writeBatch(db)
+          shiftsSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+          await batch.commit()
+        }
+      } catch {}
+    }
+
+    // 3.4. Resetear cajeros y anexar asiento inmutable de auditoría
     try {
       const cashiersSnap = await getDocs(collection(db, 'cashier_profiles'))
       if (!cashiersSnap.empty) {
@@ -704,35 +734,6 @@ export async function POST(request: Request) {
         await batch.commit()
       }
     } catch {}
-
-    // 3.3. Neutralizar órdenes de prueba para que /api/admin/treasury/reconcile no resucite las ganancias
-    if (purgeOrdersHistory) {
-      try {
-        const ordersSnap = await getDocs(query(collection(db, 'cashier_orders'), limit(150)))
-        if (!ordersSnap.empty) {
-          const batch = writeBatch(db)
-          ordersSnap.forEach((oDoc) => {
-            batch.update(oDoc.ref, {
-              reconcileExcluded: true,
-              excludedAt: now
-            })
-          })
-          await batch.commit()
-        }
-      } catch {}
-    }
-
-    // 3.4. Purgar libro de turnos si fue solicitado
-    if (purgeShiftLedger) {
-      try {
-        const shiftsSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
-        if (!shiftsSnap.empty) {
-          const batch = writeBatch(db)
-          shiftsSnap.forEach((sDoc) => batch.delete(sDoc.ref))
-          await batch.commit()
-        }
-      } catch {}
-    }
 
     // 3.5. Purgar estadísticas diarias
     try {

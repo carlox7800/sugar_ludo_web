@@ -460,6 +460,17 @@ export default function AdminDashboardPage() {
           updatedAt: now
         }, { merge: true })
 
+        if (purgeShiftLedger) {
+          try {
+            const shiftSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
+            if (!shiftSnap.empty) {
+              const batch = writeBatch(db)
+              shiftSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+              await batch.commit()
+            }
+          } catch {}
+        }
+
         try {
           const batch = writeBatch(db)
           for (const csh of resetAccounts) {
@@ -508,17 +519,6 @@ export default function AdminDashboardPage() {
           cashierFloatsCoins: 0,
           lastAuditedAt: now
         }, { merge: true })
-
-        if (purgeShiftLedger) {
-          try {
-            const shiftSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
-            if (!shiftSnap.empty) {
-              const batch = writeBatch(db)
-              shiftSnap.forEach((sDoc) => batch.delete(sDoc.ref))
-              await batch.commit()
-            }
-          } catch {}
-        }
 
       } else if (scope === 'treasury_only') {
         const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
@@ -617,6 +617,33 @@ export default function AdminDashboardPage() {
           updatedAt: now
         }, { merge: true })
 
+        if (purgeOrdersHistory) {
+          try {
+            const ordSnap = await getDocs(query(collection(db, 'cashier_orders'), limit(150)))
+            if (!ordSnap.empty) {
+              const batch = writeBatch(db)
+              ordSnap.forEach((oDoc) => {
+                batch.update(oDoc.ref, {
+                  reconcileExcluded: true,
+                  excludedAt: now
+                })
+              })
+              await batch.commit()
+            }
+          } catch {}
+        }
+
+        if (purgeShiftLedger) {
+          try {
+            const shiftSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
+            if (!shiftSnap.empty) {
+              const batch = writeBatch(db)
+              shiftSnap.forEach((sDoc) => batch.delete(sDoc.ref))
+              await batch.commit()
+            }
+          } catch {}
+        }
+
         try {
           const batch = writeBatch(db)
           for (const csh of resetAccounts) {
@@ -701,33 +728,6 @@ export default function AdminDashboardPage() {
           }
         } catch (uErr) {
           console.error('[AdminReset] Error actualizando usuarios en total_hard_reset:', uErr)
-        }
-
-        if (purgeOrdersHistory) {
-          try {
-            const ordSnap = await getDocs(query(collection(db, 'cashier_orders'), limit(150)))
-            if (!ordSnap.empty) {
-              const batch = writeBatch(db)
-              ordSnap.forEach((oDoc) => {
-                batch.update(oDoc.ref, {
-                  reconcileExcluded: true,
-                  excludedAt: now
-                })
-              })
-              await batch.commit()
-            }
-          } catch {}
-        }
-
-        if (purgeShiftLedger) {
-          try {
-            const shiftSnap = await getDocs(query(collection(db, 'cashier_shifts_ledger'), limit(150)))
-            if (!shiftSnap.empty) {
-              const batch = writeBatch(db)
-              shiftSnap.forEach((sDoc) => batch.delete(sDoc.ref))
-              await batch.commit()
-            }
-          } catch {}
         }
 
         try {

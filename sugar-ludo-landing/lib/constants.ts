@@ -1,9 +1,9 @@
-export const APP_VERSION = '9.6.10';
+export const APP_VERSION = '9.7.0';
 
-// Rutas de descarga oficiales fijas (GitHub Releases v9.6.10)
+// Rutas de descarga oficiales fijas (GitHub Releases v9.7.0)
 // CANDADO TÉCNICO INFRANQUEABLE: Asignación determinista que rechaza variables obsoletas de Render
-export const OFFICIAL_PC_DOWNLOAD_URL = 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.10/SugarLudo-v9.6.10-Setup.exe';
-export const OFFICIAL_ANDROID_DOWNLOAD_URL = 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.10/SugarLudo-v9.6.10.apk';
+export const OFFICIAL_PC_DOWNLOAD_URL = 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.7.0/SugarLudo-v9.7.0-Setup.exe';
+export const OFFICIAL_ANDROID_DOWNLOAD_URL = 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.7.0/SugarLudo-v9.7.0.apk';
 
 export const PC_DOWNLOAD_URL = (process.env.NEXT_PUBLIC_PC_DOWNLOAD_URL && process.env.NEXT_PUBLIC_PC_DOWNLOAD_URL.includes(`v${APP_VERSION}`))
   ? process.env.NEXT_PUBLIC_PC_DOWNLOAD_URL

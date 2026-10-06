@@ -47,7 +47,7 @@ export function EconomicHardResetModal({
   const [selectedScope, setSelectedScope] = useState<ResetScope>('total_hard_reset')
   const [confirmInput, setConfirmInput] = useState('')
   const [purgeOrdersHistory, setPurgeOrdersHistory] = useState(true)
-  const [purgeShiftLedger, setPurgeShiftLedger] = useState(true)
+  const [purgeShiftLedger, setPurgeShiftLedger] = useState(false)
   const [resetTelemetryMetrics, setResetTelemetryMetrics] = useState(true)
 
   if (!isOpen) return null
