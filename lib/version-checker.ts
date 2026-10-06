@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.6.7',
+  latestVersion: '9.6.8',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
-  releaseDate: '2026-10-05',
+  releaseDate: '2026-10-06',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.7/SugarLudo-v9.6.7.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.7/SugarLudo-v9.6.7-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.8/SugarLudo-v9.6.8.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.6.8/SugarLudo-v9.6.8-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.6.7: Autorización de super_admin en endpoints de tesorería y resolución robusta del token en el reinicio contable.'
+  changelog: 'Actualización v9.6.8: Solución a 403 Forbidden en conciliación de tesorería y validación jerárquica de roles staff.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)

@@ -44,8 +44,8 @@ describe('Suite: SemVer & Detección de Versiones (Force Update)', () => {
 
   it('debe reflejar la versión oficial de producción cuando MOCK_TEST_CLIENT_VERSION es null', () => {
     const activeVersion = getClientAppVersion()
-    // En modo producción oficial debe reportar '9.6.7'
-    assert.equal(activeVersion, '9.6.7')
+    // En modo producción oficial debe reportar '9.6.8'
+    assert.equal(activeVersion, '9.6.8')
     // Al contrastar 9.6.7 contra la política mínima (9.6.0), no debe considerarse desfasada
     assert.equal(isVersionOutdated(activeVersion, DEFAULT_VERSION_POLICY.minSupportedVersion), false)
   })
