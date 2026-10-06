@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminDb, hasAdminCredentials } from '@/lib/firebase-admin'
 import { db } from '@/lib/firebase'
-import { collection, getDocs, doc, setDoc, writeBatch, limit, query } from 'firebase/firestore'
+import { collection, getDocs, doc, setDoc, getDoc, writeBatch, limit, query } from 'firebase/firestore'
 import { verifyStaffAuth } from '@/lib/api-auth-guard'
 
 const corsHeaders = {
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       adminName 
     } = body
 
-    if (!scope || !['treasury_only', 'cashiers_only', 'total_hard_reset'].includes(scope)) {
+    if (!scope || !['treasury_only', 'cashiers_only', 'players_only', 'total_hard_reset'].includes(scope)) {
       return NextResponse.json(
         { success: false, error: 'Alcance de reinicio contable inválido.' },
         { status: 400, headers: corsHeaders }
@@ -149,6 +149,69 @@ export async function POST(request: Request) {
     }
 
     // =========================================================================
+    // 2.5. REINICIO DE SALDOS DE JUGADORES SOLAMENTE (players_only)
+    // =========================================================================
+    if (scope === 'players_only') {
+      const currentVaultUSD = Number(ledgerData.totalVaultUSD || 0)
+      const currentPlayerUSD = Number(ledgerData.playerCustodyUSD || ledgerData.playerBalancesUSD || 0)
+      const newVaultUSD = Math.max(0, currentVaultUSD - currentPlayerUSD)
+
+      await ledgerRef.set({
+        totalVaultUSD: newVaultUSD,
+        totalVaultSugarCoins: Math.round(newVaultUSD * 100),
+        playerCustodyUSD: 0,
+        playerCustodyCoins: 0,
+        lastAuditedAt: now
+      }, { merge: true })
+
+      try {
+        const dateFormatted = new Date().toLocaleDateString('es-ES', { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })
+        const usersSnap = await adminDb.collection('users').limit(150).get()
+        if (!usersSnap.empty) {
+          const batch = adminDb.batch()
+          usersSnap.forEach((uDoc: any) => {
+            const uData = uDoc.data() || {}
+            const previousCoins = Number(uData.coins || 0)
+            const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+
+            if (previousCoins > 0) {
+              const resetTxEntry = {
+                id: `tx_reset_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                type: 'withdraw',
+                amount: -previousCoins,
+                description: 'Reseteo contable de saldos por Auditoría',
+                timestamp: now,
+                dateStr: dateFormatted
+              }
+              const updatedHistory = [resetTxEntry, ...existingHistory].slice(0, 50)
+              batch.update(uDoc.ref, {
+                coins: 0,
+                escrowLockedCoins: 0,
+                walletHistory: updatedHistory,
+                lastActiveAt: now
+              })
+            } else {
+              batch.update(uDoc.ref, {
+                coins: 0,
+                escrowLockedCoins: 0,
+                lastActiveAt: now
+              })
+            }
+          })
+          await batch.commit()
+        }
+      } catch (uErr: any) {
+        console.warn('[AdminResetAPI] Reset users players_only notice (Admin SDK):', uErr?.message)
+      }
+    }
+
+    // =========================================================================
     // 3. HARD RESET TOTAL (Bóveda completa, cajeros y balance de prueba)
     // =========================================================================
     if (scope === 'total_hard_reset') {
@@ -175,17 +238,46 @@ export async function POST(request: Request) {
         lastAuditedAt: now
       })
 
-      // Resetear usuarios en users
+      // Resetear usuarios en users y asentar movimiento contable en walletHistory
       try {
+        const dateFormatted = new Date().toLocaleDateString('es-ES', { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })
         const usersSnap = await adminDb.collection('users').limit(150).get()
         if (!usersSnap.empty) {
           const batch = adminDb.batch()
           usersSnap.forEach((uDoc: any) => {
-            batch.update(uDoc.ref, {
-              coins: 0,
-              escrowLockedCoins: 0,
-              lastActiveAt: now
-            })
+            const uData = uDoc.data() || {}
+            const previousCoins = Number(uData.coins || 0)
+            const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+
+            if (previousCoins > 0) {
+              const resetTxEntry = {
+                id: `tx_reset_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                type: 'withdraw',
+                amount: -previousCoins,
+                description: 'Reseteo contable de saldos por Auditoría',
+                timestamp: now,
+                dateStr: dateFormatted
+              }
+              const updatedHistory = [resetTxEntry, ...existingHistory].slice(0, 50)
+              batch.update(uDoc.ref, {
+                coins: 0,
+                escrowLockedCoins: 0,
+                walletHistory: updatedHistory,
+                lastActiveAt: now
+              })
+            } else {
+              batch.update(uDoc.ref, {
+                coins: 0,
+                escrowLockedCoins: 0,
+                lastActiveAt: now
+              })
+            }
           })
           await batch.commit()
         }
@@ -289,6 +381,8 @@ export async function POST(request: Request) {
   // MODO 2: MOTOR HÍBRIDO DE RESPALDO (SDK Cliente en Node.js)
   // =========================================================================
   const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+  const ledgerSnap = await getDoc(ledgerRef).catch(() => null)
+  const ledgerData = (ledgerSnap && (ledgerSnap as any).exists?.()) ? (ledgerSnap.data() || {}) : {}
 
   // 1. REINICIO DE TESORERÍA SOLAMENTE
   if (scope === 'treasury_only') {
@@ -360,6 +454,67 @@ export async function POST(request: Request) {
     }
   }
 
+  // 2.5. REINICIO DE SALDOS DE JUGADORES SOLAMENTE (players_only en Modo Híbrido)
+  if (scope === 'players_only') {
+    const currentVaultUSD = Number(ledgerData.totalVaultUSD || 0)
+    const currentPlayerUSD = Number(ledgerData.playerCustodyUSD || ledgerData.playerBalancesUSD || 0)
+    const newVaultUSD = Math.max(0, currentVaultUSD - currentPlayerUSD)
+
+    await setDoc(ledgerRef, {
+      totalVaultUSD: newVaultUSD,
+      totalVaultSugarCoins: Math.round(newVaultUSD * 100),
+      playerCustodyUSD: 0,
+      playerCustodyCoins: 0,
+      lastAuditedAt: now
+    }, { merge: true })
+
+    try {
+      const dateFormatted = new Date().toLocaleDateString('es-ES', { 
+        day: '2-digit', 
+        month: 'short', 
+        year: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      })
+      const usersSnap = await getDocs(query(collection(db, 'users'), limit(150)))
+      if (!usersSnap.empty) {
+        const batch = writeBatch(db)
+        usersSnap.forEach((uDoc) => {
+          const uData = uDoc.data() || {}
+          const previousCoins = Number(uData.coins || 0)
+          const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+
+          if (previousCoins > 0) {
+            const resetTxEntry = {
+              id: `tx_reset_${now}_${Math.random().toString(36).slice(2, 6)}`,
+              type: 'withdraw',
+              amount: -previousCoins,
+              description: 'Reseteo contable de saldos por Auditoría',
+              timestamp: now,
+              dateStr: dateFormatted
+            }
+            const updatedHistory = [resetTxEntry, ...existingHistory].slice(0, 50)
+            batch.update(uDoc.ref, {
+              coins: 0,
+              escrowLockedCoins: 0,
+              walletHistory: updatedHistory,
+              lastActiveAt: now
+            })
+          } else {
+            batch.update(uDoc.ref, {
+              coins: 0,
+              escrowLockedCoins: 0,
+              lastActiveAt: now
+            })
+          }
+        })
+        await batch.commit()
+      }
+    } catch (uErr: any) {
+      console.warn('[AdminResetAPI] Reset users players_only notice (Hybrid):', uErr?.message)
+    }
+  }
+
   // 3. HARD RESET TOTAL (Bóveda completa, usuarios, cajeros y órdenes de prueba)
   if (scope === 'total_hard_reset') {
     await setDoc(ledgerRef, {
@@ -385,17 +540,46 @@ export async function POST(request: Request) {
       lastAuditedAt: now
     })
 
-    // 3.1. Resetear saldos de todos los usuarios en users (100% compatible con firestore.rules Cláusula 3)
+    // 3.1. Resetear saldos de todos los usuarios en users y asentar movimiento contable en walletHistory
     try {
+      const dateFormatted = new Date().toLocaleDateString('es-ES', { 
+        day: '2-digit', 
+        month: 'short', 
+        year: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      })
       const usersSnap = await getDocs(query(collection(db, 'users'), limit(150)))
       if (!usersSnap.empty) {
         const batch = writeBatch(db)
         usersSnap.forEach((uDoc) => {
-          batch.update(uDoc.ref, {
-            coins: 0,
-            escrowLockedCoins: 0,
-            lastActiveAt: now
-          })
+          const uData = uDoc.data() || {}
+          const previousCoins = Number(uData.coins || 0)
+          const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+
+          if (previousCoins > 0) {
+            const resetTxEntry = {
+              id: `tx_reset_${now}_${Math.random().toString(36).slice(2, 6)}`,
+              type: 'withdraw',
+              amount: -previousCoins,
+              description: 'Reseteo contable de saldos por Auditoría',
+              timestamp: now,
+              dateStr: dateFormatted
+            }
+            const updatedHistory = [resetTxEntry, ...existingHistory].slice(0, 50)
+            batch.update(uDoc.ref, {
+              coins: 0,
+              escrowLockedCoins: 0,
+              walletHistory: updatedHistory,
+              lastActiveAt: now
+            })
+          } else {
+            batch.update(uDoc.ref, {
+              coins: 0,
+              escrowLockedCoins: 0,
+              lastActiveAt: now
+            })
+          }
         })
         await batch.commit()
       }
