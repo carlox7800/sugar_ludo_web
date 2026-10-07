@@ -54,8 +54,7 @@ const DEFAULT_SUPER_ADMIN: AdminUserProfile = {
   avatarUrl: 'https://i.ibb.co/3YBC35Xm/avatar-1786744277377.jpg',
   createdAt: Date.now() - (90 * 24 * 3600 * 1000),
   lastLoginAt: Date.now(),
-  isActive: true,
-  password: 'SugarAdmin2026!'
+  isActive: true
 }
 
 const INITIAL_ADMINS: AdminUserProfile[] = [
@@ -68,8 +67,7 @@ const INITIAL_ADMINS: AdminUserProfile[] = [
     role: 'financial_admin',
     createdAt: Date.now() - (30 * 24 * 3600 * 1000),
     lastLoginAt: Date.now() - (2 * 3600 * 1000),
-    isActive: true,
-    password: 'SugarAdmin2026!'
+    isActive: true
   }
 ]
 
@@ -77,7 +75,6 @@ const DEFAULT_CASHIER: CashierManagementProfile = {
   uid: 'csh_carlosandroid_001',
   name: 'carlosandroid (Cajero)',
   email: 'carlos.cajero@sugarludo.com',
-  password: 'CajeroSugar2026!',
   avatarUrl: 'https://i.ibb.co/3YBC35Xm/avatar-1786744277377.jpg',
   shiftStatus: 'on_shift',
   floatBalanceCoins: 30000,
@@ -128,6 +125,13 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           localStorage.removeItem('sugar_admin_session')
         }
       }
+      // Purgar cualquier residuo legacy de contraseñas almacenadas en localStorage
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i)
+        if (key && (key.startsWith('sugar_cashier_pass_') || key.startsWith('sugar_admin_pass_'))) {
+          localStorage.removeItem(key)
+        }
+      }
     } finally {
       setIsLoading(false)
     }
@@ -157,13 +161,13 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       if (snap.exists()) {
         const data = snap.data()
         if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
-          setCashierList(data.accounts)
-          localStorage.setItem('sugar_cashier_accounts', JSON.stringify(data.accounts))
-          data.accounts.forEach((c: CashierManagementProfile) => {
-            if (c.password) {
-              localStorage.setItem(`sugar_cashier_pass_${c.uid}`, c.password)
-            }
+          // Sanitizar para asegurar que ninguna contraseña en texto plano quede en cliente
+          const sanitizedAccounts = data.accounts.map((c: any) => {
+            const { password, ...rest } = c
+            return rest as CashierManagementProfile
           })
+          setCashierList(sanitizedAccounts)
+          localStorage.setItem('sugar_cashier_accounts', JSON.stringify(sanitizedAccounts))
           return
         }
       }
@@ -195,13 +199,13 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       if (snap.exists()) {
         const data = snap.data()
         if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
-          setAdminList(data.accounts)
-          localStorage.setItem('sugar_admin_accounts', JSON.stringify(data.accounts))
-          data.accounts.forEach((a: AdminUserProfile) => {
-            if (a.password) {
-              localStorage.setItem(`sugar_admin_pass_${a.uid}`, a.password)
-            }
+          // Sanitizar para asegurar que ninguna contraseña en texto plano quede en cliente
+          const sanitizedAdmins = data.accounts.map((a: any) => {
+            const { password, ...rest } = a
+            return rest as AdminUserProfile
           })
+          setAdminList(sanitizedAdmins)
+          localStorage.setItem('sugar_admin_accounts', JSON.stringify(sanitizedAdmins))
           return
         }
       }
@@ -393,8 +397,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     const updated = {
       ...adminUser,
       displayName,
-      email,
-      ...(newPassword && newPassword.trim().length >= 6 ? { password: newPassword.trim() } : {})
+      email
     }
     setAdminUser(updated)
     localStorage.setItem('sugar_admin_session', JSON.stringify(updated))
@@ -402,9 +405,6 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     const updatedList = adminList.map((a) => (a.uid === adminUser.uid ? updated : a))
     setAdminList(updatedList)
     localStorage.setItem('sugar_admin_accounts', JSON.stringify(updatedList))
-    if (newPassword && newPassword.trim().length >= 6) {
-      localStorage.setItem(`sugar_admin_pass_${adminUser.uid}`, newPassword.trim())
-    }
 
     await persistAdminsToCloud(updatedList)
     return true
@@ -420,6 +420,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     const cleanUser = username.trim().toLowerCase()
     const cleanEmail = email.trim().toLowerCase()
 
+    if (!pass || pass.trim().length < 6) {
+      return { success: false, message: 'La contraseña del administrador debe tener al menos 6 caracteres.' }
+    }
+
     if (adminList.some((a) => a.username.toLowerCase() === cleanUser || a.email.toLowerCase() === cleanEmail)) {
       return { success: false, message: 'Ya existe un administrador con ese usuario o correo.' }
     }
@@ -432,27 +436,25 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       role,
       createdAt: Date.now(),
       lastLoginAt: 0,
-      isActive: true,
-      password: pass
+      isActive: true
     }
 
-    // 1. Guardar en memoria local y estado
+    // 1. Guardar en memoria local y estado (sin contraseñas en texto plano)
     const updatedList = [...adminList, newAdmin]
     setAdminList(updatedList)
     localStorage.setItem('sugar_admin_accounts', JSON.stringify(updatedList))
-    localStorage.setItem(`sugar_admin_pass_${newAdmin.uid}`, pass)
 
     // 2. Persistir en Firestore en la nube
     await persistAdminsToCloud(updatedList)
 
-    // 3. Notificar al backend
+    // 3. Notificar al backend (el backend calcula el hash scrypt de forma segura)
     try {
       fetch('/api/staff/auth/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: cleanEmail,
-          password: pass,
+          password: pass.trim(),
           displayName: displayName.trim(),
           username: cleanUser,
           role,
@@ -479,7 +481,6 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     const updatedList = adminList.filter((a) => a.uid !== uid)
     setAdminList(updatedList)
     localStorage.setItem('sugar_admin_accounts', JSON.stringify(updatedList))
-    localStorage.removeItem(`sugar_admin_pass_${uid}`)
     persistAdminsToCloud(updatedList)
 
     try {
@@ -503,7 +504,11 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, message: 'Ya existe un cajero registrado con ese correo electrónico.' }
     }
 
-    const assignedPassword = pass || 'CajeroSugar2026!'
+    if (!pass || pass.trim().length < 6) {
+      return { success: false, message: 'Debe ingresar una contraseña válida de al menos 6 caracteres para el cajero.' }
+    }
+
+    const assignedPassword = pass.trim()
     const floatUSDT = newCashier.floatBalanceUSDT ?? (newCashier.floatBalanceCoins / 100)
     const fullCashier: CashierManagementProfile = {
       ...newCashier,
@@ -512,17 +517,15 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       initialShiftFloatUSDT: floatUSDT,
       totalPaidWithdrawalsUSDT: 0,
       totalPaidWithdrawalsCoins: 0,
-      password: assignedPassword,
       role: 'cashier',
       assignedShiftAt: newCashier.assignedShiftAt || Date.now(),
       lastRechargeAt: newCashier.lastRechargeAt || Date.now()
     }
 
-    // 1. Guardar en memoria local y estado
+    // 1. Guardar en memoria local y estado (sin almacenar contraseñas en plain text)
     const updatedList = [fullCashier, ...cashierList]
     setCashierList(updatedList)
     localStorage.setItem('sugar_cashier_accounts', JSON.stringify(updatedList))
-    localStorage.setItem(`sugar_cashier_pass_${fullCashier.uid}`, assignedPassword)
 
     // 2. Persistir en Firestore en la nube para acceso universal desde cualquier dispositivo
     await persistCashiersToCloud(updatedList)
@@ -543,7 +546,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       }, { merge: true })
     } catch {}
 
-    // 5. Notificar a endpoint backend
+    // 5. Notificar a endpoint backend (el backend calcula el hash criptográfico scrypt)
     try {
       fetch('/api/staff/auth/create', {
         method: 'POST',
@@ -569,7 +572,6 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     const updatedList = cashierList.filter((c) => c.uid !== uid)
     setCashierList(updatedList)
     localStorage.setItem('sugar_cashier_accounts', JSON.stringify(updatedList))
-    localStorage.removeItem(`sugar_cashier_pass_${uid}`)
     persistCashiersToCloud(updatedList)
 
     try {
@@ -583,7 +585,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     return { success: true, message: 'Cuenta de cajero eliminada permanentemente.' }
   }
 
-  // Modificar Datos y Credenciales / Contraseña de Cajero
+  // Modificar Datos y Credenciales de Cajero
   const updateCashierProfile = async (
     uid: string,
     updates: Partial<CashierManagementProfile>,
@@ -595,8 +597,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       if (c.uid === uid) {
         updatedCashier = {
           ...c,
-          ...updates,
-          ...(newPassword ? { password: newPassword } : {})
+          ...updates
         }
         return updatedCashier
       }
@@ -609,13 +610,6 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
 
     setCashierList(updatedList)
     localStorage.setItem('sugar_cashier_accounts', JSON.stringify(updatedList))
-
-    if (newPassword) {
-      localStorage.setItem(`sugar_cashier_pass_${uid}`, newPassword)
-      if (updates.email) {
-        localStorage.setItem(`sugar_cashier_pass_${updates.email.toLowerCase()}`, newPassword)
-      }
-    }
 
     // Persistir en Firestore en system_config/cashier_accounts
     await persistCashiersToCloud(updatedList)
@@ -631,11 +625,27 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         idDocument: (updatedCashier as CashierManagementProfile).idDocument,
         assignedPaymentMethods: (updatedCashier as CashierManagementProfile).assignedPaymentMethods,
         paymentMethodsCount: (updatedCashier as CashierManagementProfile).assignedPaymentMethods?.length || (updatedCashier as CashierManagementProfile).paymentMethodsCount,
-        ...(newPassword ? { password: newPassword } : {}),
         updatedAt: Date.now()
       }, { merge: true })
     } catch (e) {
       console.warn('[AdminAuth] Error actualizando cashier_profiles:', e)
+    }
+
+    // Si se solicitó cambio de contraseña, enviar al backend seguro para hashing con scrypt
+    if (newPassword && newPassword.trim().length >= 6) {
+      try {
+        fetch('/api/staff/auth/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: (updatedCashier as CashierManagementProfile).email,
+            password: newPassword.trim(),
+            displayName: (updatedCashier as CashierManagementProfile).name,
+            role: 'cashier',
+            accountType: 'cashier'
+          })
+        }).catch(() => {})
+      } catch {}
     }
 
     // Actualizar sesión activa local si coincide

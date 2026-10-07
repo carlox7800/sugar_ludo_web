@@ -78,4 +78,35 @@ describe('Suite: Endurecimiento de Seguridad & Staff Auth Guard (v9.6.0)', () =>
     // Sin sesión activa en almacenamiento, debe retornar objeto vacío y nunca un fallback inseguro
     assert.deepEqual(headers, {})
   })
+
+  it('FASE 0 HARDENING: debe generar hashes scrypt robustos y verificar contraseñas con timingSafeEqual', async () => {
+    const { hashPassword, verifyPassword, isHashedPassword } = await import('../sugar-ludo-admin-hub/lib/password-hasher.ts')
+    const pass = 'MiClaveSegura2026!#'
+    const hash = hashPassword(pass)
+
+    assert.ok(hash.startsWith('scrypt$'), 'El hash generado debe usar formato scrypt')
+    assert.ok(isHashedPassword(hash), 'Debe identificarse como hash seguro')
+    assert.notEqual(hash, pass, 'El hash nunca debe ser igual a la contraseña en texto plano')
+
+    // Verificación exitosa
+    assert.equal(verifyPassword(pass, hash), true, 'La contraseña correcta debe validar en true')
+
+    // Rechazo de contraseña incorrecta
+    assert.equal(verifyPassword('OtraClaveErronea', hash), false, 'Contraseña errónea debe validar en false')
+
+    // Rechazo ante entradas vacías o corruptas
+    assert.equal(verifyPassword('', hash), false)
+    assert.equal(verifyPassword(pass, ''), false)
+    assert.equal(verifyPassword(pass, 'hashInvalido'), false)
+  })
+
+  it('FASE 0 HARDENING: debe generar sales únicas para cada llamada a hashPassword (anti-rainbow tables)', async () => {
+    const { hashPassword } = await import('../sugar-ludo-admin-hub/lib/password-hasher.ts')
+    const pass = 'ClaveComun123!'
+    const hash1 = hashPassword(pass)
+    const hash2 = hashPassword(pass)
+
+    assert.notEqual(hash1, hash2, 'Dos llamadas a hashPassword con la misma clave deben generar hashes distintos debido a la sal criptográfica')
+  })
 })
+

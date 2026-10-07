@@ -93,17 +93,7 @@ export async function verifyStaffAuth(
         const normalizedUid = String(decoded.uid).toLowerCase().trim()
         const normalizedEmail = String(decoded.email || '').toLowerCase().trim()
 
-        if (
-          role === 'cashier' &&
-          (normalizedUid === 'adm_super_carlos_001' ||
-            normalizedUid.startsWith('adm_') ||
-            normalizedEmail === 'admin@sugarludo.com' ||
-            normalizedEmail.startsWith('admin@'))
-        ) {
-          role = 'super_admin'
-        }
-
-        // Si el token aún no tiene custom claims de rol, consultar perfil en Firestore
+        // Si el token aún no tiene custom claims de rol, consultar perfil formal en Firestore
         if (!role && adminDb && adminDb.collection) {
           try {
             // A) Consultar en system_config/admin_accounts (almacén canónico de administradores)
@@ -112,11 +102,10 @@ export async function verifyStaffAuth(
               const accounts = adminAccountsDoc.data()?.accounts || []
               const match = accounts.find((a: any) =>
                 (a.uid && a.uid.toLowerCase() === normalizedUid) ||
-                (a.email && a.email.toLowerCase() === normalizedEmail) ||
-                (a.username && normalizedEmail.includes(a.username.toLowerCase()))
+                (a.email && a.email.toLowerCase() === normalizedEmail)
               )
-              if (match && match.isActive !== false) {
-                role = match.role || 'super_admin'
+              if (match && match.isActive !== false && match.role) {
+                role = match.role
               }
             }
 
@@ -125,7 +114,9 @@ export async function verifyStaffAuth(
               const staffDoc = await adminDb.collection('staff_profiles').doc(decoded.uid).get()
               if (staffDoc.exists) {
                 const data = staffDoc.data()
-                if (data?.isActive !== false) role = data?.role || 'admin'
+                if (data?.isActive !== false && data?.role) {
+                  role = data.role
+                }
               }
             }
 
@@ -134,41 +125,35 @@ export async function verifyStaffAuth(
               const cashierDoc = await adminDb.collection('cashier_profiles').doc(decoded.uid).get()
               if (cashierDoc.exists) {
                 const cData = cashierDoc.data()
-                if (cData?.isActive !== false) role = 'cashier'
+                if (cData?.isActive !== false) {
+                  role = 'cashier'
+                }
               }
             }
           } catch {}
         }
 
-        // Fallback robusto para administradores maestros o staff autenticado
-        if (
-          !role &&
-          (normalizedUid === 'adm_super_carlos_001' ||
-            normalizedUid.startsWith('adm_') ||
-            normalizedEmail === 'admin@sugarludo.com' ||
-            normalizedEmail.includes('admin') ||
-            normalizedEmail.endsWith('@sugarludo.com'))
-        ) {
-          role = 'super_admin'
-        } else if (
-          !role &&
-          (normalizedUid === 'csh_carlosandroid_001' ||
-            normalizedUid.startsWith('csh_') ||
-            normalizedEmail === 'carlos.cajero@sugarludo.com' ||
-            normalizedEmail.includes('cajero'))
-        ) {
-          role = 'cashier'
-        }
-
-        // Si es un token verificado criptográficamente por Firebase Admin sin rol explícito,
-        // asignar super_admin como fallback seguro para personal administrativo
-        if (!role) {
-          role = 'super_admin'
+        // CANDADO DE SEGURIDAD ESTRICTO:
+        // Prohibida la escalada de privilegios. Si el usuario no tiene un rol Staff explícito
+        // verificado, se rechaza inmediatamente con 403 Prohibido. Jamás asumir super_admin.
+        const normalizedRole = (role || '').toLowerCase().trim()
+        const validStaffRoles = ['cashier', 'admin', 'super_admin', 'financial_admin', 'support_admin']
+        if (!role || !validStaffRoles.includes(normalizedRole)) {
+          return {
+            authorized: false,
+            errorResponse: NextResponse.json(
+              {
+                success: false,
+                error: 'Acceso denegado: El usuario autenticado no posee un rol de Staff autorizado.'
+              },
+              { status: 403, headers: corsHeaders }
+            )
+          }
         }
 
         verifiedUser = {
           uid: decoded.uid,
-          role,
+          role: normalizedRole,
           email: decoded.email,
           name: (decoded.name as string) || (decoded.displayName as string) || 'Staff'
         }

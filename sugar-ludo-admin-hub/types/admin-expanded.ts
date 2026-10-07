@@ -132,6 +132,7 @@ export interface CashierManagementProfile {
   paymentMethodsCount: number
   assignedPaymentMethods?: string[]
   password?: string
+  passwordHash?: string
   role?: 'cashier'
 }
 
@@ -176,4 +177,5 @@ export interface AdminUserProfile {
   lastLoginAt: number
   isActive: boolean
   password?: string
+  passwordHash?: string
 }

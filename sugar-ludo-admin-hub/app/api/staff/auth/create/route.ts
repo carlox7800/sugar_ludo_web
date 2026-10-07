@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { admin, adminDb } from '@/lib/firebase-admin'
 import { verifyStaffAuth } from '@/lib/api-auth-guard'
+import { hashPassword } from '@/lib/password-hasher'
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Guardar perfil formal en Firestore (colección 'staff_profiles' o 'cashier_profiles')
+    // Contraseña hasheada criptográficamente con scrypt (cero texto plano)
     const profileData = {
       uid: authUid,
       email: cleanEmail,
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
       displayName: displayName.trim(),
       role: cleanRole,
       accountType: accountType || (cleanRole === 'cashier' ? 'cashier' : 'admin'),
+      passwordHash: hashPassword(password),
       createdAt: Date.now(),
       lastLoginAt: 0,
       isActive: true,

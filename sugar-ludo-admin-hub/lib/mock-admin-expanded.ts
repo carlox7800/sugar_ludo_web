@@ -190,7 +190,6 @@ export const MOCK_CASHIERS_MANAGEMENT: CashierManagementProfile[] = [
     uid: 'csh_carlosandroid_001',
     name: 'carlosandroid (Cajero)',
     email: 'carlos.cajero@sugarludo.com',
-    password: 'CajeroSugar2026!',
     avatarUrl: 'https://i.ibb.co/3YBC35Xm/avatar-1786744277377.jpg',
     shiftStatus: 'on_shift',
     floatBalanceCoins: 30000,
