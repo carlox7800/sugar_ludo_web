@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAdminAuth } from '../../lib/admin-auth-context'
@@ -14,7 +14,7 @@ import { DetailedTelemetry } from '../../types/admin-expanded'
 import { EconomicHardResetModal, EconomicResetOptions } from '../../components/admin/EconomicHardResetModal'
 import { subscribeToAllPrivateChatsMeta } from '../../lib/staff-chat-service'
 import { subscribeToPendingDisputesCount } from '../../lib/disputes-service'
-import { db } from '../../lib/firebase'
+import { db, auth } from '../../lib/firebase'
 import { doc, onSnapshot, setDoc, collection, getDocs, query, limit, writeBatch, getCountFromServer } from 'firebase/firestore'
 import {
   Activity,
@@ -87,6 +87,7 @@ export default function AdminDashboardPage() {
   const [serverPingMs, setServerPingMs] = useState(0)
   const [unreadStaffMessagesCount, setUnreadStaffMessagesCount] = useState(0)
   const [pendingDisputesCount, setPendingDisputesCount] = useState(0)
+  const reconcileCooldownUntilRef = useRef<number>(0)
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -234,45 +235,64 @@ export default function AdminDashboardPage() {
     try {
       // 1. Ejecutar Conciliación Patrimonial Autoritativa en el Backend (/api/admin/treasury/reconcile)
       try {
-        const authHeaders = await getStaffAuthHeadersAsync('admin')
-        // Si aún no hay credencial/token activo, dejamos que el listener reactivo onSnapshot
-        // mantenga actualizados los saldos desde global_ledger sin disparar 401
-        if (authHeaders.Authorization) {
-          const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...authHeaders
-            },
-            body: JSON.stringify({
-              adminUid: adminUser?.uid || 'adm_super',
-              adminName: adminUser?.displayName || 'Super Admin'
-            })
-          })
-          if (reconcileRes.ok) {
-            const recData = await reconcileRes.json()
-            if (recData.ledger) {
-              const l = recData.ledger
-              const playerUSD = Number(l.playerCustodyUSD ?? l.playerBalancesUSD ?? 0)
-              const playerCoins = Number(l.playerCustodyCoins ?? l.playerBalancesCoins ?? Math.round(playerUSD * 100))
-              const profitsUSD = Number(l.houseNetProfitsUSD ?? 0)
-              const profitsCoins = Number(l.houseNetProfitsCoins ?? Math.round(profitsUSD * 100))
-              const floatsUSD = Number(l.cashierFloatsUSD ?? 0)
-              const floatsCoins = Number(l.cashierFloatsCoins ?? Math.round(floatsUSD * 100))
-              const totalUSD = Number(l.totalVaultUSD ?? (playerUSD + profitsUSD))
-              const totalCoins = Number(l.totalVaultSugarCoins ?? Math.round(totalUSD * 100))
-
-              setVault({
-                totalVaultUSD: totalUSD,
-                totalVaultSugarCoins: totalCoins,
-                playerBalancesUSD: playerUSD,
-                playerBalancesCoins: playerCoins,
-                cashierFloatsUSD: floatsUSD,
-                cashierFloatsCoins: floatsCoins,
-                houseNetProfitsUSD: profitsUSD,
-                houseNetProfitsCoins: profitsCoins,
-                lastAuditedAt: l.lastAuditedAt || Date.now()
+        const now = Date.now()
+        if (now >= reconcileCooldownUntilRef.current) {
+          const authHeaders = await getStaffAuthHeadersAsync('admin')
+          // Si aún no hay credencial/token activo, dejamos que el listener reactivo onSnapshot
+          // mantenga actualizados los saldos desde global_ledger sin disparar 401
+          if (authHeaders.Authorization) {
+            const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders
+              },
+              body: JSON.stringify({
+                adminUid: adminUser?.uid || 'adm_super',
+                adminName: adminUser?.displayName || 'Super Admin'
               })
+            })
+            if (reconcileRes.ok) {
+              reconcileCooldownUntilRef.current = 0
+              const recData = await reconcileRes.json()
+              if (recData.ledger) {
+                const l = recData.ledger
+                const playerUSD = Number(l.playerCustodyUSD ?? l.playerBalancesUSD ?? 0)
+                const playerCoins = Number(l.playerCustodyCoins ?? l.playerBalancesCoins ?? Math.round(playerUSD * 100))
+                const profitsUSD = Number(l.houseNetProfitsUSD ?? 0)
+                const profitsCoins = Number(l.houseNetProfitsCoins ?? Math.round(profitsUSD * 100))
+                const floatsUSD = Number(l.cashierFloatsUSD ?? 0)
+                const floatsCoins = Number(l.cashierFloatsCoins ?? Math.round(floatsUSD * 100))
+                const totalUSD = Number(l.totalVaultUSD ?? (playerUSD + profitsUSD))
+                const totalCoins = Number(l.totalVaultSugarCoins ?? Math.round(totalUSD * 100))
+
+                setVault({
+                  totalVaultUSD: totalUSD,
+                  totalVaultSugarCoins: totalCoins,
+                  playerBalancesUSD: playerUSD,
+                  playerBalancesCoins: playerCoins,
+                  cashierFloatsUSD: floatsUSD,
+                  cashierFloatsCoins: floatsCoins,
+                  houseNetProfitsUSD: profitsUSD,
+                  houseNetProfitsCoins: profitsCoins,
+                  lastAuditedAt: l.lastAuditedAt || Date.now()
+                })
+              }
+            } else if (reconcileRes.status === 403 || reconcileRes.status === 401) {
+              // Pausar reintentos por 30s para evitar bucle continuo en consola
+              reconcileCooldownUntilRef.current = now + 30000
+              // Forzar actualización inmediata del ID Token en Firebase Auth del cliente
+              if (auth && auth.currentUser) {
+                try {
+                  const freshToken = await auth.currentUser.getIdToken(true)
+                  if (freshToken) {
+                    sessionStorage.setItem('sugar_staff_id_token', freshToken)
+                    localStorage.setItem('sugar_staff_id_token', freshToken)
+                    // Habilitar reintento inmediato tras refresh exitoso
+                    reconcileCooldownUntilRef.current = 0
+                  }
+                } catch {}
+              }
             }
           }
         }

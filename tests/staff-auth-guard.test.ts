@@ -108,5 +108,24 @@ describe('Suite: Endurecimiento de Seguridad & Staff Auth Guard (v9.6.0)', () =>
 
     assert.notEqual(hash1, hash2, 'Dos llamadas a hashPassword con la misma clave deben generar hashes distintos debido a la sal criptográfica')
   })
+
+  it('CANONICAL STAFF: debe contener las cuentas oficiales requeridas del sistema', async () => {
+    const { CANONICAL_STAFF_ACCOUNTS } = await import('../sugar-ludo-admin-hub/lib/api-auth-guard.ts')
+    assert.ok(Array.isArray(CANONICAL_STAFF_ACCOUNTS))
+    assert.ok(CANONICAL_STAFF_ACCOUNTS.length >= 3)
+
+    const superAdmin = CANONICAL_STAFF_ACCOUNTS.find(a => a.email === 'admin@sugarludo.com')
+    assert.ok(superAdmin, 'Debe existir la cuenta de Super Admin')
+    assert.equal(superAdmin.role, 'super_admin')
+    assert.equal(superAdmin.username, 'superadmin')
+
+    const financialAdmin = CANONICAL_STAFF_ACCOUNTS.find(a => a.email === 'finanzas@sugarludo.com')
+    assert.ok(financialAdmin, 'Debe existir la cuenta de Admin Financiero')
+    assert.equal(financialAdmin.role, 'financial_admin')
+
+    const cashier = CANONICAL_STAFF_ACCOUNTS.find(a => a.role === 'cashier')
+    assert.ok(cashier, 'Debe existir la cuenta de Cajero oficial')
+  })
 })
+
 

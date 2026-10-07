@@ -24,6 +24,37 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 }
 
+// Cuentas canónicas oficiales del sistema para Staff y Administración
+export const CANONICAL_STAFF_ACCOUNTS: Array<{
+  uid: string
+  username: string
+  email: string
+  role: StaffRole
+  name: string
+}> = [
+  {
+    uid: 'adm_super_carlos_001',
+    username: 'superadmin',
+    email: 'admin@sugarludo.com',
+    role: 'super_admin',
+    name: 'Carlos (Super Admin)'
+  },
+  {
+    uid: 'adm_fin_diego_002',
+    username: 'diego.finanzas',
+    email: 'finanzas@sugarludo.com',
+    role: 'financial_admin',
+    name: 'Diego (Admin Financiero)'
+  },
+  {
+    uid: 'csh_carlosandroid_001',
+    username: 'carlosandroid',
+    email: 'carlos.cajero@sugarludo.com',
+    role: 'cashier',
+    name: 'carlosandroid (Cajero)'
+  }
+]
+
 /**
  * Valida si un rol específico cumple con los roles requeridos.
  * Los roles con prefijo admin (admin, super_admin, financial_admin, support_admin)
@@ -88,29 +119,74 @@ export async function verifyStaffAuth(
     try {
       const decoded = await adminAuth.verifyIdToken(token)
       if (decoded && decoded.uid) {
-        // Si hay claim de rol admin-tier, se prioriza sobre accountType genérico
-        let role = (decoded.role as string) || (decoded.accountType as string)
+        // Extraer rol de todos los posibles contenedores de claims en el token JWT
+        let role = (decoded.role as string) ||
+                   (decoded.accountType as string) ||
+                   ((decoded as any).claims?.role as string) ||
+                   ((decoded as any).claims?.accountType as string) ||
+                   ((decoded as any)['https://sugarludo.com/role'] as string)
+        
+        let staffUid = (decoded.staffUid as string) || ((decoded as any).claims?.staffUid as string) || ''
         const normalizedUid = String(decoded.uid).toLowerCase().trim()
-        const normalizedEmail = String(decoded.email || '').toLowerCase().trim()
+        let userEmail = String(decoded.email || '').toLowerCase().trim()
 
-        // Si el token aún no tiene custom claims de rol, consultar perfil formal en Firestore
-        if (!role && adminDb && adminDb.collection) {
+        // Si el token aún no tiene custom claims de rol, consultar userRecord autoritativo en Firebase Auth
+        if (!role && adminAuth && typeof adminAuth.getUser === 'function') {
+          try {
+            const userRecord = await adminAuth.getUser(decoded.uid)
+            if (userRecord) {
+              if (userRecord.customClaims?.role) {
+                role = userRecord.customClaims.role
+              } else if (userRecord.customClaims?.accountType) {
+                role = userRecord.customClaims.accountType
+              }
+              if (userRecord.customClaims?.staffUid) {
+                staffUid = userRecord.customClaims.staffUid
+              }
+              if (!userEmail && userRecord.email) {
+                userEmail = String(userRecord.email).toLowerCase().trim()
+              }
+            }
+          } catch {}
+        }
+
+        // Si aún no se determinó el rol, consultar perfil formal en Firestore (adminDb o db client SDK)
+        if (!role) {
           try {
             // A) Consultar en system_config/admin_accounts (almacén canónico de administradores)
-            const adminAccountsDoc = await adminDb.collection('system_config').doc('admin_accounts').get()
-            if (adminAccountsDoc.exists) {
-              const accounts = adminAccountsDoc.data()?.accounts || []
-              const match = accounts.find((a: any) =>
-                (a.uid && a.uid.toLowerCase() === normalizedUid) ||
-                (a.email && a.email.toLowerCase() === normalizedEmail)
-              )
-              if (match && match.isActive !== false && match.role) {
-                role = match.role
+            let accounts: any[] = []
+            if (adminDb && adminDb.collection) {
+              const adminAccountsDoc = await adminDb.collection('system_config').doc('admin_accounts').get()
+              if (adminAccountsDoc.exists) {
+                accounts = adminAccountsDoc.data()?.accounts || []
+              }
+            }
+            if (accounts.length === 0 && db) {
+              const clientSnap = await getDoc(doc(db, 'system_config', 'admin_accounts'))
+              if (clientSnap.exists()) {
+                accounts = clientSnap.data()?.accounts || []
               }
             }
 
+            const match = accounts.find((a: any) => {
+              const aUid = String(a.uid || '').toLowerCase().trim()
+              const aEmail = String(a.email || '').toLowerCase().trim()
+              const aUser = String(a.username || '').toLowerCase().trim()
+              return (
+                (aUid && aUid === normalizedUid) ||
+                (staffUid && aUid === staffUid.toLowerCase()) ||
+                (userEmail && aEmail === userEmail) ||
+                (aUser && (aUser === normalizedUid || (staffUid && aUser === staffUid.toLowerCase())))
+              )
+            })
+
+            if (match && match.isActive !== false && match.role) {
+              role = match.role
+              if (!staffUid && match.uid) staffUid = match.uid
+            }
+
             // B) Consultar en staff_profiles si aún no se determinó
-            if (!role) {
+            if (!role && adminDb && adminDb.collection) {
               const staffDoc = await adminDb.collection('staff_profiles').doc(decoded.uid).get()
               if (staffDoc.exists) {
                 const data = staffDoc.data()
@@ -121,7 +197,7 @@ export async function verifyStaffAuth(
             }
 
             // C) Consultar en cashier_profiles
-            if (!role) {
+            if (!role && adminDb && adminDb.collection) {
               const cashierDoc = await adminDb.collection('cashier_profiles').doc(decoded.uid).get()
               if (cashierDoc.exists) {
                 const cData = cashierDoc.data()
@@ -131,6 +207,36 @@ export async function verifyStaffAuth(
               }
             }
           } catch {}
+        }
+
+        // 3. Fallback canónico: Si es una cuenta de staff del sistema canónico oficial
+        if (!role) {
+          const canonical = CANONICAL_STAFF_ACCOUNTS.find((c) => {
+            const cUid = c.uid.toLowerCase()
+            const cEmail = c.email.toLowerCase()
+            const cUser = c.username.toLowerCase()
+            return (
+              (cUid === normalizedUid) ||
+              (staffUid && cUid === staffUid.toLowerCase()) ||
+              (userEmail && cEmail === userEmail) ||
+              (cUser === normalizedUid || (staffUid && cUser === staffUid.toLowerCase()))
+            )
+          })
+
+          if (canonical) {
+            role = canonical.role
+            if (!staffUid) staffUid = canonical.uid
+          }
+        }
+
+        // Si se resolvió el rol y no estaba en customClaims de Firebase Auth,
+        // sincronizar claims en background para futuras peticiones ultra-rápidas
+        if (role && adminAuth && typeof adminAuth.setCustomUserClaims === 'function' && !decoded.role) {
+          adminAuth.setCustomUserClaims(decoded.uid, {
+            role,
+            staffUid: staffUid || decoded.uid,
+            isActive: true
+          }).catch(() => {})
         }
 
         // CANDADO DE SEGURIDAD ESTRICTO:
@@ -152,9 +258,9 @@ export async function verifyStaffAuth(
         }
 
         verifiedUser = {
-          uid: decoded.uid,
+          uid: staffUid || decoded.uid,
           role: normalizedRole,
-          email: decoded.email,
+          email: userEmail || decoded.email,
           name: (decoded.name as string) || (decoded.displayName as string) || 'Staff'
         }
       }
