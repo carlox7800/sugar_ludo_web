@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.8.1',
+  latestVersion: '9.8.2',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
   releaseDate: '2026-10-07',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.1/SugarLudo-v9.8.1.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.1/SugarLudo-v9.8.1-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.2/SugarLudo-v9.8.2.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.2/SugarLudo-v9.8.2-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.8.1: Corrección de autenticación staff 403, renovación reactiva de credenciales y sincronización de tesorería.'
+  changelog: 'Actualización v9.8.2: Normalización de roles Staff en la validación del servidor y backoff real ante 403 en reconciliación.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)

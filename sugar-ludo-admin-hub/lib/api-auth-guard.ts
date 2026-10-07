@@ -24,6 +24,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 }
 
+/**
+ * Normaliza cualquier variante de rol ('Super Admin', 'superadmin', 'super-admin', 'FINANCIAL ADMIN')
+ * a un StaffRole canónico. Devuelve '' si no es un rol Staff reconocido.
+ */
+export function normalizeStaffRole(raw: unknown): StaffRole | '' {
+  if (typeof raw !== 'string') return ''
+  const r = raw.toLowerCase().trim().replace(/[\s-]+/g, '_')
+  const aliases: Record<string, StaffRole> = {
+    cashier: 'cashier',
+    cajero: 'cashier',
+    admin: 'admin',
+    administrador: 'admin',
+    super_admin: 'super_admin',
+    superadmin: 'super_admin',
+    financial_admin: 'financial_admin',
+    financialadmin: 'financial_admin',
+    support_admin: 'support_admin',
+    supportadmin: 'support_admin'
+  }
+  return aliases[r] || ''
+}
+
 // Cuentas canónicas oficiales del sistema para Staff y Administración
 export const CANONICAL_STAFF_ACCOUNTS: Array<{
   uid: string
@@ -120,12 +142,24 @@ export async function verifyStaffAuth(
       const decoded = await adminAuth.verifyIdToken(token)
       if (decoded && decoded.uid) {
         // Extraer rol de todos los posibles contenedores de claims en el token JWT
-        let role = (decoded.role as string) ||
-                   (decoded.accountType as string) ||
-                   ((decoded as any).claims?.role as string) ||
-                   ((decoded as any).claims?.accountType as string) ||
-                   ((decoded as any)['https://sugarludo.com/role'] as string)
-        
+        // Se normaliza cada candidato y se descartan valores no reconocidos (ej. 'Super Admin', 'superadmin'),
+        // de modo que un claim con formato distinto no bloquee la resolución por perfil.
+        const candidates = [
+          decoded.role,
+          decoded.accountType,
+          (decoded as any).claims?.role,
+          (decoded as any).claims?.accountType,
+          (decoded as any)['https://sugarludo.com/role']
+        ]
+        let role = ''
+        for (const c of candidates) {
+          const n = normalizeStaffRole(c)
+          if (n) {
+            // Prioriza roles de nivel admin sobre 'cashier' genérico
+            if (!role || (role === 'cashier' && n !== 'cashier')) role = n
+          }
+        }
+
         let staffUid = (decoded.staffUid as string) || ((decoded as any).claims?.staffUid as string) || ''
         const normalizedUid = String(decoded.uid).toLowerCase().trim()
         let userEmail = String(decoded.email || '').toLowerCase().trim()
@@ -135,11 +169,8 @@ export async function verifyStaffAuth(
           try {
             const userRecord = await adminAuth.getUser(decoded.uid)
             if (userRecord) {
-              if (userRecord.customClaims?.role) {
-                role = userRecord.customClaims.role
-              } else if (userRecord.customClaims?.accountType) {
-                role = userRecord.customClaims.accountType
-              }
+              role = normalizeStaffRole(userRecord.customClaims?.role) ||
+                     normalizeStaffRole(userRecord.customClaims?.accountType) || ''
               if (userRecord.customClaims?.staffUid) {
                 staffUid = userRecord.customClaims.staffUid
               }
@@ -180,8 +211,8 @@ export async function verifyStaffAuth(
               )
             })
 
-            if (match && match.isActive !== false && match.role) {
-              role = match.role
+            if (match && match.isActive !== false && normalizeStaffRole(match.role)) {
+              role = normalizeStaffRole(match.role)
               if (!staffUid && match.uid) staffUid = match.uid
             }
 
@@ -190,8 +221,8 @@ export async function verifyStaffAuth(
               const staffDoc = await adminDb.collection('staff_profiles').doc(decoded.uid).get()
               if (staffDoc.exists) {
                 const data = staffDoc.data()
-                if (data?.isActive !== false && data?.role) {
-                  role = data.role
+                if (data?.isActive !== false && normalizeStaffRole(data?.role)) {
+                  role = normalizeStaffRole(data?.role)
                 }
               }
             }
@@ -242,15 +273,22 @@ export async function verifyStaffAuth(
         // CANDADO DE SEGURIDAD ESTRICTO:
         // Prohibida la escalada de privilegios. Si el usuario no tiene un rol Staff explícito
         // verificado, se rechaza inmediatamente con 403 Prohibido. Jamás asumir super_admin.
-        const normalizedRole = (role || '').toLowerCase().trim()
-        const validStaffRoles = ['cashier', 'admin', 'super_admin', 'financial_admin', 'support_admin']
-        if (!role || !validStaffRoles.includes(normalizedRole)) {
+        const normalizedRole = normalizeStaffRole(role)
+        if (!normalizedRole) {
+          console.warn('[verifyStaffAuth] 403: rol Staff no resuelto', {
+            tokenUid: decoded.uid,
+            tokenEmail: userEmail || null,
+            staffUid: staffUid || null,
+            rawRole: role || null,
+            hasAdminDb: Boolean(adminDb)
+          })
           return {
             authorized: false,
             errorResponse: NextResponse.json(
               {
                 success: false,
-                error: 'Acceso denegado: El usuario autenticado no posee un rol de Staff autorizado.'
+                error: 'Acceso denegado: El usuario autenticado no posee un rol de Staff autorizado.',
+                reason: 'staff_role_unresolved'
               },
               { status: 403, headers: corsHeaders }
             )

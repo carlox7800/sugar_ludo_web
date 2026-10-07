@@ -126,6 +126,18 @@ describe('Suite: Endurecimiento de Seguridad & Staff Auth Guard (v9.6.0)', () =>
     const cashier = CANONICAL_STAFF_ACCOUNTS.find(a => a.role === 'cashier')
     assert.ok(cashier, 'Debe existir la cuenta de Cajero oficial')
   })
+
+  it('ROLES: normalizeStaffRole acepta variantes legítimas y rechaza roles desconocidos', async () => {
+    const { normalizeStaffRole } = await import('../sugar-ludo-admin-hub/lib/api-auth-guard.ts')
+    assert.equal(normalizeStaffRole('Super Admin'), 'super_admin')
+    assert.equal(normalizeStaffRole('superadmin'), 'super_admin')
+    assert.equal(normalizeStaffRole('SUPER-ADMIN'), 'super_admin')
+    assert.equal(normalizeStaffRole('financial admin'), 'financial_admin')
+    assert.equal(normalizeStaffRole('cashier'), 'cashier')
+    assert.equal(normalizeStaffRole('player'), '')
+    assert.equal(normalizeStaffRole(undefined), '')
+    assert.equal(normalizeStaffRole(''), '')
+  })
 })
 
 

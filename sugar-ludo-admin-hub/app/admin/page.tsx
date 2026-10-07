@@ -279,17 +279,16 @@ export default function AdminDashboardPage() {
                 })
               }
             } else if (reconcileRes.status === 403 || reconcileRes.status === 401) {
-              // Pausar reintentos por 30s para evitar bucle continuo en consola
-              reconcileCooldownUntilRef.current = now + 30000
-              // Forzar actualización inmediata del ID Token en Firebase Auth del cliente
+              // Backoff real: la v9.8.1 reseteaba el cooldown a 0 tras refrescar el token,
+              // por lo que el reintento seguía ocurriendo cada 5s. Ahora se espera 60s siempre.
+              reconcileCooldownUntilRef.current = now + 60000
+              // Un único refresco del ID Token para que el siguiente intento use claims actualizados
               if (auth && auth.currentUser) {
                 try {
                   const freshToken = await auth.currentUser.getIdToken(true)
                   if (freshToken) {
                     sessionStorage.setItem('sugar_staff_id_token', freshToken)
                     localStorage.setItem('sugar_staff_id_token', freshToken)
-                    // Habilitar reintento inmediato tras refresh exitoso
-                    reconcileCooldownUntilRef.current = 0
                   }
                 } catch {}
               }
