@@ -14,7 +14,9 @@ interface AdminAuthContextType {
   isLoading: boolean
   login: (identifier: string, pass: string) => Promise<{ success: boolean; message: string }>
   loginCashier: (identifier: string, pass: string) => Promise<{ success: boolean; message: string; cashier?: CashierManagementProfile }>
-  logout: () => void
+  logout: (reason?: string) => void
+  sessionWarning: string | null
+  clearSessionWarning: () => void
   updateCurrentAdmin: (displayName: string, email: string, newPassword?: string) => Promise<boolean>
   
   // Admin Accounts Management
@@ -95,6 +97,9 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [adminList, setAdminList] = useState<AdminUserProfile[]>(INITIAL_ADMINS)
   const [cashierList, setCashierList] = useState<CashierManagementProfile[]>(MOCK_CASHIERS_MANAGEMENT)
   const [isLoading, setIsLoading] = useState(true)
+  const [sessionWarning, setSessionWarning] = useState<string | null>(null)
+
+  const clearSessionWarning = () => setSessionWarning(null)
 
   // 1. Carga inicial instantánea desde localStorage
   useEffect(() => {
@@ -152,6 +157,41 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => unsubAuth()
   }, [])
+
+  // 1.1 Control estricto de Inactividad (15 min cajeros, 30 min administradores) - Fase 1
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const hasAdmin = !!adminUser
+    const hasCashier = !!localStorage.getItem('sugar_cashier_session')
+    if (!hasAdmin && !hasCashier) return
+
+    const timeoutMs = (!hasAdmin && hasCashier) ? 15 * 60 * 1000 : 30 * 60 * 1000
+
+    let timeoutId: any = null
+    const handleTimeout = () => {
+      logout('Tu sesión se cerró por inactividad prolongada por motivos de seguridad.')
+    }
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(handleTimeout, timeoutMs)
+    }
+
+    const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click']
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, resetTimer, { passive: true })
+    })
+
+    resetTimer()
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId)
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, resetTimer)
+      })
+    }
+  }, [adminUser])
 
   // 2. Sincronización en vivo con Firestore (system_config) multiplataforma
   useEffect(() => {
@@ -382,13 +422,19 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const logout = () => {
+  const logout = (reason?: string) => {
+    try {
+      fetch('/api/staff/auth/logout', { method: 'POST' }).catch(() => {})
+    } catch {}
     signOut(auth).catch(() => {})
     sessionStorage.removeItem('sugar_staff_id_token')
     localStorage.removeItem('sugar_staff_id_token')
     setAdminUser(null)
     localStorage.removeItem('sugar_admin_session')
     localStorage.removeItem('sugar_cashier_session')
+    if (reason) {
+      setSessionWarning(reason)
+    }
   }
 
   const updateCurrentAdmin = async (displayName: string, email: string, newPassword?: string): Promise<boolean> => {
@@ -752,6 +798,8 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         login,
         loginCashier,
         logout,
+        sessionWarning,
+        clearSessionWarning,
         updateCurrentAdmin,
         adminList,
         createNewAdmin,

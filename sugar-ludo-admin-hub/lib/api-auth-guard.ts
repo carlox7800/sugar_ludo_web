@@ -97,16 +97,79 @@ function roleMatches(userRole: string, allowedRoles: StaffRole[]): boolean {
   })
 }
 
+import {
+  extractStaffSessionCookie,
+  verifyStaffSessionToken,
+  buildClearStaffSessionCookie
+} from './session-manager.ts'
+
 /**
  * Guardián de seguridad para rutas de API de Sugar Ludo Admin Hub.
- * Extrae y valida el token Bearer del encabezado Authorization.
- * Soporta Firebase Admin Auth (JWT idToken) y tokens de sesión estructurados
- * validados contra Firestore en modo híbrido.
+ * 1. Verifica prioritariamente la cookie HttpOnly protegida ('sugar_staff_session').
+ *    - Aplica expiración estricta por inactividad (15 min cajeros, 30 min admin).
+ *    - Aplica control de sesión única concurrente (Single Active Session).
+ * 2. Soporte fallback/híbrido para encabezados Authorization Bearer (Firebase Admin JWT).
  */
 export async function verifyStaffAuth(
   request: Request,
   allowedRoles?: StaffRole[]
 ): Promise<AuthVerificationResult> {
+  // A) Verificación prioritaria vía Cookie HttpOnly Segura (Fase 1)
+  const sessionCookieToken = extractStaffSessionCookie(request)
+  if (sessionCookieToken) {
+    const sessionRes = verifyStaffSessionToken(sessionCookieToken)
+    if (!sessionRes.valid) {
+      const clearCookie = buildClearStaffSessionCookie()
+      return {
+        authorized: false,
+        errorResponse: NextResponse.json(
+          {
+            success: false,
+            error: sessionRes.message || 'Sesión de Staff expirada o inválida.',
+            code: sessionRes.error ? `SESSION_${sessionRes.error.toUpperCase()}` : 'SESSION_INVALID'
+          },
+          {
+            status: 401,
+            headers: {
+              ...corsHeaders,
+              'Set-Cookie': clearCookie
+            }
+          }
+        )
+      }
+    }
+
+    if (sessionRes.payload) {
+      const payload = sessionRes.payload
+      if (allowedRoles && allowedRoles.length > 0) {
+        const hasRole = roleMatches(payload.role, allowedRoles)
+        if (!hasRole) {
+          return {
+            authorized: false,
+            errorResponse: NextResponse.json(
+              {
+                success: false,
+                error: `Permisos insuficientes. Se requiere uno de los siguientes roles: ${allowedRoles.join(', ')}`
+              },
+              { status: 403, headers: corsHeaders }
+            )
+          }
+        }
+      }
+
+      return {
+        authorized: true,
+        user: {
+          uid: payload.uid,
+          role: payload.role,
+          email: payload.email,
+          name: payload.name
+        }
+      }
+    }
+  }
+
+  // B) Verificación vía Encabezado Authorization Bearer (Fallback / API Clients)
   const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -115,7 +178,7 @@ export async function verifyStaffAuth(
       errorResponse: NextResponse.json(
         {
           success: false,
-          error: 'Acceso no autorizado. Se requiere token Bearer en el encabezado Authorization.'
+          error: 'Acceso no autorizado. Se requiere sesión activa o token Bearer en el encabezado Authorization.'
         },
         { status: 401, headers: corsHeaders }
       )
@@ -408,3 +471,19 @@ export function getStaffAuthHeaders(): Record<string, string> {
   } catch {}
   return {}
 }
+
+/**
+ * Autentica una petición de API para staff devolviendo un resultado unificado
+ */
+export async function authenticateApiStaffRequest(
+  request: Request,
+  allowedRoles?: StaffRole[]
+): Promise<{ authenticated: boolean; account?: AuthenticatedStaffUser; error?: string }> {
+  const result = await verifyStaffAuth(request, allowedRoles)
+  return {
+    authenticated: result.authorized,
+    account: result.user,
+    error: result.errorResponse ? 'No autorizado o sesión de Staff expirada' : undefined
+  }
+}
+

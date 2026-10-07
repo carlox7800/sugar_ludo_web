@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server'
 import { admin, adminAuth, adminDb, hasAdminCredentials } from '@/lib/firebase-admin'
 import { verifyPassword, hashPassword } from '@/lib/password-hasher'
+import {
+  createStaffSessionToken,
+  buildStaffSessionCookie,
+  registerActiveCashierSession,
+  generateSessionId,
+  SESSION_CONFIG
+} from '@/lib/session-manager'
+import { verifyTOTPCode } from '@/lib/two-factor-auth'
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -15,13 +23,13 @@ export async function OPTIONS() {
 
 /**
  * Autenticación oficial de Staff (Admin & Cajeros) mediante Firebase Admin SDK.
- * Emite un Custom Token firmado criptográficamente para iniciar sesión en Firebase Auth.
- * Erradica credenciales hardcodeadas y valida contraseñas con hash criptográfico scrypt.
+ * Emite un Custom Token firmado criptográficamente para iniciar sesión en Firebase Auth,
+ * además de una Cookie HttpOnly de sesión segura con control de concurrencia e inactividad.
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { identifier, password, role } = body || {}
+    const { identifier, password, role, totpCode } = body || {}
 
     if (!identifier || !password) {
       return NextResponse.json(
@@ -152,6 +160,29 @@ export async function POST(request: Request) {
       )
     }
 
+    // 2.1 Verificación de 2FA (TOTP) si la cuenta lo tiene habilitado
+    if (matchedProfile.twoFactorEnabled) {
+      if (!totpCode) {
+        return NextResponse.json(
+          {
+            success: true,
+            requires2FA: true,
+            message: 'Se requiere código de autenticación en dos pasos (2FA).',
+            uid: matchedProfile.uid
+          },
+          { headers: { 'Access-Control-Allow-Origin': '*' } }
+        )
+      }
+
+      const isValidTOTP = verifyTOTPCode(String(totpCode).trim(), matchedProfile.twoFactorSecret || '')
+      if (!isValidTOTP) {
+        return NextResponse.json(
+          { success: false, error: 'Código 2FA incorrecto o expirado.' },
+          { status: 401, headers: { 'Access-Control-Allow-Origin': '*' } }
+        )
+      }
+    }
+
     // 3. Generación de Custom Token con Firebase Admin SDK
     if (!adminAuth) {
       return NextResponse.json(
@@ -179,9 +210,10 @@ export async function POST(request: Request) {
     }
 
     // Inyectar Custom Claims autoritativos
+    const resolvedAccountType = matchedProfile.accountType || requestedRole
     await adminAuth.setCustomUserClaims(authUserRecord.uid, {
       role: matchedProfile.role,
-      accountType: matchedProfile.accountType || requestedRole,
+      accountType: resolvedAccountType,
       staffUid: matchedProfile.uid,
       isActive: true
     })
@@ -189,24 +221,53 @@ export async function POST(request: Request) {
     // Generar Custom Token firmado por Firebase Admin
     const customToken = await adminAuth.createCustomToken(authUserRecord.uid, {
       role: matchedProfile.role,
-      accountType: matchedProfile.accountType || requestedRole,
+      accountType: resolvedAccountType,
       email: targetEmail
     })
 
-    return NextResponse.json(
+    // 4. Creación de Sesión Segura HttpOnly y Control de Dispositivos (Fase 1)
+    const sessionId = generateSessionId()
+    const isCashier = matchedProfile.role === 'cashier' || requestedRole === 'cashier'
+
+    // Control de sesión única activa para cajeros
+    if (isCashier) {
+      registerActiveCashierSession(matchedProfile.uid, sessionId)
+    }
+
+    const sessionResult = createStaffSessionToken({
+      sessionId,
+      uid: matchedProfile.uid,
+      name: matchedProfile.displayName || matchedProfile.name || 'Staff',
+      email: targetEmail,
+      role: matchedProfile.role,
+      accountType: resolvedAccountType
+    })
+
+    const cookieHeader = buildStaffSessionCookie(sessionResult.token)
+    const maxAgeSeconds = isCashier ? SESSION_CONFIG.cashierMaxLifeSeconds : SESSION_CONFIG.adminMaxLifeSeconds
+
+    const response = NextResponse.json(
       {
         success: true,
         customToken,
+        sessionId,
+        expiresIn: maxAgeSeconds,
+        idleTimeoutMinutes: isCashier ? 15 : 30,
         profile: {
           uid: matchedProfile.uid,
           email: targetEmail,
           displayName: matchedProfile.displayName || matchedProfile.name || 'Staff',
           role: matchedProfile.role,
-          accountType: matchedProfile.accountType || requestedRole
+          accountType: resolvedAccountType
         }
       },
       { headers: { 'Access-Control-Allow-Origin': '*' } }
     )
+
+    // Inyectar Set-Cookie para transporte seguro HttpOnly
+    response.headers.set('Set-Cookie', cookieHeader)
+
+    return response
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err.message || 'Error procesando autenticación' },

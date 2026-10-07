@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.8.3',
+  latestVersion: '9.8.4',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
   releaseDate: '2026-10-07',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.3/SugarLudo-v9.8.3.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.3/SugarLudo-v9.8.3-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.4/SugarLudo-v9.8.4.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.4/SugarLudo-v9.8.4-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.8.3: Solución de autorización de reconciliación en producción con correlación de sesión y validación criptográfica RBAC.'
+  changelog: 'Actualización v9.8.4 (Fase 1): Sesiones seguras HttpOnly, expiración estricta por inactividad, control de sesión única de cajero y arquitectura 2FA RFC 6238.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)
