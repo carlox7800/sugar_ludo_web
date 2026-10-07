@@ -253,9 +253,12 @@ const server = http.createServer((req, res) => {
             broadcastToSSE(null, payload);
           } else if (payload.type === 'telemetry_heartbeat') {
             const sessId = payload.sessionId || payload.uid || clientIp;
+            const state = payload.state || 'playersInLobby';
+            const rawMode = payload.mode ? String(payload.mode).toLowerCase() : 'none';
+            const mode = (state === 'playersInLobby' || rawMode === 'none') ? 'none' : rawMode;
             activeTelemetrySessions.set(sessId, {
-              state: payload.state || 'playersInLobby',
-              mode: payload.mode || '4p',
+              state,
+              mode,
               latencyMs: typeof payload.latencyMs === 'number' ? payload.latencyMs : 35,
               ts: Date.now()
             });
@@ -310,18 +313,23 @@ const server = http.createServer((req, res) => {
       }
 
       let inLobby = 0, inAI = 0, inOnline = 0, inComp = 0;
-      let mode2p = 0, mode4p = 0, mode6p = 0;
+      let mode2p = 0, mode3p = 0, mode4p = 0, mode5p = 0, mode6p = 0;
       let latencies = [];
 
       for (const sess of activeTelemetrySessions.values()) {
-        if (sess.state === 'playersInLobby') inLobby++;
-        else if (sess.state === 'playersInAITraining') inAI++;
-        else if (sess.state === 'playersInOnlineTraining') inOnline++;
-        else if (sess.state === 'playersInCompetitive') inComp++;
+        if (sess.state === 'playersInLobby') {
+          inLobby++;
+        } else {
+          if (sess.state === 'playersInAITraining') inAI++;
+          else if (sess.state === 'playersInOnlineTraining') inOnline++;
+          else if (sess.state === 'playersInCompetitive') inComp++;
 
-        if (sess.mode === '2p') mode2p++;
-        else if (sess.mode === '6p') mode6p++;
-        else mode4p++;
+          if (sess.mode === '2p') mode2p++;
+          else if (sess.mode === '3p') mode3p++;
+          else if (sess.mode === '4p') mode4p++;
+          else if (sess.mode === '5p') mode5p++;
+          else if (sess.mode === '6p') mode6p++;
+        }
 
         if (typeof sess.latencyMs === 'number') latencies.push(sess.latencyMs);
       }
@@ -346,9 +354,14 @@ const server = http.createServer((req, res) => {
           activeMatchRooms: Math.ceil((inOnline + inComp) / 2),
           modeDistribution: {
             twoPlayers: mode2p,
+            threePlayers: mode3p,
             fourPlayers: mode4p,
+            fivePlayers: mode5p,
             sixPlayers: mode6p,
-            aiTraining: inAI
+            aiTraining: inAI,
+            aiGames: inAI,
+            onlineGames: inOnline,
+            competitiveGames: inComp
           },
           medianPingMs: medianPing,
           serverStatus: 'online',

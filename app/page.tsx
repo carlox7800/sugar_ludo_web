@@ -45,7 +45,7 @@ import {
   respondToRealtimeDuelInvite,
   clearIncomingDuelInvite
 } from '@/lib/friends-service'
-import { initPresenceTracker, updatePlayerTelemetryState, mapScreenToTelemetryState } from '@/lib/presence-service'
+import { initPresenceTracker, updatePlayerTelemetryState, mapScreenToTelemetryState, TelemetryBoardMode } from '@/lib/presence-service'
 import { clientTelemetry } from '@/lib/telemetry'
 
 export type Screen =
@@ -141,14 +141,16 @@ function PageContent() {
   const [onlineGameData, setOnlineGameData] = useState<OnlineGameData | null>(null)
   const [onlineGameOrigin, setOnlineGameOrigin] = useState<Screen>('lobby')
 
-  const setScreenAndRef = (s: Screen) => {
+  const setScreenAndRef = (s: Screen, customMode?: TelemetryBoardMode | null) => {
     globalLogger.nav(screenRef.current, s)
     if (s !== 'online-game' && s !== 'online-training' && (screenRef.current === 'online-game' || screenRef.current === 'online-training')) {
       leaveVoiceRoom(true)
     }
     screenRef.current = s
     setScreen(s)
-    updatePlayerTelemetryState(mapScreenToTelemetryState(s, onlineGameOrigin))
+    const targetState = mapScreenToTelemetryState(s, onlineGameOrigin)
+    const boardMode = (s === 'game' || s === 'online-game') ? (customMode ?? null) : null
+    updatePlayerTelemetryState(targetState, boardMode)
   }
   
   // UI States
@@ -265,7 +267,9 @@ function PageContent() {
               ? 'online-training' 
               : (currentScreen === 'competitive' ? 'competitive' : 'lobby'))
       )
-      setScreenAndRef('online-game')
+      const count = (finalPlayers.length >= 2 && finalPlayers.length <= 6) ? finalPlayers.length : 4
+      const boardMode = `${count}p` as TelemetryBoardMode
+      setScreenAndRef('online-game', boardMode)
     }
 
     socket.on('match_found', handleGlobalMatchFound)
@@ -293,7 +297,8 @@ function PageContent() {
   const handleStartGame = (gameConfig: GameConfig) => {
     globalLogger.log('GAME-FLOW', `Iniciando partida offline clásica (${gameConfig.playerCount} jugadores)`, gameConfig)
     setConfig(gameConfig)
-    setScreenAndRef('game')
+    const boardMode = `${gameConfig.playerCount}p` as TelemetryBoardMode
+    setScreenAndRef('game', boardMode)
   }
 
   const handleMatchFound = (gameData: OnlineGameData, origin: Screen = 'online-training') => {
@@ -301,9 +306,13 @@ function PageContent() {
       roomId: gameData.roomId,
       origin
     })
+    const count = (gameData.players?.length && gameData.players.length >= 2 && gameData.players.length <= 6)
+      ? gameData.players.length
+      : 4
+    const boardMode = `${count}p` as TelemetryBoardMode
     setOnlineGameData(gameData)
     setOnlineGameOrigin(origin)
-    setScreenAndRef('online-game')
+    setScreenAndRef('online-game', boardMode)
   }
 
   const handleAcceptDuel = (challenge: DuelChallengeItem) => {

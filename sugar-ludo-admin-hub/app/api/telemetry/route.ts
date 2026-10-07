@@ -21,6 +21,7 @@ const alertEventBuffer: TelemetryAlertEvent[] = []
 
 // Sesiones activas en memoria para telemetría en vivo ($0.00 Firestore)
 const activeAdminTelemetrySessions = new Map<string, { state: string, mode: string, latencyMs: number, ts: number }>()
+let lastFirestoreTelemetrySync = 0
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -48,9 +49,13 @@ export async function POST(request: Request) {
     // Ingesta de Heartbeat de Presencia y Telemetría en Vivo (RAM $0.00)
     if (body.type === 'telemetry_heartbeat' || body.action === 'telemetry_heartbeat') {
       const sessId = String(body.sessionId || body.uid || `anon_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`)
+      const state = body.state || 'playersInLobby'
+      const rawMode = body.mode ? String(body.mode).toLowerCase() : 'none'
+      const mode = (state === 'playersInLobby' || rawMode === 'none') ? 'none' : rawMode
+
       activeAdminTelemetrySessions.set(sessId, {
-        state: body.state || 'playersInLobby',
-        mode: body.mode || '4p',
+        state,
+        mode,
         latencyMs: typeof body.latencyMs === 'number' ? body.latencyMs : 35,
         ts: Date.now()
       })
@@ -147,11 +152,26 @@ export async function GET() {
   let playersInOnlineTraining = 0
   let playersInCompetitive = 0
   let activeMatchRooms = 0
-  let modeDistribution = {
+  let modeDistribution: {
+    twoPlayers: number
+    threePlayers: number
+    fourPlayers: number
+    fivePlayers: number
+    sixPlayers: number
+    aiTraining: number
+    aiGames: number
+    onlineGames: number
+    competitiveGames: number
+  } = {
     twoPlayers: 0,
+    threePlayers: 0,
     fourPlayers: 0,
+    fivePlayers: 0,
     sixPlayers: 0,
-    aiTraining: 0
+    aiTraining: 0,
+    aiGames: 0,
+    onlineGames: 0,
+    competitiveGames: 0
   }
 
   // 1. Limpieza de sesiones en memoria expiradas (> 60s) y consolidación RAM ($0.00)
@@ -163,18 +183,23 @@ export async function GET() {
   }
 
   let memLobby = 0, memAI = 0, memOnline = 0, memComp = 0
-  let mode2p = 0, mode4p = 0, mode6p = 0
+  let mode2p = 0, mode3p = 0, mode4p = 0, mode5p = 0, mode6p = 0
   const latencies: number[] = []
 
   for (const sess of activeAdminTelemetrySessions.values()) {
-    if (sess.state === 'playersInLobby') memLobby++
-    else if (sess.state === 'playersInAITraining') memAI++
-    else if (sess.state === 'playersInOnlineTraining') memOnline++
-    else if (sess.state === 'playersInCompetitive') memComp++
+    if (sess.state === 'playersInLobby') {
+      memLobby++
+    } else {
+      if (sess.state === 'playersInAITraining') memAI++
+      else if (sess.state === 'playersInOnlineTraining') memOnline++
+      else if (sess.state === 'playersInCompetitive') memComp++
 
-    if (sess.mode === '2p') mode2p++
-    else if (sess.mode === '6p') mode6p++
-    else mode4p++
+      if (sess.mode === '2p') mode2p++
+      else if (sess.mode === '3p') mode3p++
+      else if (sess.mode === '4p') mode4p++
+      else if (sess.mode === '5p') mode5p++
+      else if (sess.mode === '6p') mode6p++
+    }
 
     if (typeof sess.latencyMs === 'number') latencies.push(sess.latencyMs)
   }
@@ -187,9 +212,14 @@ export async function GET() {
   activeMatchRooms = Math.ceil((memOnline + memComp) / 2)
   modeDistribution = {
     twoPlayers: mode2p,
+    threePlayers: mode3p,
     fourPlayers: mode4p,
+    fivePlayers: mode5p,
     sixPlayers: mode6p,
-    aiTraining: memAI
+    aiTraining: memAI,
+    aiGames: memAI,
+    onlineGames: memOnline,
+    competitiveGames: memComp
   }
 
   if (latencies.length > 0) {
@@ -222,9 +252,14 @@ export async function GET() {
         if (t.modeDistribution) {
           modeDistribution = {
             twoPlayers: Math.max(modeDistribution.twoPlayers, Number(t.modeDistribution.twoPlayers || 0)),
+            threePlayers: Math.max(modeDistribution.threePlayers || 0, Number(t.modeDistribution.threePlayers || 0)),
             fourPlayers: Math.max(modeDistribution.fourPlayers, Number(t.modeDistribution.fourPlayers || 0)),
+            fivePlayers: Math.max(modeDistribution.fivePlayers || 0, Number(t.modeDistribution.fivePlayers || 0)),
             sixPlayers: Math.max(modeDistribution.sixPlayers, Number(t.modeDistribution.sixPlayers || 0)),
-            aiTraining: Math.max(modeDistribution.aiTraining, Number(t.modeDistribution.aiTraining || playersInAITraining))
+            aiTraining: Math.max(modeDistribution.aiTraining || 0, Number(t.modeDistribution.aiTraining || playersInAITraining)),
+            aiGames: Math.max(modeDistribution.aiGames || 0, Number(t.modeDistribution.aiGames || playersInAITraining)),
+            onlineGames: Math.max(modeDistribution.onlineGames || 0, Number(t.modeDistribution.onlineGames || playersInOnlineTraining)),
+            competitiveGames: Math.max(modeDistribution.competitiveGames || 0, Number(t.modeDistribution.competitiveGames || playersInCompetitive))
           }
         }
         if (typeof t.medianPingMs === 'number') {
@@ -275,23 +310,26 @@ export async function GET() {
       }
     } catch {}
 
-    // Sincronizar live_telemetry en system_treasury para oyentes en tiempo real onSnapshot
-    try {
-      await adminDb.collection('system_treasury').doc('live_telemetry').set({
-        playersInLobby,
-        playersInAITraining,
-        playersInOnlineTraining,
-        playersInCompetitive,
-        totalOnlinePlayers: liveOnlinePlayers,
-        activeMatchRooms,
-        modeDistribution,
-        medianPingMs,
-        serverLatencyMs,
-        serverStatus,
-        updatedAt: Date.now()
-      }, { merge: true })
-    } catch (dbErr: any) {
-      console.warn('[Telemetry] Error sincronizando live_telemetry en Firestore:', dbErr?.message)
+    // Sincronizar live_telemetry en system_treasury con throttle para proteger cuota Spark ($0.00)
+    if (Date.now() - lastFirestoreTelemetrySync > 15000) {
+      lastFirestoreTelemetrySync = Date.now()
+      try {
+        await adminDb.collection('system_treasury').doc('live_telemetry').set({
+          playersInLobby,
+          playersInAITraining,
+          playersInOnlineTraining,
+          playersInCompetitive,
+          totalOnlinePlayers: liveOnlinePlayers,
+          activeMatchRooms,
+          modeDistribution,
+          medianPingMs,
+          serverLatencyMs,
+          serverStatus,
+          updatedAt: Date.now()
+        }, { merge: true })
+      } catch (dbErr: any) {
+        console.warn('[Telemetry] Error sincronizando live_telemetry en Firestore:', dbErr?.message)
+      }
     }
   }
 

@@ -5,8 +5,10 @@ export type TelemetryPlayerState =
   | 'playersInOnlineTraining'
   | 'playersInCompetitive'
 
+export type TelemetryBoardMode = '2p' | '3p' | '4p' | '5p' | '6p'
+
 let currentState: TelemetryPlayerState | null = null
-let currentMode: '2p' | '4p' | '6p' = '4p'
+let currentMode: TelemetryBoardMode | null = null
 let isInitialized = false
 let heartbeatTimer: any = null
 
@@ -40,15 +42,16 @@ export function mapScreenToTelemetryState(screen: string, onlineOrigin?: string)
   return 'playersInLobby'
 }
 
-function sendServerHeartbeat(state: TelemetryPlayerState, mode: '2p' | '4p' | '6p' = '4p') {
+function sendServerHeartbeat(state: TelemetryPlayerState, mode?: TelemetryBoardMode | null) {
   if (typeof window === 'undefined') return
   try {
     const sid = getSessionId()
+    const activeBoard = (mode !== undefined ? mode : currentMode) || undefined
     const payload = JSON.stringify({
       type: 'telemetry_heartbeat',
       sessionId: sid,
       state,
-      mode,
+      mode: activeBoard || 'none',
       latencyMs: 35,
       timestamp: Date.now()
     })
@@ -92,10 +95,13 @@ function sendServerHeartbeat(state: TelemetryPlayerState, mode: '2p' | '4p' | '6
 
 // Despacho en memoria hacia server.js ($0.00 Firestore)
 // El estado se mantiene en la RAM del servidor y se propaga vía BroadcastChannel local.
-export async function updatePlayerTelemetryState(newState: TelemetryPlayerState, mode?: '2p' | '4p' | '6p') {
+export async function updatePlayerTelemetryState(newState: TelemetryPlayerState, mode?: TelemetryBoardMode | null) {
   if (typeof window === 'undefined') return
-  if (mode) currentMode = mode
-  if (currentState === newState && !mode) return
+  if (mode !== undefined) {
+    currentMode = mode
+  } else if (newState === 'playersInLobby') {
+    currentMode = null
+  }
 
   currentState = newState
 
@@ -117,7 +123,7 @@ export async function updatePlayerTelemetryState(newState: TelemetryPlayerState,
   sendServerHeartbeat(newState, currentMode)
 }
 
-export function initPresenceTracker(initialScreen: string = 'lobby', onlineOrigin?: string, mode?: '2p' | '4p' | '6p') {
+export function initPresenceTracker(initialScreen: string = 'lobby', onlineOrigin?: string, mode?: TelemetryBoardMode | null) {
   if (typeof window === 'undefined' || isInitialized) return
   isInitialized = true
 

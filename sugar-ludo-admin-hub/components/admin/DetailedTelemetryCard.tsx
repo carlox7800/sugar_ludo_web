@@ -132,15 +132,22 @@ export function DetailedTelemetryCard({ telemetry, onResetTelemetry }: DetailedT
         </div>
 
         {/* Modalidades Activas (2J / 4J / 6J) y Tipo de Partida */}
+        {/* Modalidades Activas (2P, 3P, 4P, 5P, 6P) y Formato de Partida (IA, Online, Competitivo) */}
         <div className="p-3.5 rounded-2xl bg-slate-950/40 border border-white/5 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Tableros Activos:</span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <span className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 font-mono font-bold">
                 2P: {telemetry.modeDistribution?.twoPlayers ?? 0}
               </span>
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono font-bold">
+                3P: {telemetry.modeDistribution?.threePlayers ?? 0}
+              </span>
               <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 font-mono font-bold">
                 4P: {telemetry.modeDistribution?.fourPlayers ?? 0}
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-300 font-mono font-bold">
+                5P: {telemetry.modeDistribution?.fivePlayers ?? 0}
               </span>
               <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono font-bold">
                 6P: {telemetry.modeDistribution?.sixPlayers ?? 0}
@@ -150,12 +157,15 @@ export function DetailedTelemetryCard({ telemetry, onResetTelemetry }: DetailedT
 
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Formato:</span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <span className="px-2 py-0.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-mono font-bold flex items-center gap-1">
-                <Bot className="size-3 text-indigo-400" /> IA: {telemetry.modeDistribution?.aiGames ?? 0}
+                <Bot className="size-3 text-indigo-400" /> IA: {telemetry.modeDistribution?.aiGames ?? telemetry.playersInAITraining ?? 0}
               </span>
               <span className="px-2 py-0.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 font-mono font-bold flex items-center gap-1">
-                <Globe className="size-3 text-pink-400" /> Online: {telemetry.modeDistribution?.onlineGames ?? 0}
+                <Globe className="size-3 text-pink-400" /> Online: {telemetry.modeDistribution?.onlineGames ?? telemetry.playersInOnlineTraining ?? 0}
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono font-bold flex items-center gap-1">
+                <Trophy className="size-3 text-emerald-400" /> Competitivo: {telemetry.modeDistribution?.competitiveGames ?? telemetry.playersInCompetitive ?? 0}
               </span>
             </div>
           </div>

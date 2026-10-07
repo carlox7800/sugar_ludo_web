@@ -207,6 +207,7 @@ export default function AdminDashboardPage() {
               playersInCompetitive: pComp,
               totalOnlinePlayers: totalOnline,
               activeMatchRooms: rooms,
+              modeDistribution: tData.modeDistribution || prev.modeDistribution,
               serverStatus: 'online',
               updatedAt: tData.updatedAt || Date.now()
             }))
@@ -352,10 +353,10 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchLiveMetrics()
-      // Polling periódico cada 20 segundos ($0.00 Firestore / In-Memory Relay)
+      // Polling periódico cada 5 segundos para reactividad en vivo ($0.00 Firestore / In-Memory Relay)
       const interval = setInterval(() => {
         fetchLiveMetrics()
-      }, 20000)
+      }, 5000)
 
       // Escucha reactiva en tiempo real por BroadcastChannel entre pestañas locales
       let ch: BroadcastChannel | null = null
@@ -365,6 +366,7 @@ export default function AdminDashboardPage() {
           ch.onmessage = (ev) => {
             if (ev.data?.type === 'telemetry_state_changed') {
               fetchLiveMetrics()
+              setTimeout(fetchLiveMetrics, 200)
             }
           }
         } catch {}

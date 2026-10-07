@@ -21,11 +21,14 @@ export interface DetailedTelemetry {
   serverStatus: 'online' | 'degraded' | 'offline'
   modeDistribution?: {
     twoPlayers: number
+    threePlayers?: number
     fourPlayers: number
+    fivePlayers?: number
     sixPlayers: number
-    aiTraining: number
+    aiTraining?: number
     aiGames?: number
     onlineGames?: number
+    competitiveGames?: number
   }
   downloadsAndroid?: number
   downloadsWindows?: number

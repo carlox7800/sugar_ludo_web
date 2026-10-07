@@ -77,4 +77,76 @@ describe('Suite: Conciliación Contable tras Reinicio & Telemetría en Vivo (v9.
     assert.equal(totalOnline, 27)
     assert.equal(activeRooms, 5)
   })
+
+  it('TABLEROS ACTIVOS (2P, 3P, 4P, 5P, 6P): solo sesiones activas en juego incrementan tableros', () => {
+    // 5 sesiones en diferentes estados
+    const sessions = [
+      { state: 'playersInLobby', mode: 'none' },
+      { state: 'playersInLobby', mode: '4p' }, // En lobby, el mode debe ignorarse
+      { state: 'playersInAITraining', mode: '2p' },
+      { state: 'playersInAITraining', mode: '3p' },
+      { state: 'playersInOnlineTraining', mode: '4p' },
+      { state: 'playersInCompetitive', mode: '5p' },
+      { state: 'playersInCompetitive', mode: '6p' },
+    ]
+
+    let inLobby = 0, inAI = 0, inOnline = 0, inComp = 0
+    let m2p = 0, m3p = 0, m4p = 0, m5p = 0, m6p = 0
+
+    for (const sess of sessions) {
+      if (sess.state === 'playersInLobby') {
+        inLobby++
+      } else {
+        if (sess.state === 'playersInAITraining') inAI++
+        else if (sess.state === 'playersInOnlineTraining') inOnline++
+        else if (sess.state === 'playersInCompetitive') inComp++
+
+        if (sess.mode === '2p') m2p++
+        else if (sess.mode === '3p') m3p++
+        else if (sess.mode === '4p') m4p++
+        else if (sess.mode === '5p') m5p++
+        else if (sess.mode === '6p') m6p++
+      }
+    }
+
+    assert.equal(inLobby, 2)
+    assert.equal(inAI, 2)
+    assert.equal(inOnline, 1)
+    assert.equal(inComp, 2)
+
+    // Tableros activos contemplando todas las modalidades 2P a 6P
+    assert.equal(m2p, 1)
+    assert.equal(m3p, 1)
+    assert.equal(m4p, 1)
+    assert.equal(m5p, 1)
+    assert.equal(m6p, 1)
+
+    // Formato: IA, Online y Competitivo
+    const modeDistribution = {
+      twoPlayers: m2p,
+      threePlayers: m3p,
+      fourPlayers: m4p,
+      fivePlayers: m5p,
+      sixPlayers: m6p,
+      aiGames: inAI,
+      onlineGames: inOnline,
+      competitiveGames: inComp
+    }
+
+    assert.equal(modeDistribution.aiGames, 2)
+    assert.equal(modeDistribution.onlineGames, 1)
+    assert.equal(modeDistribution.competitiveGames, 2)
+  })
+
+  it('REACTIVIDAD: al abandonar la partida, el tablero activo desciende a 0 de inmediato', () => {
+    // Jugador jugando 4P
+    let activeSession = { state: 'playersInAITraining', mode: '4p' }
+    let m4p = activeSession.state !== 'playersInLobby' && activeSession.mode === '4p' ? 1 : 0
+    assert.equal(m4p, 1)
+
+    // Jugador abandona la partida y regresa a lobby
+    activeSession = { state: 'playersInLobby', mode: 'none' }
+    m4p = activeSession.state !== 'playersInLobby' && activeSession.mode === '4p' ? 1 : 0
+    assert.equal(m4p, 0, 'El tablero activo 4P debe ser 0 al volver al lobby')
+  })
 })

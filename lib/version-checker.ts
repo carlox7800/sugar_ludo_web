@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.7.4',
+  latestVersion: '9.7.5',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
   releaseDate: '2026-10-07',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.7.4/SugarLudo-v9.7.4.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.7.4/SugarLudo-v9.7.4-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.7.5/SugarLudo-v9.7.5.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.7.5/SugarLudo-v9.7.5-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.7.4: Corrección de residual en red de cajeros tras reset contable y restauración de telemetría en vivo.'
+  changelog: 'Actualización v9.7.5: Modalidades 3P/5P en tableros activos, reactividad de salida y formato competitivo en telemetría.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)
