@@ -23,7 +23,7 @@ import { clsx } from 'clsx'
 
 export default function HubLandingPage() {
   const router = useRouter()
-  const { login, loginCashier, isAuthenticated, adminUser } = useAdminAuth()
+  const { login, loginCashier, isAuthenticated, adminUser, sessionWarning, clearSessionWarning } = useAdminAuth()
 
   // Mode Selector: 'admin' | 'cashier'
   const [accessMode, setAccessMode] = useState<'admin' | 'cashier'>('admin')
@@ -146,6 +146,22 @@ export default function HubLandingPage() {
           </div>
 
           {/* Feedback Messages */}
+          {sessionWarning && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2.5 text-xs text-amber-300 font-bold animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="size-4 shrink-0 text-amber-400" />
+                <span>{sessionWarning}</span>
+              </div>
+              <button
+                type="button"
+                onClick={clearSessionWarning}
+                className="text-amber-400/60 hover:text-amber-300 text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/5"
+              >
+                Cerrar
+              </button>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center gap-2.5 text-xs text-red-400 font-bold animate-in fade-in">
               <AlertCircle className="size-4 shrink-0" />

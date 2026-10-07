@@ -264,7 +264,7 @@ export function subscribeToCashierChatMeta(
 }
 
 /**
- * 4. SEGUIMIENTO DE COMUNICADOS DE DIFUSIÓN NO LEÍDOS POR CAJERO
+ * 4. SEGUIMIENTO DE COMUNICADOS DE DIFUSIÓN NO LEÍDOS POR CAJERO (SINCRONIZADO MULTI-TERMINAL)
  */
 export function getCashierLastReadBroadcastTime(cashierUid: string): number {
   if (typeof window === 'undefined' || !cashierUid) return 0
@@ -276,12 +276,35 @@ export function getCashierLastReadBroadcastTime(cashierUid: string): number {
   }
 }
 
-export function markBroadcastAsReadByCashier(cashierUid: string): void {
-  if (typeof window === 'undefined' || !cashierUid) return
+export async function markBroadcastAsReadByCashier(cashierUid: string): Promise<void> {
+  if (!cashierUid) return
+  const now = Date.now()
+
+  // 1. Guardar localmente de inmediato para reactividad a 0ms
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(`sugar_cashier_last_read_broadcast_${cashierUid}`, now.toString())
+      window.dispatchEvent(new CustomEvent('sugar_broadcast_read', { detail: { cashierUid, timestamp: now } }))
+      
+      if ('BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('sugar_ludo_social_channel')
+        ch.postMessage({ type: 'cashier_broadcast_read', cashierUid, timestamp: now })
+        ch.close()
+      }
+    } catch {}
+  }
+
+  // 2. Persistir en Firestore para sincronización estricta entre terminales y dispositivos ($0.00 Spark)
   try {
-    localStorage.setItem(`sugar_cashier_last_read_broadcast_${cashierUid}`, Date.now().toString())
-    window.dispatchEvent(new CustomEvent('sugar_broadcast_read', { detail: { cashierUid } }))
-  } catch {}
+    const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
+    await setDoc(chatMetaRef, {
+      cashierUid,
+      lastReadBroadcastAt: now,
+      updatedAt: now
+    }, { merge: true })
+  } catch (err) {
+    console.debug('[StaffChat] Error sincronizando lastReadBroadcastAt en Firestore:', err)
+  }
 }
 
 export function subscribeToBroadcastUnreadCount(
@@ -291,36 +314,76 @@ export function subscribeToBroadcastUnreadCount(
   if (!cashierUid) return () => {}
   try {
     let lastSnapDocs: any[] = []
+    let cachedCloudLastRead = getCashierLastReadBroadcastTime(cashierUid)
 
     const recompute = () => {
-      const currentLastRead = getCashierLastReadBroadcastTime(cashierUid)
+      const localLastRead = getCashierLastReadBroadcastTime(cashierUid)
+      const effectiveLastRead = Math.max(localLastRead, cachedCloudLastRead)
       let count = 0
       lastSnapDocs.forEach((d) => {
         const data = typeof d.data === 'function' ? d.data() : d
         const ts = Number(data.timestamp || 0)
-        if (ts > currentLastRead) {
+        if (ts > effectiveLastRead) {
           count++
         }
       })
       callback(count)
     }
 
+    // 1. Escuchar eventos locales en la ventana
     const onBroadcastRead = (e: any) => {
       if (!e?.detail || e.detail.cashierUid === cashierUid) {
+        if (e?.detail?.timestamp) {
+          cachedCloudLastRead = Math.max(cachedCloudLastRead, Number(e.detail.timestamp))
+        }
         recompute()
       }
     }
 
+    // 2. Escuchar BroadcastChannel entre pestañas locales
+    let channel: BroadcastChannel | null = null
     if (typeof window !== 'undefined') {
       window.addEventListener('sugar_broadcast_read', onBroadcastRead)
+      if ('BroadcastChannel' in window) {
+        try {
+          channel = new BroadcastChannel('sugar_ludo_social_channel')
+          channel.onmessage = (ev) => {
+            if (ev.data?.type === 'cashier_broadcast_read' && ev.data?.cashierUid === cashierUid) {
+              cachedCloudLastRead = Math.max(cachedCloudLastRead, Number(ev.data.timestamp || 0))
+              recompute()
+            }
+          }
+        } catch {}
+      }
     }
 
+    // 3. Escuchar en tiempo real el documento del cajero en Firestore (sincroniza terminales externas)
+    const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
+    const unsubMeta = onSnapshot(chatMetaRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data()
+        if (data?.lastReadBroadcastAt) {
+          const cloudTime = Number(data.lastReadBroadcastAt)
+          if (cloudTime > cachedCloudLastRead) {
+            cachedCloudLastRead = cloudTime
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem(`sugar_cashier_last_read_broadcast_${cashierUid}`, cloudTime.toString())
+              } catch {}
+            }
+            recompute()
+          }
+        }
+      }
+    }, () => {})
+
+    // 4. Escuchar mensajes de difusión
     const q = query(
       collection(db, 'staff_broadcast_messages'),
       orderBy('timestamp', 'desc'),
       limit(25)
     )
-    const unsub = onSnapshot(q, (snap) => {
+    const unsubBroadcast = onSnapshot(q, (snap) => {
       lastSnapDocs = snap.docs
       recompute()
     }, () => {
@@ -328,7 +391,9 @@ export function subscribeToBroadcastUnreadCount(
     })
 
     return () => {
-      unsub()
+      unsubBroadcast()
+      unsubMeta()
+      if (channel) channel.close()
       if (typeof window !== 'undefined') {
         window.removeEventListener('sugar_broadcast_read', onBroadcastRead)
       }

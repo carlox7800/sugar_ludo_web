@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { CashierOrder, OrderType } from '../../types/cashier'
 import { OrderFilterTabs, FilterStatus } from '../../components/orders/OrderFilterTabs'
 import { OrderCard } from '../../components/orders/OrderCard'
@@ -26,6 +27,7 @@ import { getStaffAuthHeaders } from '../../lib/auth-headers'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, MessageSquare, LogOut, Coins, Calendar, LayoutList, LayoutGrid } from 'lucide-react'
 
 export default function CashierMainDeskPage() {
+  const router = useRouter()
   const { cashierList, logout, adminUser } = useAdminAuth()
   const [orders, setOrders] = useState<CashierOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -250,6 +252,18 @@ export default function CashierMainDeskPage() {
           }
         } else {
           cashierLogger.error(`Error HTTP ${res.status} al consultar /api/cashier/orders`)
+          if (res.status === 401) {
+            const errData = await res.json().catch(() => null)
+            const errCode = errData?.code || ''
+            if (errCode === 'SESSION_SUPERSEDED' || errCode.startsWith('SESSION_EXPIRED') || errCode === 'SESSION_INVALID') {
+              const alertMsg = errCode === 'SESSION_SUPERSEDED'
+                ? 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
+                : (errData?.error || 'Sesión expirada por motivos de seguridad.')
+              logout(alertMsg)
+              router.push('/')
+              return
+            }
+          }
         }
       }
     } catch (e: any) {

@@ -88,6 +88,7 @@ export default function AdminDashboardPage() {
   const [unreadStaffMessagesCount, setUnreadStaffMessagesCount] = useState(0)
   const [pendingDisputesCount, setPendingDisputesCount] = useState(0)
   const reconcileCooldownUntilRef = useRef<number>(0)
+  const isSessionTerminatedRef = useRef<boolean>(false)
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -230,16 +231,15 @@ export default function AdminDashboardPage() {
 
   // Polling y consolidación de saldos y telemetría en tiempo real
   const fetchLiveMetrics = async () => {
+    if (isSessionTerminatedRef.current) return
     setIsRefreshing(true)
     const startTime = Date.now()
     try {
       // 1. Ejecutar Conciliación Patrimonial Autoritativa en el Backend (/api/admin/treasury/reconcile)
       try {
         const now = Date.now()
-        if (now >= reconcileCooldownUntilRef.current) {
+        if (now >= reconcileCooldownUntilRef.current && !isSessionTerminatedRef.current) {
           const authHeaders = await getStaffAuthHeadersAsync('admin')
-          // Si aún no hay credencial/token activo, dejamos que el listener reactivo onSnapshot
-          // mantenga actualizados los saldos desde global_ledger sin disparar 401
           if (authHeaders.Authorization) {
             const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
               method: 'POST',
@@ -252,9 +252,12 @@ export default function AdminDashboardPage() {
                 adminName: adminUser?.displayName || 'Carlos (Super Admin)'
               })
             })
+
+            const recStatus = reconcileRes.status
+            const recData = await reconcileRes.json().catch(() => ({}))
+
             if (reconcileRes.ok) {
               reconcileCooldownUntilRef.current = 0
-              const recData = await reconcileRes.json()
               if (recData.ledger) {
                 const l = recData.ledger
                 const playerUSD = Number(l.playerCustodyUSD ?? l.playerBalancesUSD ?? 0)
@@ -278,19 +281,29 @@ export default function AdminDashboardPage() {
                   lastAuditedAt: l.lastAuditedAt || Date.now()
                 })
               }
-            } else if (reconcileRes.status === 403 || reconcileRes.status === 401) {
-              // Backoff real: la v9.8.1 reseteaba el cooldown a 0 tras refrescar el token,
-              // por lo que el reintento seguía ocurriendo cada 5s. Ahora se espera 60s siempre.
+            } else if (recStatus === 401) {
+              const errCode = recData?.code || ''
+              const errMsg = recData?.error || ''
+
+              // SESIÓN INVALIDADA POR CONCURRENCIA O EXPIRACIÓN: CORTAR INTERVALOS Y REDIRIGIR
+              if (errCode === 'SESSION_SUPERSEDED' || errCode.startsWith('SESSION_EXPIRED') || errCode === 'SESSION_INVALID') {
+                isSessionTerminatedRef.current = true
+                reconcileCooldownUntilRef.current = Infinity
+                const alertMessage = errCode === 'SESSION_SUPERSEDED'
+                  ? 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
+                  : (errMsg || 'Sesión expirada por motivos de seguridad.')
+                logout(alertMessage)
+                router.push('/')
+                return
+              }
+
               reconcileCooldownUntilRef.current = now + 60000
-              // Un único refresco del ID Token para que el siguiente intento use claims actualizados
-              if (auth && auth.currentUser) {
-                try {
-                  const freshToken = await auth.currentUser.getIdToken(true)
-                  if (freshToken) {
-                    sessionStorage.setItem('sugar_staff_id_token', freshToken)
-                    localStorage.setItem('sugar_staff_id_token', freshToken)
-                  }
-                } catch {}
+            } else if (recStatus === 403) {
+              // PERMISOS INSUFICIENTES: CANCELAR DEFINITIVAMENTE BUCLE DE RECONCILIACIÓN
+              reconcileCooldownUntilRef.current = Infinity
+              if ((adminUser as any)?.role === 'cashier' || (typeof window !== 'undefined' && localStorage.getItem('sugar_cashier_session'))) {
+                router.push('/cashier')
+                return
               }
             }
           }
@@ -370,35 +383,50 @@ export default function AdminDashboardPage() {
   }
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchLiveMetrics()
-      // Polling periódico cada 5 segundos para reactividad en vivo ($0.00 Firestore / In-Memory Relay)
-      const interval = setInterval(() => {
-        fetchLiveMetrics()
-      }, 5000)
+    if (isLoading) return
 
-      // Escucha reactiva en tiempo real por BroadcastChannel entre pestañas locales
-      let ch: BroadcastChannel | null = null
-      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        try {
-          ch = new BroadcastChannel('sugar_ludo_social_channel')
-          ch.onmessage = (ev) => {
-            if (ev.data?.type === 'telemetry_state_changed') {
+    if (!isAuthenticated) {
+      router.push('/')
+      return
+    }
+
+    // Candado estricto de rol: si el usuario activo es cajero, debe dirigirse al portal de cajero
+    if ((adminUser as any)?.role === 'cashier') {
+      router.push('/cashier')
+      return
+    }
+
+    fetchLiveMetrics()
+    // Polling periódico cada 5 segundos para reactividad en vivo ($0.00 Firestore / In-Memory Relay)
+    const interval = setInterval(() => {
+      if (isSessionTerminatedRef.current) {
+        clearInterval(interval)
+        return
+      }
+      fetchLiveMetrics()
+    }, 5000)
+
+    // Escucha reactiva en tiempo real por BroadcastChannel entre pestañas locales
+    let ch: BroadcastChannel | null = null
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        ch = new BroadcastChannel('sugar_ludo_social_channel')
+        ch.onmessage = (ev) => {
+          if (ev.data?.type === 'telemetry_state_changed') {
+            if (!isSessionTerminatedRef.current) {
               fetchLiveMetrics()
               setTimeout(fetchLiveMetrics, 200)
             }
           }
-        } catch {}
-      }
-
-      return () => {
-        clearInterval(interval)
-        if (ch) ch.close()
-      }
-    } else if (!isLoading) {
-      router.push('/')
+        }
+      } catch {}
     }
-  }, [isAuthenticated, isLoading, router, cashierList])
+
+    return () => {
+      clearInterval(interval)
+      if (ch) ch.close()
+    }
+  }, [isAuthenticated, isLoading, router, adminUser?.role, cashierList])
 
   const [isResetModalOpen, setIsResetModalOpen] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
