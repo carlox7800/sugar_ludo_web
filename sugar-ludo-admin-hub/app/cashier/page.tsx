@@ -28,7 +28,7 @@ import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, M
 
 export default function CashierMainDeskPage() {
   const router = useRouter()
-  const { cashierList, logout, adminUser } = useAdminAuth()
+  const { cashierList, logout, adminUser, activeCashierSession, setActiveCashierSession } = useAdminAuth()
   const [orders, setOrders] = useState<CashierOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [currentStatus, setCurrentStatus] = useState<FilterStatus>('pending')
@@ -39,7 +39,6 @@ export default function CashierMainDeskPage() {
   const [isAdminChatOpen, setIsAdminChatOpen] = useState(false)
   const [isFloatHistoryOpen, setIsFloatHistoryOpen] = useState(false)
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<CashierOrder | null>(null)
-  const [activeCashierSession, setActiveCashierSession] = useState<{ uid: string; name: string; floatBalanceCoins: number } | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [isMounted, setIsMounted] = useState(false)
 
@@ -139,23 +138,66 @@ export default function CashierMainDeskPage() {
         if (savedSession) {
           const parsed = JSON.parse(savedSession)
           if (parsed && parsed.uid) {
-            const live = cashierList.find((c) => c.uid === parsed.uid || (parsed.email && c.email.toLowerCase() === parsed.email.toLowerCase()))
-            setActiveCashierSession(live || parsed)
+            const live = cashierList.find((c) => c.uid === parsed.uid || (parsed.email && c.email?.toLowerCase() === parsed.email?.toLowerCase()))
+            if (live) {
+              setActiveCashierSession({
+                ...parsed,
+                ...live,
+                uid: parsed.uid,
+                name: parsed.name || live.name,
+                email: parsed.email || live.email,
+                sessionId: parsed.sessionId || (live as any).sessionId
+              })
+            } else {
+              setActiveCashierSession(parsed)
+            }
             return
           }
         }
       } catch {}
     }
-    if (cashierList && cashierList.length > 0) {
+    if (!localStorage.getItem('sugar_cashier_session') && cashierList && cashierList.length > 0) {
       setActiveCashierSession(cashierList[0])
     }
   }, [cashierList])
 
-  const currentCashier = activeCashierSession || cashierList[0] || {
+  const currentCashier = activeCashierSession || {
     uid: 'csh_primary',
     name: 'Cajero Autorizado',
     floatBalanceCoins: 30000
   }
+
+  // Verificación reactiva de sesión única activa (Single Active Session detection)
+  useEffect(() => {
+    if (!currentCashier?.uid) return
+
+    const checkSessionStatus = async () => {
+      try {
+        const headers = getStaffAuthHeaders('cashier')
+        if (!headers['Authorization'] && !headers['X-Staff-Session-Id']) return
+
+        const res = await fetch('/api/cashier/orders?limit=1', {
+          headers
+        })
+        if (res.status === 401) {
+          const data = await res.json().catch(() => null)
+          if (data?.code === 'SESSION_SUPERSEDED') {
+            logout('Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+            router.push('/')
+          }
+        }
+      } catch {}
+    }
+
+    const interval = setInterval(checkSessionStatus, 15000)
+    const onFocus = () => checkSessionStatus()
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [currentCashier?.uid])
 
   // Escuchar actualizaciones de saldo flotante en tiempo real desde Firestore (cashier_profiles/{uid})
   useEffect(() => {

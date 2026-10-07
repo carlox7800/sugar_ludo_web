@@ -381,7 +381,7 @@ export function subscribeToBroadcastUnreadCount(
     const q = query(
       collection(db, 'staff_broadcast_messages'),
       orderBy('timestamp', 'desc'),
-      limit(25)
+      limit(50)
     )
     const unsubBroadcast = onSnapshot(q, (snap) => {
       lastSnapDocs = snap.docs

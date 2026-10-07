@@ -47,17 +47,17 @@ export interface VersionCheckResult {
 }
 
 export const DEFAULT_VERSION_POLICY: VersionPolicy = {
-  latestVersion: '9.8.5',
+  latestVersion: '9.8.6',
   minSupportedVersion: '9.6.0',
   forceUpdate: true,
   releaseDate: '2026-10-07',
   downloadUrls: {
-    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.5/SugarLudo-v9.8.5.apk',
-    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.5/SugarLudo-v9.8.5-Setup.exe',
+    android: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.6/SugarLudo-v9.8.6.apk',
+    windows: 'https://github.com/carlox7800/sugar_ludo_web/releases/download/v9.8.6/SugarLudo-v9.8.6-Setup.exe',
     web: 'https://sugar-ludo-web.onrender.com'
   },
   landingUrl: 'https://sugar-ludo-landing.onrender.com',
-  changelog: 'Actualización v9.8.5: Manejo y redirección reactiva por SESSION_SUPERSEDED, contención de bucles 403 y sincronización multi-terminal del chat de cajeros.'
+  changelog: 'Actualización v9.8.6: Sincronización fidedigna de UID y turno de cajeros, control estricto de sesión única (SESSION_SUPERSEDED) y chat reactivo unificado.'
 }
 
 // Caché en memoria para evitar consultas redundantes en la misma sesión ($0.00 Spark)

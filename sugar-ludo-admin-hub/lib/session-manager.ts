@@ -216,6 +216,22 @@ export function unregisterActiveCashierSession(uid: string): void {
 }
 
 /**
+ * Consulta la sesión activa registrada en memoria para un cajero
+ */
+export function getActiveCashierSession(uid: string): { sessionId: string; updatedAt: number } | undefined {
+  return activeCashierSessions.get(uid)
+}
+
+/**
+ * Evalúa si la sesión de un cajero ha sido superada/invalidada por otro inicio concurrente
+ */
+export function isCashierSessionSuperseded(uid: string, sessionId?: string): boolean {
+  if (!uid || !sessionId) return false
+  const active = activeCashierSessions.get(uid)
+  return !!(active && active.sessionId !== sessionId)
+}
+
+/**
  * Parsea una cabecera Cookie cruda y extrae el token de staff
  */
 export function parseStaffSessionCookie(cookieHeader?: string | null): string | null {

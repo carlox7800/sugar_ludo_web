@@ -100,7 +100,8 @@ function roleMatches(userRole: string, allowedRoles: StaffRole[]): boolean {
 import {
   extractStaffSessionCookie,
   verifyStaffSessionToken,
-  buildClearStaffSessionCookie
+  buildClearStaffSessionCookie,
+  getActiveCashierSession
 } from './session-manager.ts'
 
 /**
@@ -429,6 +430,25 @@ export async function verifyStaffAuth(
         },
         { status: 401, headers: corsHeaders }
       )
+    }
+  }
+
+  // 2.1 Control de sesión única activa para cajeros (Single Active Session en Bearer Auth)
+  if (verifiedUser.role === 'cashier') {
+    const headerSessionId = request.headers.get('x-staff-session-id')
+    const active = getActiveCashierSession(verifiedUser.uid)
+    if (active && headerSessionId && active.sessionId !== headerSessionId) {
+      return {
+        authorized: false,
+        errorResponse: NextResponse.json(
+          {
+            success: false,
+            error: 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.',
+            code: 'SESSION_SUPERSEDED'
+          },
+          { status: 401, headers: corsHeaders }
+        )
+      }
     }
   }
 

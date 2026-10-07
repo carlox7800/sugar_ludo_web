@@ -33,6 +33,8 @@ interface AdminAuthContextType {
   
   // Centralized Cashier Accounts Management
   cashierList: CashierManagementProfile[]
+  activeCashierSession: CashierManagementProfile | null
+  setActiveCashierSession: React.Dispatch<React.SetStateAction<CashierManagementProfile | null>>
   createNewCashier: (
     newCashier: CashierManagementProfile,
     pass?: string
@@ -96,6 +98,15 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [adminUser, setAdminUser] = useState<AdminUserProfile | null>(null)
   const [adminList, setAdminList] = useState<AdminUserProfile[]>(INITIAL_ADMINS)
   const [cashierList, setCashierList] = useState<CashierManagementProfile[]>(MOCK_CASHIERS_MANAGEMENT)
+  const [activeCashierSession, setActiveCashierSession] = useState<CashierManagementProfile | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('sugar_cashier_session')
+        if (saved) return JSON.parse(saved)
+      } catch {}
+    }
+    return null
+  })
   const [isLoading, setIsLoading] = useState(true)
   const [sessionWarning, setSessionWarning] = useState<string | null>(null)
 
@@ -107,6 +118,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       const saved = localStorage.getItem('sugar_admin_session')
       const savedList = localStorage.getItem('sugar_admin_accounts')
       const savedCashiers = localStorage.getItem('sugar_cashier_accounts')
+      const savedCashier = localStorage.getItem('sugar_cashier_session')
 
       if (savedList) {
         try {
@@ -120,6 +132,12 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(parsed) && parsed.length > 0) {
             setCashierList(parsed)
           }
+        } catch {}
+      }
+
+      if (savedCashier) {
+        try {
+          setActiveCashierSession(JSON.parse(savedCashier))
         } catch {}
       }
 
@@ -193,6 +211,28 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [adminUser])
 
+  // 1.2 Detección de sesión única concurrente (intra-browser BroadcastChannel)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return
+    try {
+      const channel = new BroadcastChannel('sugar_ludo_social_channel')
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'cashier_new_session_started') {
+          const { cashierUid, sessionId } = event.data
+          if (
+            activeCashierSession &&
+            activeCashierSession.uid === cashierUid &&
+            activeCashierSession.sessionId &&
+            activeCashierSession.sessionId !== sessionId
+          ) {
+            logout('Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+          }
+        }
+      }
+      return () => channel.close()
+    } catch {}
+  }, [activeCashierSession])
+
   // 2. Sincronización en vivo con Firestore (system_config) multiplataforma
   useEffect(() => {
     // Sincronizar Cajeros
@@ -208,6 +248,25 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           })
           setCashierList(sanitizedAccounts)
           localStorage.setItem('sugar_cashier_accounts', JSON.stringify(sanitizedAccounts))
+
+          setActiveCashierSession((prev) => {
+            if (!prev) return prev
+            const matched = sanitizedAccounts.find((c) => c.uid === prev.uid || (prev.email && c.email?.toLowerCase() === prev.email.toLowerCase()))
+            if (matched) {
+              const updated = {
+                ...matched,
+                uid: prev.uid,
+                name: prev.name || matched.name,
+                email: prev.email || matched.email,
+                sessionId: prev.sessionId || (matched as any).sessionId
+              }
+              try {
+                localStorage.setItem('sugar_cashier_session', JSON.stringify(updated))
+              } catch {}
+              return updated
+            }
+            return prev
+          })
           return
         }
       }
@@ -402,20 +461,46 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('sugar_staff_id_token', idToken)
       }
 
+      const authProfile = data.profile || {}
       let foundCashier = cashierList.find(
-        (c) => c.email.toLowerCase() === trimmedId || c.name.toLowerCase().includes(trimmedId) || c.uid.toLowerCase() === trimmedId
+        (c) => (authProfile.uid && c.uid?.toLowerCase() === authProfile.uid.toLowerCase()) ||
+               (c.email && c.email.toLowerCase() === trimmedId) ||
+               (c.uid && c.uid.toLowerCase() === trimmedId)
       )
 
-      if (!foundCashier) {
+      if (foundCashier) {
+        foundCashier = {
+          ...foundCashier,
+          uid: authProfile.uid || foundCashier.uid,
+          email: authProfile.email || foundCashier.email,
+          name: authProfile.displayName || foundCashier.name,
+          sessionId: data.sessionId || (foundCashier as any).sessionId
+        }
+      } else {
         foundCashier = {
           ...DEFAULT_CASHIER,
-          uid: data.profile?.uid || DEFAULT_CASHIER.uid,
-          email: data.profile?.email || DEFAULT_CASHIER.email,
-          name: data.profile?.displayName || DEFAULT_CASHIER.name
+          uid: authProfile.uid || DEFAULT_CASHIER.uid,
+          email: authProfile.email || DEFAULT_CASHIER.email,
+          name: authProfile.displayName || DEFAULT_CASHIER.name,
+          sessionId: data.sessionId
         }
       }
 
+      setActiveCashierSession(foundCashier)
       localStorage.setItem('sugar_cashier_session', JSON.stringify(foundCashier))
+
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        try {
+          const ch = new BroadcastChannel('sugar_ludo_social_channel')
+          ch.postMessage({
+            type: 'cashier_new_session_started',
+            cashierUid: foundCashier.uid,
+            sessionId: data.sessionId
+          })
+          ch.close()
+        } catch {}
+      }
+
       return { success: true, message: '¡Acceso de cajero concedido!', cashier: foundCashier }
     } catch (e: any) {
       return { success: false, message: e.message || 'Error al conectar con el servidor de autenticación.' }
@@ -430,6 +515,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.removeItem('sugar_staff_id_token')
     localStorage.removeItem('sugar_staff_id_token')
     setAdminUser(null)
+    setActiveCashierSession(null)
     localStorage.removeItem('sugar_admin_session')
     localStorage.removeItem('sugar_cashier_session')
     if (reason) {
@@ -760,6 +846,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         if (parsed.uid === uid) {
           const updatedSession = { ...parsed, floatBalanceCoins: newCoins, floatBalanceUSDT: finalUSDT }
           localStorage.setItem('sugar_cashier_session', JSON.stringify(updatedSession))
+          setActiveCashierSession((prev) => (prev && prev.uid === uid ? { ...prev, floatBalanceCoins: newCoins, floatBalanceUSDT: finalUSDT } : prev))
         }
       }
     } catch {}
@@ -806,6 +893,8 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         toggleAdminStatus,
         deleteAdminAccount,
         cashierList,
+        activeCashierSession,
+        setActiveCashierSession,
         createNewCashier,
         updateCashierProfile,
         deleteCashierAccount,

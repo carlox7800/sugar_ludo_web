@@ -9,6 +9,7 @@ function injectStaffSessionMetadata(headers: Record<string, string>, overrideRol
       if (parsed.uid) headers['X-Staff-Uid'] = parsed.uid
       if (parsed.email) headers['X-Staff-Email'] = parsed.email
       if (parsed.role) headers['X-Staff-Role'] = parsed.role
+      if (parsed.sessionId) headers['X-Staff-Session-Id'] = parsed.sessionId
       return headers
     }
     const cashierSession = localStorage.getItem('sugar_cashier_session')
@@ -17,6 +18,7 @@ function injectStaffSessionMetadata(headers: Record<string, string>, overrideRol
       if (parsed.uid) headers['X-Staff-Uid'] = parsed.uid
       if (parsed.email) headers['X-Staff-Email'] = parsed.email
       headers['X-Staff-Role'] = 'cashier'
+      if (parsed.sessionId) headers['X-Staff-Session-Id'] = parsed.sessionId
       return headers
     }
   } catch {}

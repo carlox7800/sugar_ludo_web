@@ -90,14 +90,20 @@ export default function OrderDetailPage() {
         if (saved) {
           const parsed = JSON.parse(saved)
           if (parsed && parsed.uid) {
-            const live = cashierList.find(c => c.uid === parsed.uid || (parsed.email && c.email.toLowerCase() === parsed.email.toLowerCase()))
+            const live = cashierList.find(c => c.uid === parsed.uid || (parsed.email && c.email?.toLowerCase() === parsed.email?.toLowerCase()))
             setCurrentCashierSession((prev) => ({
               ...(live || parsed),
+              uid: parsed.uid,
+              name: parsed.name || live?.name,
+              email: parsed.email || live?.email,
+              sessionId: parsed.sessionId || (live as any)?.sessionId,
               floatBalanceCoins: prev?.floatBalanceCoins || (live || parsed)?.floatBalanceCoins || 0,
               floatBalanceUSDT: prev?.floatBalanceUSDT !== undefined ? prev.floatBalanceUSDT : (live || parsed)?.floatBalanceUSDT
             }))
+            return
           }
-        } else if (cashierList.length > 0) {
+        }
+        if (!saved && cashierList.length > 0) {
           setCurrentCashierSession((prev) => ({
             ...cashierList[0],
             floatBalanceCoins: prev?.floatBalanceCoins || cashierList[0]?.floatBalanceCoins || 0,

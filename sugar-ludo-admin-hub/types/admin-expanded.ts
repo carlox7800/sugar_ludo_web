@@ -134,6 +134,7 @@ export interface CashierManagementProfile {
   password?: string
   passwordHash?: string
   role?: 'cashier'
+  sessionId?: string
 }
 
 export interface StaffChatMessage {
