@@ -42,6 +42,7 @@ interface AdminAuthContextType {
   ) => Promise<{ success: boolean; message: string }>
   deleteCashierAccount: (uid: string) => { success: boolean; message: string }
   updateCashierFloat: (uid: string, newCoins: number, newUSDT?: number, paidWithdrawalDelta?: number) => void
+  resetAllCashiersFloat: () => Promise<void>
 }
 
 const DEFAULT_SUPER_ADMIN: AdminUserProfile = {
@@ -217,9 +218,36 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       console.warn('[AdminAuth] Listener error administradores:', err)
     })
 
+    let ch: BroadcastChannel | null = null
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        ch = new BroadcastChannel('sugar_ludo_social_channel')
+        ch.onmessage = (event) => {
+          const d = event.data
+          if (d && (d.type === 'economic_reset_executed' || d.type === 'cashier_accounts_reset')) {
+            if (d.scope === 'total_hard_reset' || d.scope === 'cashiers_only' || d.type === 'cashier_accounts_reset') {
+              setCashierList((prev) => {
+                const reset = prev.map((c) => ({
+                  ...c,
+                  floatBalanceCoins: 0,
+                  floatBalanceUSDT: 0,
+                  totalPaidWithdrawalsUSDT: 0,
+                  initialShiftFloatUSDT: 0,
+                  lastResetAt: Date.now()
+                }))
+                localStorage.setItem('sugar_cashier_accounts', JSON.stringify(reset))
+                return reset
+              })
+            }
+          }
+        }
+      } catch {}
+    }
+
     return () => {
       unsubCashiers()
       unsubAdmins()
+      if (ch) ch.close()
     }
   }, [])
 
@@ -681,6 +709,30 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }
 
+  const resetAllCashiersFloat = async () => {
+    const now = Date.now()
+    const resetAccounts = cashierList.map((c) => ({
+      ...c,
+      floatBalanceCoins: 0,
+      floatBalanceUSDT: 0,
+      totalPaidWithdrawalsUSDT: 0,
+      initialShiftFloatUSDT: 0,
+      lastResetAt: now
+    }))
+    setCashierList(resetAccounts)
+    localStorage.setItem('sugar_cashier_accounts', JSON.stringify(resetAccounts))
+    const savedSession = localStorage.getItem('sugar_cashier_session')
+    if (savedSession) {
+      try {
+        const parsed = JSON.parse(savedSession)
+        parsed.floatBalanceCoins = 0
+        parsed.floatBalanceUSDT = 0
+        localStorage.setItem('sugar_cashier_session', JSON.stringify(parsed))
+      } catch {}
+    }
+    await persistCashiersToCloud(resetAccounts)
+  }
+
   return (
     <AdminAuthContext.Provider
       value={{
@@ -699,7 +751,8 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         createNewCashier,
         updateCashierProfile,
         deleteCashierAccount,
-        updateCashierFloat
+        updateCashierFloat,
+        resetAllCashiersFloat
       }}
     >
       {children}

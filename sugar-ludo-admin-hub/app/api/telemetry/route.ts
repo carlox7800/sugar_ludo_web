@@ -19,6 +19,9 @@ export interface TelemetryAlertEvent {
 const MAX_ALERT_BUFFER = 100
 const alertEventBuffer: TelemetryAlertEvent[] = []
 
+// Sesiones activas en memoria para telemetría en vivo ($0.00 Firestore)
+const activeAdminTelemetrySessions = new Map<string, { state: string, mode: string, latencyMs: number, ts: number }>()
+
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
@@ -40,6 +43,22 @@ export async function POST(request: Request) {
     const body = await request.json()
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ success: false, error: 'Payload de alerta inválido' }, { status: 400 })
+    }
+
+    // Ingesta de Heartbeat de Presencia y Telemetría en Vivo (RAM $0.00)
+    if (body.type === 'telemetry_heartbeat' || body.action === 'telemetry_heartbeat') {
+      const sessId = String(body.sessionId || body.uid || `anon_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`)
+      activeAdminTelemetrySessions.set(sessId, {
+        state: body.state || 'playersInLobby',
+        mode: body.mode || '4p',
+        latencyMs: typeof body.latencyMs === 'number' ? body.latencyMs : 35,
+        ts: Date.now()
+      })
+
+      return NextResponse.json(
+        { success: true, registeredSession: sessId, activeCount: activeAdminTelemetrySessions.size },
+        { headers: { 'Access-Control-Allow-Origin': '*' } }
+      )
     }
 
     const event: TelemetryAlertEvent = {
@@ -135,7 +154,50 @@ export async function GET() {
     aiTraining: 0
   }
 
-  // 1. Consultar nodo Web/Relay en memoria ($0.00 Firestore)
+  // 1. Limpieza de sesiones en memoria expiradas (> 60s) y consolidación RAM ($0.00)
+  const now = Date.now()
+  for (const [id, sess] of activeAdminTelemetrySessions.entries()) {
+    if (now - sess.ts > 60000) {
+      activeAdminTelemetrySessions.delete(id)
+    }
+  }
+
+  let memLobby = 0, memAI = 0, memOnline = 0, memComp = 0
+  let mode2p = 0, mode4p = 0, mode6p = 0
+  const latencies: number[] = []
+
+  for (const sess of activeAdminTelemetrySessions.values()) {
+    if (sess.state === 'playersInLobby') memLobby++
+    else if (sess.state === 'playersInAITraining') memAI++
+    else if (sess.state === 'playersInOnlineTraining') memOnline++
+    else if (sess.state === 'playersInCompetitive') memComp++
+
+    if (sess.mode === '2p') mode2p++
+    else if (sess.mode === '6p') mode6p++
+    else mode4p++
+
+    if (typeof sess.latencyMs === 'number') latencies.push(sess.latencyMs)
+  }
+
+  playersInLobby = memLobby
+  playersInAITraining = memAI
+  playersInOnlineTraining = memOnline
+  playersInCompetitive = memComp
+  liveOnlinePlayers = memLobby + memAI + memOnline + memComp
+  activeMatchRooms = Math.ceil((memOnline + memComp) / 2)
+  modeDistribution = {
+    twoPlayers: mode2p,
+    fourPlayers: mode4p,
+    sixPlayers: mode6p,
+    aiTraining: memAI
+  }
+
+  if (latencies.length > 0) {
+    latencies.sort((a, b) => a - b)
+    medianPingMs = latencies[Math.floor(latencies.length / 2)]
+  }
+
+  // 2. Consultar nodo Web/Relay en memoria ($0.00 Firestore)
   try {
     const webBaseUrl = process.env.NEXT_PUBLIC_WEB_GAME_URL || 'https://sugar-ludo-web.onrender.com'
     const isDev = process.env.NODE_ENV !== 'production'
@@ -150,14 +212,20 @@ export async function GET() {
       const data = await res.json()
       if (data.telemetry) {
         const t = data.telemetry
-        liveOnlinePlayers = Number(t.totalOnlinePlayers || 0)
-        playersInLobby = Number(t.playersInLobby || 0)
-        playersInAITraining = Number(t.playersInAITraining || 0)
-        playersInOnlineTraining = Number(t.playersInOnlineTraining || 0)
-        playersInCompetitive = Number(t.playersInCompetitive || 0)
-        activeMatchRooms = Number(t.activeMatchRooms || 0)
+        playersInLobby = Math.max(playersInLobby, Number(t.playersInLobby || 0))
+        playersInAITraining = Math.max(playersInAITraining, Number(t.playersInAITraining || 0))
+        playersInOnlineTraining = Math.max(playersInOnlineTraining, Number(t.playersInOnlineTraining || 0))
+        playersInCompetitive = Math.max(playersInCompetitive, Number(t.playersInCompetitive || 0))
+        const totalWebOnline = Number(t.totalOnlinePlayers || (playersInLobby + playersInAITraining + playersInOnlineTraining + playersInCompetitive))
+        liveOnlinePlayers = Math.max(liveOnlinePlayers, totalWebOnline)
+        activeMatchRooms = Math.max(activeMatchRooms, Number(t.activeMatchRooms || 0))
         if (t.modeDistribution) {
-          modeDistribution = t.modeDistribution
+          modeDistribution = {
+            twoPlayers: Math.max(modeDistribution.twoPlayers, Number(t.modeDistribution.twoPlayers || 0)),
+            fourPlayers: Math.max(modeDistribution.fourPlayers, Number(t.modeDistribution.fourPlayers || 0)),
+            sixPlayers: Math.max(modeDistribution.sixPlayers, Number(t.modeDistribution.sixPlayers || 0)),
+            aiTraining: Math.max(modeDistribution.aiTraining, Number(t.modeDistribution.aiTraining || playersInAITraining))
+          }
         }
         if (typeof t.medianPingMs === 'number') {
           medianPingMs = t.medianPingMs
@@ -166,7 +234,7 @@ export async function GET() {
     }
   } catch {}
 
-  // 2. Latencia real del servidor de WebSockets
+  // 3. Latencia real del servidor de WebSockets
   try {
     const wsRes = await fetch('https://juego-de-servidor.onrender.com/health', {
       method: 'GET',
@@ -189,7 +257,7 @@ export async function GET() {
     serverLatencyMs = Math.max(35, Date.now() - startTime)
   }
 
-  // 3. Consultar métricas de negocio persistentes (system_metrics/global_telemetry)
+  // 4. Consultar métricas de negocio persistentes (system_metrics/global_telemetry)
   let totalDownloadsCount = 10
   let downloadsAndroid = 7
   let downloadsWindows = 2
@@ -206,6 +274,25 @@ export async function GET() {
         downloadsWebPwa = Number(mData.downloadsWebPwa || downloadsWebPwa)
       }
     } catch {}
+
+    // Sincronizar live_telemetry en system_treasury para oyentes en tiempo real onSnapshot
+    try {
+      await adminDb.collection('system_treasury').doc('live_telemetry').set({
+        playersInLobby,
+        playersInAITraining,
+        playersInOnlineTraining,
+        playersInCompetitive,
+        totalOnlinePlayers: liveOnlinePlayers,
+        activeMatchRooms,
+        modeDistribution,
+        medianPingMs,
+        serverLatencyMs,
+        serverStatus,
+        updatedAt: Date.now()
+      }, { merge: true })
+    } catch (dbErr: any) {
+      console.warn('[Telemetry] Error sincronizando live_telemetry en Firestore:', dbErr?.message)
+    }
   }
 
   const criticalErrorsCount = alertEventBuffer.filter(

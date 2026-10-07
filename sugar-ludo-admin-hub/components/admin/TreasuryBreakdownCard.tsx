@@ -19,7 +19,7 @@ export function TreasuryBreakdownCard({ vault, profits }: TreasuryBreakdownCardP
   const totalVaultUSD = Number(vault?.totalVaultUSD ?? (playerBalancesUSD + houseNetProfitsUSD))
   const totalVaultSugarCoins = Number(vault?.totalVaultSugarCoins ?? Math.round(totalVaultUSD * 100))
 
-  const inCashiersUSD = cashierFloatsUSD
+  const inCashiersUSD = playerBalancesUSD > 0 ? Math.min(playerBalancesUSD, Math.max(0, cashierFloatsUSD)) : 0
   const inCentralUSD = Math.max(0, playerBalancesUSD - inCashiersUSD)
   const cashierPercent = playerBalancesUSD > 0 ? Math.min(100, Math.round((inCashiersUSD / playerBalancesUSD) * 100)) : 0
   const centralPercent = 100 - cashierPercent

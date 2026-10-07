@@ -78,7 +78,7 @@ const INITIAL_REAL_TELEMETRY: DetailedTelemetry = {
 
 export default function AdminDashboardPage() {
   const router = useRouter()
-  const { adminUser, isAuthenticated, isLoading, logout, cashierList } = useAdminAuth()
+  const { adminUser, isAuthenticated, isLoading, logout, cashierList, resetAllCashiersFloat } = useAdminAuth()
 
   const [vault, setVault] = useState<TreasuryVault>(INITIAL_REAL_VAULT)
   const [profits, setProfits] = useState<HouseProfitBreakdown>(INITIAL_REAL_PROFITS)
@@ -127,13 +127,20 @@ export default function AdminDashboardPage() {
             const vaultUSD = playerBalancesUSD + houseNetProfitsUSD
             const vaultCoins = Math.round(vaultUSD * 100)
 
+            // Respetar auditoría autoritativa de ledger si existe; si la custodia es 0, el flotante en custodia es estrictamente 0
+            const auditedFloatsUSD = data.cashierFloatsUSD !== undefined ? Number(data.cashierFloatsUSD) : totalFloatsUSD
+            const auditedFloatsCoins = data.cashierFloatsCoins !== undefined ? Number(data.cashierFloatsCoins) : totalFloatsCoins
+
+            const effectiveFloatsUSD = playerBalancesUSD > 0 ? Math.min(playerBalancesUSD, Math.max(0, auditedFloatsUSD)) : 0
+            const effectiveFloatsCoins = playerBalancesUSD > 0 ? Math.min(playerBalancesCoins, Math.max(0, auditedFloatsCoins)) : 0
+
             setVault({
               totalVaultUSD: vaultUSD,
               totalVaultSugarCoins: vaultCoins,
               playerBalancesUSD,
               playerBalancesCoins,
-              cashierFloatsUSD: totalFloatsUSD,
-              cashierFloatsCoins: totalFloatsCoins,
+              cashierFloatsUSD: effectiveFloatsUSD,
+              cashierFloatsCoins: effectiveFloatsCoins,
               houseNetProfitsUSD,
               houseNetProfitsCoins,
               lastAuditedAt: data.lastAuditedAt || Date.now()
@@ -293,13 +300,24 @@ export default function AdminDashboardPage() {
       if (res.ok) {
         const data = await res.json()
         if (data.telemetry) {
+          const t = data.telemetry
           setTelemetry((prev) => ({
             ...prev,
             serverLatencyMs: ping,
-            totalRegisteredUsers: prev.totalRegisteredUsers || data.telemetry.totalRegisteredUsers,
-            totalDownloadsCount: Math.max(prev.totalRegisteredUsers || 0, data.telemetry.totalDownloadsCount || 0),
-            criticalErrorsCount: data.telemetry.criticalErrorsCount ?? 0,
-            recentAlerts: data.telemetry.recentAlerts || []
+            totalRegisteredUsers: prev.totalRegisteredUsers || t.totalRegisteredUsers,
+            totalDownloadsCount: Math.max(prev.totalRegisteredUsers || 0, t.totalDownloadsCount || 0),
+            playersInLobby: Number(t.playersInLobby || 0),
+            playersInAITraining: Number(t.playersInAITraining || 0),
+            playersInOnlineTraining: Number(t.playersInOnlineTraining || 0),
+            playersInCompetitive: Number(t.playersInCompetitive || 0),
+            totalOnlinePlayers: Number(t.totalOnlinePlayers || 0),
+            activeMatchRooms: Number(t.activeMatchRooms || 0),
+            modeDistribution: t.modeDistribution || prev.modeDistribution,
+            medianPingMs: t.medianPingMs ?? prev.medianPingMs,
+            serverStatus: t.serverStatus || 'online',
+            criticalErrorsCount: t.criticalErrorsCount ?? 0,
+            recentAlerts: t.recentAlerts || [],
+            updatedAt: t.updatedAt || Date.now()
           }))
         }
       }
@@ -313,10 +331,12 @@ export default function AdminDashboardPage() {
         const playerBal = Number(prev.playerBalancesUSD || 0)
         const houseProf = Number(prev.houseNetProfitsUSD || 0)
         const vaultUSD = playerBal + houseProf
+        const effectiveFloatsUSD = playerBal > 0 ? Math.min(playerBal, Math.max(0, totalCashierFloatsUSD)) : 0
+        const effectiveFloatsCoins = playerBal > 0 ? Math.min(Number(prev.playerBalancesCoins || 0), Math.max(0, totalCashierFloatsCoins)) : 0
         return {
           ...prev,
-          cashierFloatsUSD: totalCashierFloatsUSD,
-          cashierFloatsCoins: totalCashierFloatsCoins,
+          cashierFloatsUSD: effectiveFloatsUSD,
+          cashierFloatsCoins: effectiveFloatsCoins,
           totalVaultUSD: vaultUSD,
           totalVaultSugarCoins: Math.round(vaultUSD * 100),
           lastAuditedAt: Date.now()
@@ -332,6 +352,28 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchLiveMetrics()
+      // Polling periódico cada 20 segundos ($0.00 Firestore / In-Memory Relay)
+      const interval = setInterval(() => {
+        fetchLiveMetrics()
+      }, 20000)
+
+      // Escucha reactiva en tiempo real por BroadcastChannel entre pestañas locales
+      let ch: BroadcastChannel | null = null
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        try {
+          ch = new BroadcastChannel('sugar_ludo_social_channel')
+          ch.onmessage = (ev) => {
+            if (ev.data?.type === 'telemetry_state_changed') {
+              fetchLiveMetrics()
+            }
+          }
+        } catch {}
+      }
+
+      return () => {
+        clearInterval(interval)
+        if (ch) ch.close()
+      }
     } else if (!isLoading) {
       router.push('/')
     }
@@ -791,10 +833,32 @@ export default function AdminDashboardPage() {
         } catch {}
       }
 
-      // 4. Limpieza de cachés locales
-      if (typeof window !== 'undefined') {
-        if (scope === 'total_hard_reset' || scope === 'cashiers_only') {
+      // 4. Limpieza de cachés locales y reseteo reactivo del flotante de cajeros
+      if (scope === 'total_hard_reset' || scope === 'cashiers_only') {
+        await resetAllCashiersFloat()
+        if (typeof window !== 'undefined') {
           localStorage.removeItem('sugar_cashier_orders')
+        }
+        if (scope === 'total_hard_reset') {
+          setVault({
+            totalVaultUSD: 0,
+            totalVaultSugarCoins: 0,
+            playerBalancesUSD: 0,
+            playerBalancesCoins: 0,
+            cashierFloatsUSD: 0,
+            cashierFloatsCoins: 0,
+            houseNetProfitsUSD: 0,
+            houseNetProfitsCoins: 0,
+            lastAuditedAt: now
+          })
+          setProfits(INITIAL_REAL_PROFITS)
+        } else if (scope === 'cashiers_only') {
+          setVault((prev) => ({
+            ...prev,
+            cashierFloatsUSD: 0,
+            cashierFloatsCoins: 0,
+            lastAuditedAt: now
+          }))
         }
       }
 

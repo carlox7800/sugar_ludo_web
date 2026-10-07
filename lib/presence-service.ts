@@ -53,17 +53,40 @@ function sendServerHeartbeat(state: TelemetryPlayerState, mode: '2p' | '4p' | '6
       timestamp: Date.now()
     })
 
-    if (navigator.sendBeacon) {
+    // 1. Enviar a server.js vía /api/social/event (o fallback a dominio Render en app nativa)
+    const isNative = typeof window !== 'undefined' && (
+      window.location.protocol === 'file:' || 
+      window.location.protocol === 'capacitor:' || 
+      window.location.hostname.includes('capacitor')
+    )
+    const socialUrl = isNative ? 'https://sugar-ludo-web.onrender.com/api/social/event' : '/api/social/event'
+
+    if (navigator.sendBeacon && !isNative) {
       const blob = new Blob([payload], { type: 'application/json' })
-      navigator.sendBeacon('/api/social/event', blob)
+      navigator.sendBeacon(socialUrl, blob)
     } else {
-      fetch('/api/social/event', {
+      fetch(socialUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,
-        keepalive: true
+        keepalive: true,
+        mode: isNative ? 'cors' : 'same-origin'
       }).catch(() => {})
     }
+
+    // 2. Despacho directo al Admin Hub para telemetría en tiempo real sin latencia
+    const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    const adminHubUrl = (typeof process !== 'undefined' && process.env && (process.env as any).NEXT_PUBLIC_ADMIN_HUB_URL)
+      ? (process.env as any).NEXT_PUBLIC_ADMIN_HUB_URL
+      : (isDev ? 'http://localhost:3001' : 'https://sugar-ludo-admin-hub.onrender.com')
+
+    fetch(`${adminHubUrl}/api/telemetry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      keepalive: true,
+      mode: 'cors'
+    }).catch(() => {})
   } catch {}
 }
 
@@ -106,6 +129,18 @@ export function initPresenceTracker(initialScreen: string = 'lobby', onlineOrigi
     heartbeatTimer = setInterval(() => {
       if (typeof document !== 'undefined' && !document.hidden && currentState) {
         sendServerHeartbeat(currentState, currentMode)
+        try {
+          if ('BroadcastChannel' in window) {
+            const ch = new BroadcastChannel('sugar_ludo_social_channel')
+            ch.postMessage({
+              type: 'telemetry_state_changed',
+              state: currentState,
+              mode: currentMode,
+              timestamp: Date.now()
+            })
+            ch.close()
+          }
+        } catch {}
       }
     }, 25000)
   }

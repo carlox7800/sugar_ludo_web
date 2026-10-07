@@ -376,6 +376,26 @@ export async function POST(request: Request) {
           await batch.commit()
         }
       } catch {}
+
+      // 3.4.1. Resetear flotantes en system_config/cashier_accounts
+      try {
+        const configRef = adminDb.collection('system_config').doc('cashier_accounts')
+        const configSnap = await configRef.get()
+        if (configSnap.exists) {
+          const accounts = configSnap.data()?.accounts || []
+          const resetAccounts = accounts.map((c: any) => ({
+            ...c,
+            floatBalanceCoins: 0,
+            floatBalanceUSDT: 0,
+            totalPaidWithdrawalsUSDT: 0,
+            initialShiftFloatUSDT: 0,
+            lastResetAt: now
+          }))
+          await configRef.set({ accounts: resetAccounts, updatedAt: now }, { merge: true })
+        }
+      } catch (cfgErr: any) {
+        console.warn('[AdminResetAPI] Reset system_config/cashier_accounts notice (Modo 1):', cfgErr.message)
+      }
     }
 
     // =========================================================================
@@ -520,7 +540,21 @@ export async function POST(request: Request) {
 
     try {
       const configRef = doc(db, 'system_config', 'cashier_accounts')
-      await setDoc(configRef, { updatedAt: now }, { merge: true })
+      const configSnap = await getDoc(configRef).catch(() => null)
+      if (configSnap && (configSnap as any).exists?.()) {
+        const accounts = configSnap.data()?.accounts || []
+        const resetAccounts = accounts.map((c: any) => ({
+          ...c,
+          floatBalanceCoins: 0,
+          floatBalanceUSDT: 0,
+          totalPaidWithdrawalsUSDT: 0,
+          initialShiftFloatUSDT: 0,
+          lastResetAt: now
+        }))
+        await setDoc(configRef, { accounts: resetAccounts, updatedAt: now }, { merge: true })
+      } else {
+        await setDoc(configRef, { updatedAt: now }, { merge: true })
+      }
     } catch {}
 
     await setDoc(ledgerRef, {
@@ -732,6 +766,24 @@ export async function POST(request: Request) {
           }
         })
         await batch.commit()
+      }
+    } catch {}
+
+    // 3.4.1. Resetear flotantes en system_config/cashier_accounts
+    try {
+      const configRef = doc(db, 'system_config', 'cashier_accounts')
+      const configSnap = await getDoc(configRef).catch(() => null)
+      if (configSnap && (configSnap as any).exists?.()) {
+        const accounts = configSnap.data()?.accounts || []
+        const resetAccounts = accounts.map((c: any) => ({
+          ...c,
+          floatBalanceCoins: 0,
+          floatBalanceUSDT: 0,
+          totalPaidWithdrawalsUSDT: 0,
+          initialShiftFloatUSDT: 0,
+          lastResetAt: now
+        }))
+        await setDoc(configRef, { accounts: resetAccounts, updatedAt: now }, { merge: true })
       }
     } catch {}
 
