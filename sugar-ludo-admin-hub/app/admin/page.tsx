@@ -248,8 +248,8 @@ export default function AdminDashboardPage() {
                 ...authHeaders
               },
               body: JSON.stringify({
-                adminUid: adminUser?.uid || 'adm_super',
-                adminName: adminUser?.displayName || 'Super Admin'
+                adminUid: adminUser?.uid || 'adm_super_carlos_001',
+                adminName: adminUser?.displayName || 'Carlos (Super Admin)'
               })
             })
             if (reconcileRes.ok) {

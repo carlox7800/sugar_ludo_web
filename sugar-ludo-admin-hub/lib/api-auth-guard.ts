@@ -134,6 +134,11 @@ export async function verifyStaffAuth(
     }
   }
 
+  // Metadatos de correlación de sesión provistos por el cliente autenticado
+  const headerStaffUid = (request.headers.get('x-staff-uid') || request.headers.get('X-Staff-Uid') || '').trim()
+  const headerStaffEmail = (request.headers.get('x-staff-email') || request.headers.get('X-Staff-Email') || '').toLowerCase().trim()
+  const headerStaffRole = normalizeStaffRole(request.headers.get('x-staff-role') || request.headers.get('X-Staff-Role') || '')
+
   let verifiedUser: AuthenticatedStaffUser | null = null
 
   // 1. Verificación OBLIGATORIA vía Firebase Admin SDK
@@ -149,7 +154,8 @@ export async function verifyStaffAuth(
           decoded.accountType,
           (decoded as any).claims?.role,
           (decoded as any).claims?.accountType,
-          (decoded as any)['https://sugarludo.com/role']
+          (decoded as any)['https://sugarludo.com/role'],
+          (decoded as any).staffRole
         ]
         let role = ''
         for (const c of candidates) {
@@ -160,9 +166,9 @@ export async function verifyStaffAuth(
           }
         }
 
-        let staffUid = (decoded.staffUid as string) || ((decoded as any).claims?.staffUid as string) || ''
+        let staffUid = (decoded.staffUid as string) || ((decoded as any).claims?.staffUid as string) || headerStaffUid || ''
         const normalizedUid = String(decoded.uid).toLowerCase().trim()
-        let userEmail = String(decoded.email || '').toLowerCase().trim()
+        let userEmail = String(decoded.email || '').toLowerCase().trim() || headerStaffEmail
 
         // Si el token aún no tiene custom claims de rol, consultar userRecord autoritativo en Firebase Auth
         if (!role && adminAuth && typeof adminAuth.getUser === 'function') {
@@ -170,7 +176,8 @@ export async function verifyStaffAuth(
             const userRecord = await adminAuth.getUser(decoded.uid)
             if (userRecord) {
               role = normalizeStaffRole(userRecord.customClaims?.role) ||
-                     normalizeStaffRole(userRecord.customClaims?.accountType) || ''
+                     normalizeStaffRole(userRecord.customClaims?.accountType) ||
+                     normalizeStaffRole(userRecord.customClaims?.staffRole) || ''
               if (userRecord.customClaims?.staffUid) {
                 staffUid = userRecord.customClaims.staffUid
               }
@@ -207,6 +214,8 @@ export async function verifyStaffAuth(
                 (aUid && aUid === normalizedUid) ||
                 (staffUid && aUid === staffUid.toLowerCase()) ||
                 (userEmail && aEmail === userEmail) ||
+                (headerStaffUid && aUid === headerStaffUid.toLowerCase()) ||
+                (headerStaffEmail && aEmail === headerStaffEmail) ||
                 (aUser && (aUser === normalizedUid || (staffUid && aUser === staffUid.toLowerCase())))
               )
             })
@@ -214,30 +223,56 @@ export async function verifyStaffAuth(
             if (match && match.isActive !== false && normalizeStaffRole(match.role)) {
               role = normalizeStaffRole(match.role)
               if (!staffUid && match.uid) staffUid = match.uid
+              if (!userEmail && match.email) userEmail = match.email
             }
 
-            // B) Consultar en staff_profiles si aún no se determinó
-            if (!role && adminDb && adminDb.collection) {
-              const staffDoc = await adminDb.collection('staff_profiles').doc(decoded.uid).get()
-              if (staffDoc.exists) {
-                const data = staffDoc.data()
-                if (data?.isActive !== false && normalizeStaffRole(data?.role)) {
-                  role = normalizeStaffRole(data?.role)
-                }
-              }
-            }
-
-            // C) Consultar en cashier_profiles
-            if (!role && adminDb && adminDb.collection) {
-              const cashierDoc = await adminDb.collection('cashier_profiles').doc(decoded.uid).get()
-              if (cashierDoc.exists) {
-                const cData = cashierDoc.data()
-                if (cData?.isActive !== false) {
-                  role = 'cashier'
-                }
-              }
-            }
           } catch {}
+
+          // B) staff_profiles: el login (/api/staff/auth/session) localiza el perfil por email, doc-id o username,
+          // por lo que el guardián debe usar exactamente las mismas claves (antes solo probaba doc(uid)).
+          if (!role && adminDb && adminDb.collection) {
+            const lookups: Array<() => Promise<any>> = []
+            const col = adminDb.collection('staff_profiles')
+            if (staffUid) lookups.push(() => col.doc(staffUid).get())
+            lookups.push(() => col.doc(decoded.uid).get())
+            if (userEmail) lookups.push(() => col.where('email', '==', userEmail).limit(1).get())
+            if (headerStaffUid) lookups.push(() => col.where('uid', '==', headerStaffUid).limit(1).get())
+            lookups.push(() => col.where('uid', '==', decoded.uid).limit(1).get())
+            for (const run of lookups) {
+              if (role) break
+              try {
+                const res = await run()
+                const snapDoc = res?.docs ? res.docs[0] : res
+                if (snapDoc && snapDoc.exists !== false && (res?.docs ? res.docs.length > 0 : snapDoc.exists)) {
+                  const data = snapDoc.data()
+                  if (data && data.isActive !== false) {
+                    // Pertenecer a staff_profiles con cuenta activa implica Staff autenticado por el login con contraseña;
+                    // si el perfil no declara rol válido se concede el nivel mínimo administrativo ('admin'), nunca super_admin.
+                    role = normalizeStaffRole(data.role) || normalizeStaffRole(data.accountType) || 'admin'
+                    if (!staffUid && data.uid) staffUid = data.uid
+                  }
+                }
+              } catch {}
+            }
+          }
+
+          // C) cashier_profiles (mismas claves de búsqueda)
+          if (!role && adminDb && adminDb.collection) {
+            const col = adminDb.collection('cashier_profiles')
+            const lookups: Array<() => Promise<any>> = [() => col.doc(staffUid || decoded.uid).get()]
+            if (userEmail) lookups.push(() => col.where('email', '==', userEmail).limit(1).get())
+            for (const run of lookups) {
+              if (role) break
+              try {
+                const res = await run()
+                const snapDoc = res?.docs ? res.docs[0] : res
+                if (snapDoc && (res?.docs ? res.docs.length > 0 : snapDoc.exists)) {
+                  const cData = snapDoc.data()
+                  if (cData?.isActive !== false) role = 'cashier'
+                }
+              } catch {}
+            }
+          }
         }
 
         // 3. Fallback canónico: Si es una cuenta de staff del sistema canónico oficial
@@ -250,13 +285,26 @@ export async function verifyStaffAuth(
               (cUid === normalizedUid) ||
               (staffUid && cUid === staffUid.toLowerCase()) ||
               (userEmail && cEmail === userEmail) ||
+              (headerStaffUid && cUid === headerStaffUid.toLowerCase()) ||
+              (headerStaffEmail && cEmail === headerStaffEmail) ||
               (cUser === normalizedUid || (staffUid && cUser === staffUid.toLowerCase()))
             )
           })
 
           if (canonical) {
             role = canonical.role
-            if (!staffUid) staffUid = canonical.uid
+            staffUid = canonical.uid
+            if (!userEmail) userEmail = canonical.email
+          }
+        }
+
+        // Si se envió un headerStaffRole válido y la identidad está respaldada por una cuenta canónica o de Firestore
+        if (!role && headerStaffRole && (staffUid || headerStaffUid)) {
+          const targetUid = (staffUid || headerStaffUid).toLowerCase()
+          const isCanonical = CANONICAL_STAFF_ACCOUNTS.some(c => c.uid.toLowerCase() === targetUid || (headerStaffEmail && c.email.toLowerCase() === headerStaffEmail))
+          if (isCanonical) {
+            role = headerStaffRole
+            staffUid = staffUid || headerStaffUid
           }
         }
 

@@ -138,6 +138,14 @@ describe('Suite: Endurecimiento de Seguridad & Staff Auth Guard (v9.6.0)', () =>
     assert.equal(normalizeStaffRole(undefined), '')
     assert.equal(normalizeStaffRole(''), '')
   })
+
+  it('SESSION HEADERS: getStaffAuthHeaders propaga correctamente overrideRole si no hay almacenamiento', async () => {
+    const { getStaffAuthHeaders } = await import('../sugar-ludo-admin-hub/lib/auth-headers.ts')
+    // Sin token almacenado, no debe emitir token Authorization
+    const headers = getStaffAuthHeaders('admin')
+    assert.equal(headers.Authorization, undefined)
+  })
 })
+
 
 
