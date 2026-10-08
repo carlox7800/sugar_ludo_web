@@ -288,8 +288,16 @@ export default function CashierMainDeskPage() {
             floatBalanceCoins: fCoins,
             floatBalanceUSDT: fUSDT
           }))
+          cashierLogger.cashierFloat('Lectura en vivo de cashier_profiles/{uid}', {
+            cashierUid: currentCashier.uid,
+            floatBalanceUSDT: fUSDT,
+            floatBalanceCoins: fCoins,
+            totalOrdersCompleted: pData.totalOrdersCompleted || 0,
+            lastActiveAt: pData.lastActiveAt
+          })
         }
       }, (err) => {
+        cashierLogger.errorTrace('Error en snapshot de cashier_profiles', err)
         console.debug('[CashierMainDesk] Profile snapshot notice:', err?.message)
       })
     } catch {}
@@ -803,6 +811,9 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
         cashier={currentCashier as any}
         orders={orders}
       />
+
+      {/* Consola de Diagnóstico & Observabilidad Forense */}
+      <CashierLogPanel />
     </div>
   )
 }

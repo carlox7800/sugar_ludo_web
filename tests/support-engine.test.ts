@@ -23,6 +23,7 @@ import {
   calculatePendingDisputesCounts,
   isPendingDisputeStatus
 } from '../sugar-ludo-admin-hub/lib/disputes-service.ts'
+import { cashierLogger } from '../sugar-ludo-admin-hub/lib/cashier-logger.ts'
 
 describe('Suite: Base de Conocimiento Determinista (Tier 1 Support)', () => {
   it('debe contener las 4 categorías principales del sistema', () => {
@@ -456,6 +457,99 @@ describe('Suite: Resolución Directiva de Disputas & Invariantes Contables (v9.9
     const effectiveFloatsUSD = Math.max(0, auditedFloatsUSD)
 
     assert.equal(effectiveFloatsUSD, 230.0, 'El flotante de la red de cajeros no debe quedar restringido por la custodia de jugadores')
+  })
+})
+
+describe('Suite: Observabilidad Forense y Diagnóstico Multi-Capa (v9.9.2)', () => {
+  it('debe registrar y auditar eventos de BALANCE-AUDIT correctamente', () => {
+    cashierLogger.clear()
+    cashierLogger.balanceAudit('Verificación de escrow de retiro', {
+      userId: 'usr_qa_123',
+      availableCoins: 5000,
+      escrowLockedCoins: 20000,
+      diff: -20000
+    })
+
+    const logs = cashierLogger.getLogs()
+    assert.equal(logs.length, 1)
+    assert.equal(logs[0].level, 'BALANCE-AUDIT')
+    assert.ok(logs[0].message.includes('Verificación de escrow de retiro'))
+    assert.equal(logs[0].details?.userId, 'usr_qa_123')
+    assert.equal(logs[0].details?.escrowLockedCoins, 20000)
+  })
+
+  it('debe registrar y auditar eventos de CASHIER-FLOAT correctamente', () => {
+    cashierLogger.clear()
+    cashierLogger.cashierFloat('Recarga de saldo flotante por Super Admin', {
+      cashierId: 'cashier_01',
+      adminId: 'super_admin_main',
+      amountAddedUSDT: 50,
+      newFloatBalanceUSDT: 80
+    })
+
+    const logs = cashierLogger.getLogs()
+    assert.equal(logs.length, 1)
+    assert.equal(logs[0].level, 'CASHIER-FLOAT')
+    assert.ok(logs[0].message.includes('Recarga de saldo flotante por Super Admin'))
+    assert.equal(logs[0].details?.amountAddedUSDT, 50)
+    assert.equal(logs[0].details?.newFloatBalanceUSDT, 80)
+  })
+
+  it('debe registrar y auditar eventos de TREASURY-SYNC correctamente', () => {
+    cashierLogger.clear()
+    cashierLogger.treasurySync('Conciliación de Bóveda completada', {
+      totalCashierFloatsUSD: 230.0,
+      playerBalancesUSD: 30.0,
+      delta: 0,
+      status: 'SYNCHRONIZED'
+    })
+
+    const logs = cashierLogger.getLogs()
+    assert.equal(logs.length, 1)
+    assert.equal(logs[0].level, 'TREASURY-SYNC')
+    assert.ok(logs[0].message.includes('Conciliación de Bóveda completada'))
+    assert.equal(logs[0].details?.totalCashierFloatsUSD, 230.0)
+  })
+
+  it('debe registrar y capturar trazas estructuradas con ERROR-TRACE', () => {
+    cashierLogger.clear()
+    const errorSimulado = new Error('Rechazo por rate limit 429 en reconciliación')
+    cashierLogger.errorTrace('Fallo al sincronizar bóveda', errorSimulado)
+
+    const logs = cashierLogger.getLogs()
+    assert.equal(logs.length, 1)
+    assert.equal(logs[0].level, 'ERROR-TRACE')
+    assert.ok(logs[0].message.includes('Fallo al sincronizar bóveda'))
+    assert.equal(logs[0].details?.name, 'Error')
+    assert.equal(logs[0].details?.message, 'Rechazo por rate limit 429 en reconciliación')
+    assert.ok(logs[0].details?.stack, 'Debe incluir el stack trace del error')
+  })
+
+  it('debe generar reportes formateados legibles con exportLogs() y exportLogsJSON()', () => {
+    cashierLogger.clear()
+    cashierLogger.balanceAudit('Paso 1: Auditoría de saldo', { userId: 'usr_test' })
+    cashierLogger.cashierFloat('Paso 2: Deducción de flotante', { cashierId: 'csh_test' })
+    cashierLogger.treasurySync('Paso 3: Sincronización de tesorería', { ok: true })
+    cashierLogger.errorTrace('Paso 4: Error simulado', { code: 'LOCK_FAILED' })
+
+    const textReport = cashierLogger.exportLogs()
+    assert.ok(textReport.includes('SUGAR LUDO - REPORTE DE AUDITORÍA Y OBSERVABILIDAD FORENSE'))
+    assert.ok(textReport.includes('[BALANCE-AUDIT]'))
+    assert.ok(textReport.includes('Paso 1: Auditoría de saldo'))
+    assert.ok(textReport.includes('[CASHIER-FLOAT]'))
+    assert.ok(textReport.includes('Paso 2: Deducción de flotante'))
+    assert.ok(textReport.includes('[TREASURY-SYNC]'))
+    assert.ok(textReport.includes('Paso 3: Sincronización de tesorería'))
+    assert.ok(textReport.includes('[ERROR-TRACE]'))
+    assert.ok(textReport.includes('Paso 4: Error simulado'))
+
+    const jsonReport = cashierLogger.exportLogsJSON()
+    const parsed = JSON.parse(jsonReport)
+    assert.ok(parsed.version)
+    assert.equal(parsed.totalLogs, 4)
+    assert.equal(parsed.logs.length, 4)
+    assert.equal(parsed.logs[3].level, 'BALANCE-AUDIT') // unshift pone el más reciente primero
+    assert.equal(parsed.logs[0].level, 'ERROR-TRACE')
   })
 })
 

@@ -22,6 +22,8 @@ import { CashierPdfReportModal } from '../../../components/admin/CashierPdfRepor
 import { CashierDualChatPanel } from '../../../components/admin/CashierDualChatPanel'
 import { RegisterCashierModal } from '../../../components/admin/RegisterCashierModal'
 import { EditCashierModal } from '../../../components/admin/EditCashierModal'
+import { cashierLogger } from '../../../lib/cashier-logger'
+import { CashierLogPanel } from '../../../components/cashier/CashierLogPanel'
 import { db } from '../../../lib/firebase'
 import { doc, setDoc, increment, collection, query, where, onSnapshot, limit } from 'firebase/firestore'
 import {
@@ -229,6 +231,16 @@ export default function AdminCajerosManagementPage() {
       // Actualizar estado en memoria y notificar vía canal sin re-escribir ni re-sumar
       updateCashierFloat(cashierUid, finalCoins, finalUSDT)
 
+      cashierLogger.cashierFloat('Recarga de saldo flotante por Super Admin exitosa', {
+        cashierUid,
+        targetName: target?.name,
+        amountUSDT,
+        amountCoins,
+        finalUSDT,
+        finalCoins,
+        notes
+      })
+
       // Sincronizar incremento en global_ledger de tesorería
       try {
         const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
@@ -252,6 +264,11 @@ export default function AdminCajerosManagementPage() {
       setNotification(`¡Asignados +$${amountUSDT.toFixed(2)} USDT (+${amountCoins.toLocaleString()} SC) con éxito! Saldo actual: $${finalUSDT.toFixed(2)} USDT`)
       setTimeout(() => setNotification(null), 4000)
     } catch (e: any) {
+      cashierLogger.errorTrace('Fallo al procesar recarga autoritativa de cajero', {
+        cashierUid,
+        amountUSDT,
+        error: e?.message
+      })
       console.warn('[AdminCajeros] Fallo al procesar recarga autoritativa:', e)
       setNotification(`Error al recargar saldo flotante: ${e?.message || 'Intente nuevamente'}`)
       setTimeout(() => setNotification(null), 4000)
@@ -669,6 +686,9 @@ export default function AdminCajerosManagementPage() {
         onClose={() => setSelectedCashierForPdf(null)}
         cashier={selectedCashierForPdf}
       />
+
+      {/* Consola de Diagnóstico & Observabilidad Forense */}
+      <CashierLogPanel />
     </div>
   )
 }

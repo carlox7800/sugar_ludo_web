@@ -421,6 +421,23 @@ export default function OrderDetailPage() {
         throw new Error(result.error || 'Error al validar el depósito en el servidor')
       }
 
+      cashierLogger.balanceAudit('Depósito validado y acreditado a jugador', {
+        orderId: order.id,
+        playerUid: order.playerUid,
+        playerName: order.playerName,
+        amountSugarCoins: depositCoins,
+        amountFiat: depositUSD,
+        currency: order.currency,
+        referenceNumber: finalRef
+      })
+
+      cashierLogger.cashierFloat('Débito de flotante por acreditación de depósito P2P', {
+        cashierUid: currentCashierSession.uid,
+        orderId: order.id,
+        debitedCoins: depositCoins,
+        debitedUSDT: depositUSD
+      })
+
       const depositNoticeText = `✅ ¡DEPÓSITO VALIDADO CON ÉXITO!
 
 Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están acreditados en tu cuenta:
@@ -437,6 +454,7 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       setOrder((prev) => (prev ? { ...prev, status: 'completed', completedAt: Date.now(), receiptReferenceNumber: finalRef } : null))
       setNotification(`¡Depósito #${order.id.slice(0, 10)} validado y liberado con éxito (+${depositCoins} SC acreditados al jugador)!`)
     } catch (e: unknown) {
+      cashierLogger.errorTrace('Fallo al validar y acreditar depósito P2P', e)
       const msg = e instanceof Error ? e.message : 'Fallo de conexión'
       setNotification(`Error al validar depósito: ${msg}`)
     } finally {
@@ -448,6 +466,11 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
     const finalPayoutRef = payoutTxIdParam.trim() || `TX-PAYOUT-${Date.now().toString(36).toUpperCase()}`
 
     if (cashierFloatUSDT < netPayoutUSD) {
+      cashierLogger.errorTrace('Intento de pago de retiro con saldo insuficiente', {
+        cashierFloatUSDT,
+        netPayoutUSD,
+        orderId: order.id
+      })
       setNotification(`⛔ OPERACIÓN DENEGADA: Saldo insuficiente ($${cashierFloatUSDT.toFixed(2)} USDT disponibles). Se requieren $${netPayoutUSD.toFixed(2)} USDT.`)
       return
     }
@@ -491,6 +514,24 @@ Hola ${order.playerName}, tu recarga ha sido verificada y los fondos ya están a
       const newUSDT = Math.max(0, parseFloat((cashierFloatUSDT - netPayoutUSD).toFixed(2)))
       const newCoins = Math.round(newUSDT * 100)
 
+      cashierLogger.cashierFloat('Retiro liquidado y transferido por cajero', {
+        cashierUid: currentCashierSession.uid,
+        orderId: order.id,
+        previousFloatUSDT: cashierFloatUSDT,
+        netPayoutUSD,
+        newFloatUSDT: newUSDT,
+        newFloatCoins: newCoins,
+        payoutTxId: finalPayoutRef
+      })
+
+      cashierLogger.balanceAudit('Retiro debitado definitivamente de custodia del jugador', {
+        playerUid: order.playerUid,
+        orderId: order.id,
+        amountSugarCoins: order.amountSugarCoins,
+        netPayoutUSD,
+        feeUSD: withdrawalFeeUSD
+      })
+
       setLiveCashierProfile({ floatBalanceCoins: newCoins, floatBalanceUSDT: newUSDT })
       setCurrentCashierSession((prev) => ({ ...(prev || {}), floatBalanceCoins: newCoins, floatBalanceUSDT: newUSDT }))
 
@@ -531,6 +572,7 @@ Conserva este mensaje como comprobante formal de la transacción.`
 
       await handleSendMessage(payoutNoticeText)
     } catch (e: unknown) {
+      cashierLogger.errorTrace('Fallo al liquidar retiro en el servidor', e)
       const msg = e instanceof Error ? e.message : 'No se pudo liquidar la orden'
       setNotification(`⛔ ERROR: ${msg}`)
       OrdersCache.updateOrder(order)

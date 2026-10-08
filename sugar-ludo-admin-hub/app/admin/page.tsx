@@ -14,6 +14,8 @@ import { DetailedTelemetry } from '../../types/admin-expanded'
 import { EconomicHardResetModal, EconomicResetOptions } from '../../components/admin/EconomicHardResetModal'
 import { subscribeToAllPrivateChatsMeta } from '../../lib/staff-chat-service'
 import { subscribeToPendingDisputesCount } from '../../lib/disputes-service'
+import { cashierLogger } from '../../lib/cashier-logger'
+import { CashierLogPanel } from '../../components/cashier/CashierLogPanel'
 import { db, auth } from '../../lib/firebase'
 import { doc, onSnapshot, setDoc, collection, getDocs, query, limit, writeBatch, getCountFromServer } from 'firebase/firestore'
 import {
@@ -148,6 +150,16 @@ export default function AdminDashboardPage() {
               lastAuditedAt: data.lastAuditedAt || Date.now()
             })
 
+            cashierLogger.treasurySync('Lectura en vivo de system_treasury/global_ledger', {
+              origen: 'firestore_onSnapshot',
+              vaultUSD,
+              playerBalancesUSD,
+              cashierFloatsUSD: effectiveFloatsUSD,
+              auditedFloatsUSD,
+              houseNetProfitsUSD,
+              timestamp: Date.now()
+            })
+
             if (data.profitsBreakdown) {
               const normalUSD = data.profitsBreakdown.normalWithdrawalFeesUSD !== undefined
                 ? Number(data.profitsBreakdown.normalWithdrawalFeesUSD)
@@ -280,16 +292,36 @@ export default function AdminDashboardPage() {
                   houseNetProfitsCoins: profitsCoins,
                   lastAuditedAt: l.lastAuditedAt || Date.now()
                 })
+
+                cashierLogger.treasurySync('Conciliación autoritativa exitosa (/api/admin/treasury/reconcile)', {
+                  status: recStatus,
+                  floatsUSD,
+                  floatsCoins,
+                  playerUSD,
+                  totalUSD,
+                  stats: recData.stats,
+                  lastAuditedAt: l.lastAuditedAt
+                })
               }
             } else if (recStatus === 429) {
               // HTTP 429 TOO MANY REQUESTS: Congelar reconciliación y pausar intervalo respetando retryAfter (mínimo 35s)
               const rawRetry = Number(recData?.retryAfter) || Number(reconcileRes.headers.get('Retry-After')) || 30
               const retryAfterSec = Math.max(35, rawRetry)
               reconcileCooldownUntilRef.current = now + (retryAfterSec * 1000)
+              cashierLogger.errorTrace(`Reconciliación en enfriamiento por rate limit (HTTP 429). RetryAfter: ${retryAfterSec}s`, {
+                status: 429,
+                retryAfterSec
+              })
               console.warn(`[AdminTreasury] Reconciliación en enfriamiento por rate limit (HTTP 429). Reintentando en ${retryAfterSec}s.`)
             } else if (recStatus === 401) {
               const errCode = recData?.code || ''
               const errMsg = recData?.error || ''
+
+              cashierLogger.errorTrace(`Error de autenticación en conciliación (HTTP 401): ${errCode}`, {
+                status: 401,
+                errCode,
+                errMsg
+              })
 
               // SESIÓN INVALIDADA POR CONCURRENCIA O EXPIRACIÓN: CORTAR INTERVALOS Y REDIRIGIR
               if (errCode === 'SESSION_SUPERSEDED' || errCode.startsWith('SESSION_EXPIRED') || errCode === 'SESSION_INVALID') {
@@ -305,16 +337,26 @@ export default function AdminDashboardPage() {
 
               reconcileCooldownUntilRef.current = now + 60000
             } else if (recStatus === 403) {
+              cashierLogger.errorTrace(`Permisos insuficientes en conciliación (HTTP 403)`, {
+                status: 403,
+                adminUid: adminUser?.uid
+              })
               // PERMISOS INSUFICIENTES: CANCELAR DEFINITIVAMENTE BUCLE DE RECONCILIACIÓN
               reconcileCooldownUntilRef.current = Infinity
               if ((adminUser as any)?.role === 'cashier' || (typeof window !== 'undefined' && localStorage.getItem('sugar_cashier_session'))) {
                 router.push('/cashier')
                 return
               }
+            } else {
+              cashierLogger.errorTrace(`Respuesta no esperada en conciliación (HTTP ${recStatus})`, {
+                status: recStatus,
+                data: recData
+              })
             }
           }
         }
       } catch (recErr) {
+        cashierLogger.errorTrace('Excepción de red/fetch al consultar conciliación', recErr)
         console.warn('[AdminTreasury] Conciliación fallback local:', recErr)
       }
 
@@ -370,8 +412,12 @@ export default function AdminDashboardPage() {
         const playerBal = Number(prev.playerBalancesUSD || 0)
         const houseProf = Number(prev.houseNetProfitsUSD || 0)
         const vaultUSD = playerBal + houseProf
-        const effectiveFloatsUSD = playerBal > 0 ? Math.min(playerBal, Math.max(0, totalCashierFloatsUSD)) : 0
-        const effectiveFloatsCoins = playerBal > 0 ? Math.min(Number(prev.playerBalancesCoins || 0), Math.max(0, totalCashierFloatsCoins)) : 0
+        const effectiveFloatsUSD = prev.cashierFloatsUSD !== undefined && prev.cashierFloatsUSD > 0
+          ? Number(prev.cashierFloatsUSD)
+          : Math.max(0, totalCashierFloatsUSD)
+        const effectiveFloatsCoins = prev.cashierFloatsCoins !== undefined && prev.cashierFloatsCoins > 0
+          ? Number(prev.cashierFloatsCoins)
+          : Math.max(0, totalCashierFloatsCoins)
         return {
           ...prev,
           cashierFloatsUSD: effectiveFloatsUSD,
@@ -1179,6 +1225,9 @@ export default function AdminDashboardPage() {
         currentVault={vault}
         activeCashiersCount={cashierList.length}
       />
+
+      {/* Consola de Diagnóstico & Observabilidad Forense */}
+      <CashierLogPanel />
     </div>
   )
 }

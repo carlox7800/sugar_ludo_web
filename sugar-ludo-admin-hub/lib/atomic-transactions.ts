@@ -2,6 +2,7 @@ import { adminDb, admin, hasAdminCredentials } from './firebase-admin'
 import { db } from './firebase'
 import { doc, getDoc, updateDoc, setDoc, increment, collection, runTransaction } from 'firebase/firestore'
 import { CashierOrder, CashierProfile, DailyStats, AuditLog, PaymentMethodType, PaymentAccount, FraudAuditResult } from '../types/cashier'
+import { cashierLogger } from './cashier-logger'
 
 export interface PlayerWalletTransaction {
   id?: string
@@ -1801,9 +1802,52 @@ export async function resolveDisputeCaseAtomics(params: {
           })
         }
 
+        if (typeof window !== 'undefined') {
+          if (verdict === 'favor_player') {
+            if (isWithdrawOrder) {
+              cashierLogger.balanceAudit('Arbitraje directivo: Retiro liquidado, Escrow quemado', {
+                playerUid: dData.playerUid,
+                orderId: finalOrderId,
+                amountCoins,
+                orderType: 'withdraw'
+              })
+              cashierLogger.cashierFloat('Arbitraje directivo: Deducción de flotante de cajero', {
+                cashierUid,
+                orderId: finalOrderId,
+                amountCoins
+              })
+            } else {
+              cashierLogger.balanceAudit('Arbitraje directivo: Depósito acreditado al jugador', {
+                playerUid: dData.playerUid,
+                orderId: finalOrderId,
+                amountCoins,
+                orderType: 'deposit'
+              })
+              cashierLogger.cashierFloat('Arbitraje directivo: Deducción de flotante de cajero por depósito', {
+                cashierUid,
+                amountCoins
+              })
+            }
+            cashierLogger.treasurySync('Arbitraje directivo: Sincronización de tesorería y ledger', {
+              disputeId,
+              orderId: finalOrderId,
+              verdict,
+              amountCoins
+            })
+          } else {
+            cashierLogger.treasurySync('Arbitraje directivo: Dictamen a favor del cajero ejecutado', {
+              disputeId,
+              orderId: finalOrderId,
+              verdict,
+              isWithdrawOrder
+            })
+          }
+        }
+
         return { success: true, message: `Veredicto ejecutado con éxito: ${verdict}` }
       })
     } catch (modularErr: unknown) {
+      cashierLogger.errorTrace('Fallo en runTransaction de resolución de disputas', modularErr)
       console.warn('[resolveDisputeCaseAtomics] Fallback secuencial:', getErrorMessage(modularErr))
     }
   }

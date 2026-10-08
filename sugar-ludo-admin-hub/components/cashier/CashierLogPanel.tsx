@@ -43,18 +43,41 @@ export function CashierLogPanel() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const [copiedJSON, setCopiedJSON] = useState(false)
+  const handleCopyJSON = () => {
+    const jsonStr = cashierLogger.exportLogsJSON()
+    navigator.clipboard.writeText(jsonStr || '{}')
+    setCopiedJSON(true)
+    setTimeout(() => setCopiedJSON(false), 2000)
+  }
+
   const handleClear = () => {
     cashierLogger.clear()
     setLogs([])
   }
 
   const handleTestEvent = () => {
-    cashierLogger.click('Botón de Prueba [⚡ Probar]', {
-      testTime: new Date().toISOString(),
-      status: 'OK',
-      note: 'Verificación manual de la consola de diagnóstico en vivo'
+    cashierLogger.balanceAudit('Verificación de saldo disponible vs Escrow [TEST]', {
+      playerUid: 'usr_test_player_001',
+      availableCoins: 5000,
+      escrowLockedCoins: 20000,
+      totalHoldCoins: 25000,
+      currency: 'SC',
+      parityUSD: 250.0
     })
-    cashierLogger.action('Verificación de Integridad de Logs', {
+    cashierLogger.cashierFloat('Lectura de flotante de cajero [TEST]', {
+      cashierUid: 'csh_001',
+      floatBalanceUSDT: 230.0,
+      floatBalanceCoins: 23000,
+      shiftLedgerRecorded: true
+    })
+    cashierLogger.treasurySync('Conciliación patrimonial autoritativa [TEST]', {
+      cashierFloatsUSD: 230.0,
+      playerCustodyUSD: 250.0,
+      totalVaultUSD: 480.0,
+      reconcileResult: 'SUCCESS_200'
+    })
+    cashierLogger.action('Verificación de Integridad de Logs Multi-Capa', {
       sistema: 'Sugar Ludo Admin Hub',
       version: APP_VERSION
     })
@@ -62,6 +85,14 @@ export function CashierLogPanel() {
 
   const getLevelBadge = (level: CashierLogLevel) => {
     switch (level) {
+      case 'BALANCE-AUDIT':
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold'
+      case 'CASHIER-FLOAT':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold'
+      case 'TREASURY-SYNC':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/40 font-bold'
+      case 'ERROR-TRACE':
+        return 'bg-rose-500/25 text-rose-300 border-rose-500/60 font-black'
       case 'ERROR':
         return 'bg-rose-500/20 text-rose-300 border-rose-500/40'
       case 'CLICK':
@@ -71,15 +102,19 @@ export function CashierLogPanel() {
       case 'API':
         return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
       case 'FIRESTORE':
-        return 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+        return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
       default:
         return 'bg-slate-500/20 text-slate-300 border-slate-500/40'
     }
   }
 
   const filteredLogs = logs.filter((log) => {
-    if (selectedLevel !== 'ALL' && log.level !== selectedLevel) {
-      return false
+    if (selectedLevel !== 'ALL') {
+      if (selectedLevel === 'ERROR_FAMILY') {
+        if (log.level !== 'ERROR' && log.level !== 'ERROR-TRACE') return false
+      } else if (log.level !== selectedLevel) {
+        return false
+      }
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
@@ -90,7 +125,10 @@ export function CashierLogPanel() {
     return true
   })
 
-  const errorCount = logs.filter((l) => l.level === 'ERROR').length
+  const errorCount = logs.filter((l) => l.level === 'ERROR' || l.level === 'ERROR-TRACE').length
+  const balanceAuditCount = logs.filter((l) => l.level === 'BALANCE-AUDIT').length
+  const cashierFloatCount = logs.filter((l) => l.level === 'CASHIER-FLOAT').length
+  const treasurySyncCount = logs.filter((l) => l.level === 'TREASURY-SYNC').length
 
   return (
     <>
@@ -98,7 +136,7 @@ export function CashierLogPanel() {
       <button
         onClick={() => setIsOpen(true)}
         className="fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-slate-900/95 hover:bg-slate-800 text-cyan-400 border border-cyan-500/50 shadow-[0_0_25px_rgba(6,182,212,0.35)] text-xs font-mono font-bold transition-all cursor-pointer backdrop-blur-md hover:scale-105"
-        title="Ver Consola de Diagnóstico & Logs"
+        title="Ver Consola de Diagnóstico & Observabilidad Forense"
       >
         <Terminal className="size-4 text-cyan-400 animate-pulse" />
         <span>📋 Consola Logs</span>
@@ -125,11 +163,11 @@ export function CashierLogPanel() {
                 <Terminal className="size-4 text-cyan-400" />
                 <div>
                   <h3 className="font-bold text-white tracking-wide text-xs flex items-center gap-2">
-                    <span>CONSOLA DE DIAGNÓSTICO EN VIVO (ADMIN & CAJERO)</span>
+                    <span>CONSOLA DE DIAGNÓSTICO Y OBSERVABILIDAD FORENSE</span>
                     <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">{APP_VERSION_TAG}</span>
                   </h3>
                   <p className="text-[10px] text-slate-400">
-                    Captura en tiempo real de clics, peticiones API, Firestore y errores
+                    Captura en tiempo real de balances, flotantes de caja, sincronización de tesorería y errores
                   </p>
                 </div>
               </div>
@@ -138,19 +176,28 @@ export function CashierLogPanel() {
                 <button
                   onClick={handleTestEvent}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[11px] font-bold transition-colors cursor-pointer"
-                  title="Generar evento de prueba para verificar captura"
+                  title="Generar eventos de prueba para verificar captura"
                 >
                   <Zap className="size-3.5 text-cyan-400" />
-                  <span>Probar Registro</span>
+                  <span>Probar Registros</span>
                 </button>
 
                 <button
                   onClick={handleCopy}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-300 border border-emerald-500/30 font-sans text-xs font-bold transition-colors cursor-pointer"
-                  title="Copiar todos los logs al portapapeles"
+                  title="Copiar todos los logs al portapapeles en formato reporte"
                 >
                   {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-                  <span>{copied ? '¡Copiado!' : 'Copiar Todo'}</span>
+                  <span>{copied ? '¡Copiado!' : 'Copiar Reporte'}</span>
+                </button>
+
+                <button
+                  onClick={handleCopyJSON}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 font-sans text-xs font-bold transition-colors cursor-pointer"
+                  title="Exportar logs completos en formato JSON estructurado"
+                >
+                  {copiedJSON ? <Check className="size-3.5 text-cyan-400" /> : <Copy className="size-3.5" />}
+                  <span>{copiedJSON ? '¡JSON Copiado!' : 'Exportar JSON'}</span>
                 </button>
 
                 <button
@@ -177,11 +224,12 @@ export function CashierLogPanel() {
                 <Filter className="size-3.5 text-slate-400 mr-1 shrink-0" />
                 {[
                   { id: 'ALL', label: `Todos (${logs.length})` },
-                  { id: 'CLICK', label: 'Clics' },
-                  { id: 'ACTION', label: 'Acciones' },
+                  { id: 'BALANCE-AUDIT', label: `Balance (${balanceAuditCount})` },
+                  { id: 'CASHIER-FLOAT', label: `Flotante (${cashierFloatCount})` },
+                  { id: 'TREASURY-SYNC', label: `Tesorería (${treasurySyncCount})` },
                   { id: 'API', label: 'Red / API' },
                   { id: 'FIRESTORE', label: 'Firestore' },
-                  { id: 'ERROR', label: `Errores (${errorCount})` }
+                  { id: 'ERROR_FAMILY', label: `Errores (${errorCount})` }
                 ].map((tab) => (
                   <button
                     key={tab.id}

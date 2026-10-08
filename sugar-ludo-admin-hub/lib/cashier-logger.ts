@@ -1,4 +1,14 @@
-export type CashierLogLevel = 'INFO' | 'CLICK' | 'ACTION' | 'API' | 'FIRESTORE' | 'ERROR'
+export type CashierLogLevel =
+  | 'INFO'
+  | 'CLICK'
+  | 'ACTION'
+  | 'API'
+  | 'FIRESTORE'
+  | 'ERROR'
+  | 'BALANCE-AUDIT'
+  | 'CASHIER-FLOAT'
+  | 'TREASURY-SYNC'
+  | 'ERROR-TRACE'
 
 export interface CashierLogEntry {
   id: string
@@ -9,9 +19,9 @@ export interface CashierLogEntry {
   details?: any
 }
 
-import { APP_VERSION_TAG, APP_VERSION } from './version'
+import { APP_VERSION_TAG, APP_VERSION } from './version.ts'
 
-const MAX_LOGS = 250
+const MAX_LOGS = 500
 const STORAGE_KEY = 'sugar_cashier_diag_logs'
 
 class CashierLogger {
@@ -63,7 +73,7 @@ class CashierLogger {
     if (typeof window === 'undefined') return
 
     window.addEventListener('error', (event) => {
-      this.error(`Error no controlado (JS): ${event.message}`, {
+      this.errorTrace(`Error no controlado (JS Window): ${event.message}`, {
         filename: event.filename,
         lineno: event.lineno,
         colno: event.colno,
@@ -72,7 +82,7 @@ class CashierLogger {
     })
 
     window.addEventListener('unhandledrejection', (event) => {
-      this.error(`Promesa rechazada no controlada`, {
+      this.errorTrace(`Promesa rechazada no controlada`, {
         reason: event.reason instanceof Error ? event.reason.message : String(event.reason),
         stack: event.reason instanceof Error ? event.reason.stack : undefined
       })
@@ -96,10 +106,12 @@ class CashierLogger {
     this.persist()
     this.notify()
 
-    if (level === 'ERROR') {
-      console.error(`[CashierLog] [${level}] ${message}`, details !== undefined ? details : '')
+    if (level === 'ERROR' || level === 'ERROR-TRACE') {
+      console.error(`[StaffDiag] [${level}] ${message}`, details !== undefined ? details : '')
+    } else if (level === 'BALANCE-AUDIT' || level === 'CASHIER-FLOAT' || level === 'TREASURY-SYNC') {
+      console.info(`[StaffDiag] [${level}] ${message}`, details !== undefined ? details : '')
     } else {
-      console.log(`[CashierLog] [${level}] ${message}`, details !== undefined ? details : '')
+      console.log(`[StaffDiag] [${level}] ${message}`, details !== undefined ? details : '')
     }
   }
 
@@ -127,6 +139,31 @@ class CashierLogger {
     this.log('ERROR', `❌ Error: ${message}`, details)
   }
 
+  // Métodos especializados para observabilidad contable y forense profunda
+  public balanceAudit(message: string, details?: any) {
+    this.log('BALANCE-AUDIT', `⚖️ [BALANCE-AUDIT] ${message}`, details)
+  }
+
+  public cashierFloat(message: string, details?: any) {
+    this.log('CASHIER-FLOAT', `💵 [CASHIER-FLOAT] ${message}`, details)
+  }
+
+  public treasurySync(message: string, details?: any) {
+    this.log('TREASURY-SYNC', `🏛️ [TREASURY-SYNC] ${message}`, details)
+  }
+
+  public errorTrace(message: string, errorOrDetails?: any) {
+    let payload = errorOrDetails
+    if (errorOrDetails instanceof Error) {
+      payload = {
+        name: errorOrDetails.name,
+        message: errorOrDetails.message,
+        stack: errorOrDetails.stack
+      }
+    }
+    this.log('ERROR-TRACE', `💥 [ERROR-TRACE] ${message}`, payload)
+  }
+
   public getLogs(): CashierLogEntry[] {
     return this.logs
   }
@@ -143,28 +180,55 @@ class CashierLogger {
   }
 
   public exportLogs(): string {
-    const header = `=== LOGS DE AUDITORÍA Y DIAGNÓSTICO (SUGAR LUDO ADMIN HUB) ===\nFecha exportación: ${new Date().toISOString()}\nTotal registros: ${this.logs.length}\n${'='.repeat(62)}\n\n`
+    const levelCounts: Record<string, number> = {}
+    this.logs.forEach((l) => {
+      levelCounts[l.level] = (levelCounts[l.level] || 0) + 1
+    })
+
+    const header = [
+      `======================================================================`,
+      `   SUGAR LUDO - REPORTE DE AUDITORÍA Y OBSERVABILIDAD FORENSE [${APP_VERSION_TAG}]   `,
+      `======================================================================`,
+      `Fecha de Exportación (ISO): ${new Date().toISOString()}`,
+      `Total de Registros: ${this.logs.length} (Capacidad máxima: ${MAX_LOGS})`,
+      `Distribución de Eventos:`,
+      ...Object.entries(levelCounts).map(([lvl, count]) => `  - [${lvl}]: ${count}`),
+      `======================================================================\n`
+    ].join('\n')
+
     const body = this.logs
-      .map((l) => {
+      .map((l, index) => {
         let detailsStr = ''
-        if (l.details !== undefined) {
+        if (l.details !== undefined && l.details !== null) {
           try {
-            detailsStr = typeof l.details === 'string' ? `\n   Detalles: ${l.details}` : `\n   Detalles: ${JSON.stringify(l.details, null, 2)}`
+            detailsStr = typeof l.details === 'string'
+              ? `\n   Payload:\n${l.details}`
+              : `\n   Payload (JSON):\n${JSON.stringify(l.details, null, 2)}`
           } catch {
-            detailsStr = `\n   Detalles: ${String(l.details)}`
+            detailsStr = `\n   Payload (Raw): ${String(l.details)}`
           }
         }
-        return `[${l.timestamp}] [${l.level.padEnd(9)}] ${l.message}${detailsStr}`
+        return `[#${this.logs.length - index}] [${l.isoTime}] [${l.level.padEnd(13)}] ${l.message}${detailsStr}`
       })
-      .join('\n\n')
-    return header + body
+      .join('\n\n----------------------------------------------------------------------\n\n')
+
+    return header + '\n' + body
+  }
+
+  public exportLogsJSON(): string {
+    return JSON.stringify({
+      version: APP_VERSION,
+      versionTag: APP_VERSION_TAG,
+      exportedAt: new Date().toISOString(),
+      totalLogs: this.logs.length,
+      logs: this.logs
+    }, null, 2)
   }
 
   public clear() {
     this.logs = []
     this.persist()
     this.notify()
-    this.info('Consola de logs limpiada')
   }
 }
 
