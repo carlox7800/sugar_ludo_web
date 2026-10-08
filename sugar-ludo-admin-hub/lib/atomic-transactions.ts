@@ -1112,7 +1112,7 @@ export async function resolveDisputeCaseAtomics(params: {
           senderUid: adminUid,
           senderName: `Super Admin (${adminName})`,
           senderRole: 'admin',
-          message: `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${verdict === 'favor_player' ? 'favor del JUGADOR' : 'favor del CAJERO'} por Super Admin ${adminName}.\n\nResolución: ${resolutionNotes || (verdict === 'favor_player' ? 'Dictamen favorable para el jugador.' : 'Dictamen favorable para el cajero.')}\n\nEstatus: ${isWithdrawOrder ? 'Retiro liquidado y completado formalmente.' : (verdict === 'favor_player' ? 'Depósito acreditado y completado.' : 'Depósito desestimado y cancelado.')}`,
+          message: `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${verdict === 'favor_player' ? 'favor del JUGADOR' : 'favor del CAJERO'} por Super Admin ${adminName}.\n\nResolución: ${resolutionNotes || (verdict === 'favor_player' ? (isWithdrawOrder ? 'Dictamen favorable emitido por el Super Admin. Retiro liquidado formalmente hacia la billetera externa del jugador.' : 'Dictamen favorable emitido por el Super Admin. Fondos acreditados al balance del jugador.') : (isWithdrawOrder ? 'Dictamen favorable para el cajero. Solicitud de retiro cancelada y fondos en garantía devueltos al disponible del jugador.' : 'Dictamen favorable para el cajero.'))}\n\nEstatus: ${isWithdrawOrder ? (verdict === 'favor_player' ? 'Retiro liquidado formalmente hacia la billetera externa del jugador.' : 'Retiro no procesado y CANCELADO. Fondos en garantía devueltos a la billetera del jugador.') : (verdict === 'favor_player' ? 'Depósito acreditado y completado.' : 'Depósito desestimado y cancelado.')}`,
           timestamp: now
         }
 
@@ -1367,25 +1367,85 @@ export async function resolveDisputeCaseAtomics(params: {
         } else {
           // --- A FAVOR DEL CAJERO ---
           if (isWithdrawOrder) {
-            // RETIRO A FAVOR DEL CAJERO: El cajero ya pagó, se descuenta la retención de Escrow y la orden se marca completada
+            // RETIRO A FAVOR DEL CAJERO: La solicitud de retiro se cancela (el cajero no paga fondos externos).
+            // El saldo en Escrow se libera y se REINTEGRA de inmediato a los coins disponibles del jugador.
             if (playerRef && playerSnap && playerSnap.exists) {
               const playerData = playerSnap.data() as UserData
+              const currentCoins = Number(playerData.coins || 0)
               const currentEscrow = Number(playerData.escrowLockedCoins || 0)
+              const newCoins = currentCoins + amountCoins
+              const newEscrow = Math.max(0, currentEscrow - amountCoins)
+
+              const existingHistory = Array.isArray(playerData.walletHistory) ? playerData.walletHistory : []
+              const cleanHistory: PlayerWalletTransaction[] = []
+              let matched = false
+              for (const tx of existingHistory) {
+                if (tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8)))) {
+                  if (!matched) {
+                    matched = true
+                    cleanHistory.push({
+                      ...tx,
+                      orderId: finalOrderId,
+                      type: 'refund',
+                      amount: amountCoins,
+                      description: `Reintegro de Retiro Cancelado (#${finalOrderId.slice(0, 8)})`
+                    })
+                  }
+                } else {
+                  cleanHistory.push(tx)
+                }
+              }
+              if (!matched) {
+                cleanHistory.unshift({
+                  id: `tx_disp_wit_ref_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                  orderId: finalOrderId,
+                  type: 'refund',
+                  amount: amountCoins,
+                  description: `Reintegro de Retiro Cancelado (#${finalOrderId.slice(0, 8)})`,
+                  timestamp: now,
+                  dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                })
+              }
+
               transaction.update(playerRef, {
-                escrowLockedCoins: Math.max(0, currentEscrow - amountCoins),
+                coins: newCoins,
+                escrowLockedCoins: newEscrow,
+                walletHistory: cleanHistory.slice(0, 50),
                 lastActiveAt: now
               })
             }
 
+            const playerNoticeMsg = {
+              id: `msg_disp_p_${now}`,
+              orderId: finalOrderId,
+              senderUid: adminUid,
+              senderName: `Super Admin (${adminName})`,
+              senderRole: 'admin',
+              message: `⚖️ [DICTAMEN DIRECTIVO]: Disputa resuelta a favor del Cajero. La solicitud de retiro no fue procesada y ha sido CANCELADA. Los fondos en garantía fueron devueltos a tu saldo disponible en el juego.\n\nResolución: ${resolutionNotes || 'Dictamen favorable emitido para el cajero.'}`,
+              timestamp: now,
+              isRead: false
+            }
+
+            const cashierNoticeMsg = {
+              id: `msg_disp_c_${now}`,
+              orderId: finalOrderId,
+              senderUid: adminUid,
+              senderName: `Super Admin (${adminName})`,
+              senderRole: 'admin',
+              message: `⚖️ [DICTAMEN DIRECTIVO]: Disputa resuelta a favor del Cajero. La orden ha sido cancelada sin deducción de tu saldo flotante.\n\nResolución: ${resolutionNotes || 'Dictamen favorable emitido para el cajero.'}`,
+              timestamp: now + 1,
+              isRead: false
+            }
+
             transaction.set(orderRef, {
-              status: 'completed',
+              status: 'cancelled',
               isEscrowLocked: false,
               completedAt: now,
               resolvedBy: adminName,
               resolvedAt: now,
-              resolutionNotes: resolutionNotes || 'Dictamen favorable para el cajero. Fondos transferidos validados.',
-              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
-              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro completado a favor del cajero.`,
+              resolutionNotes: resolutionNotes || 'Dictamen favorable para el cajero. Solicitud de retiro cancelada y garantía devuelta al disponible del jugador.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg, playerNoticeMsg, cashierNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro cancelado a favor del cajero. Fondos devueltos al disponible del jugador.`,
               lastMessageTime: now
             }, { merge: true })
 
@@ -1395,10 +1455,10 @@ export async function resolveDisputeCaseAtomics(params: {
                 id: shiftLedgerRef.id,
                 cashierUid,
                 type: 'dispute_resolution',
-                amountUSDT: amountCoins / 100,
-                amountFiatUSD: amountCoins / 100,
-                amountCoins,
-                notes: `Resolución de disputa #${disputeId} a favor del cajero por Super Admin ${adminName}`,
+                amountUSDT: 0,
+                amountFiatUSD: 0,
+                amountCoins: 0,
+                notes: `Resolución de arbitraje de retiro #${disputeId} a favor del cajero (sin deducción de flotante)`,
                 timestamp: now
               })
             }
@@ -1492,7 +1552,7 @@ export async function resolveDisputeCaseAtomics(params: {
           senderUid: adminUid,
           senderName: `Super Admin (${adminName})`,
           senderRole: 'admin',
-          message: `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${verdict === 'favor_player' ? 'favor del JUGADOR' : 'favor del CAJERO'} por Super Admin ${adminName}.\n\nResolución: ${resolutionNotes || defaultResolutionNote}\n\nEstatus: ${isWithdrawOrder ? (verdict === 'favor_player' ? 'Retiro liquidado formalmente hacia la billetera externa del jugador.' : 'Retiro validado a favor del cajero.') : (verdict === 'favor_player' ? 'Depósito acreditado y completado.' : 'Depósito desestimado y cancelado.')}`,
+          message: `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${verdict === 'favor_player' ? 'favor del JUGADOR' : 'favor del CAJERO'} por Super Admin ${adminName}.\n\nResolución: ${resolutionNotes || defaultResolutionNote}\n\nEstatus: ${isWithdrawOrder ? (verdict === 'favor_player' ? 'Retiro liquidado formalmente hacia la billetera externa del jugador.' : 'Retiro no procesado y CANCELADO. Fondos en garantía devueltos a la billetera del jugador.') : (verdict === 'favor_player' ? 'Depósito acreditado y completado.' : 'Depósito desestimado y cancelado.')}`,
           timestamp: now
         }
 
@@ -1737,24 +1797,85 @@ export async function resolveDisputeCaseAtomics(params: {
         } else {
           // --- A FAVOR DEL CAJERO ---
           if (isWithdrawOrder) {
+            // RETIRO A FAVOR DEL CAJERO: La solicitud de retiro se cancela (el cajero no paga fondos externos).
+            // El saldo en Escrow se libera y se REINTEGRA de inmediato a los coins disponibles del jugador.
             if (userDocRef && userSnap && userSnap.exists()) {
               const uData = userSnap.data() as UserData
+              const currentCoins = Number(uData.coins || 0)
               const currentEscrow = Number(uData.escrowLockedCoins || 0)
+              const newCoins = currentCoins + amountCoins
+              const newEscrow = Math.max(0, currentEscrow - amountCoins)
+
+              const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+              const cleanHistory: PlayerWalletTransaction[] = []
+              let matched = false
+              for (const tx of existingHistory) {
+                if (tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8)))) {
+                  if (!matched) {
+                    matched = true
+                    cleanHistory.push({
+                      ...tx,
+                      orderId: finalOrderId,
+                      type: 'refund',
+                      amount: amountCoins,
+                      description: `Reintegro de Retiro Cancelado (#${finalOrderId.slice(0, 8)})`
+                    })
+                  }
+                } else {
+                  cleanHistory.push(tx)
+                }
+              }
+              if (!matched) {
+                cleanHistory.unshift({
+                  id: `tx_disp_wit_ref_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                  orderId: finalOrderId,
+                  type: 'refund',
+                  amount: amountCoins,
+                  description: `Reintegro de Retiro Cancelado (#${finalOrderId.slice(0, 8)})`,
+                  timestamp: now,
+                  dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                })
+              }
+
               transaction.set(userDocRef, {
-                escrowLockedCoins: Math.max(0, currentEscrow - amountCoins),
+                coins: newCoins,
+                escrowLockedCoins: newEscrow,
+                walletHistory: cleanHistory.slice(0, 50),
                 lastActiveAt: now
               }, { merge: true })
             }
 
+            const playerNoticeMsg = {
+              id: `msg_disp_p_${now}`,
+              orderId: finalOrderId,
+              senderUid: adminUid,
+              senderName: `Super Admin (${adminName})`,
+              senderRole: 'admin',
+              message: `⚖️ [DICTAMEN DIRECTIVO]: Disputa resuelta a favor del Cajero. La solicitud de retiro no fue procesada y ha sido CANCELADA. Los fondos en garantía fueron devueltos a tu saldo disponible en el juego.\n\nResolución: ${resolutionNotes || 'Dictamen favorable emitido para el cajero.'}`,
+              timestamp: now,
+              isRead: false
+            }
+
+            const cashierNoticeMsg = {
+              id: `msg_disp_c_${now}`,
+              orderId: finalOrderId,
+              senderUid: adminUid,
+              senderName: `Super Admin (${adminName})`,
+              senderRole: 'admin',
+              message: `⚖️ [DICTAMEN DIRECTIVO]: Disputa resuelta a favor del Cajero. La orden ha sido cancelada sin deducción de tu saldo flotante.\n\nResolución: ${resolutionNotes || 'Dictamen favorable emitido para el cajero.'}`,
+              timestamp: now + 1,
+              isRead: false
+            }
+
             transaction.set(orderDocRef, {
-              status: 'completed',
+              status: 'cancelled',
               isEscrowLocked: false,
               completedAt: now,
               resolvedBy: adminName,
               resolvedAt: now,
-              resolutionNotes: resolutionNotes || 'Dictamen favorable para el cajero. Fondos transferidos validados.',
-              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
-              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro completado a favor del cajero.`,
+              resolutionNotes: resolutionNotes || 'Dictamen favorable para el cajero. Solicitud de retiro cancelada y garantía devuelta al disponible del jugador.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg, playerNoticeMsg, cashierNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro cancelado a favor del cajero. Fondos devueltos al disponible del jugador.`,
               lastMessageTime: now
             }, { merge: true })
 
@@ -1764,10 +1885,10 @@ export async function resolveDisputeCaseAtomics(params: {
                 id: shiftRef.id,
                 cashierUid,
                 type: 'dispute_resolution',
-                amountUSDT: amountCoins / 100,
-                amountFiatUSD: amountCoins / 100,
-                amountCoins,
-                notes: `Resolución de disputa #${disputeId} a favor del cajero por Super Admin ${adminName}`,
+                amountUSDT: 0,
+                amountFiatUSD: 0,
+                amountCoins: 0,
+                notes: `Resolución de arbitraje de retiro #${disputeId} a favor del cajero (sin deducción de flotante)`,
                 timestamp: now
               })
             }
@@ -1961,19 +2082,24 @@ export async function resolveDisputeCaseAtomics(params: {
           const uSnap = await getDoc(userRef)
           if (uSnap.exists()) {
             const uData = uSnap.data() as UserData
+            const curCoins = Number(uData.coins || 0)
             const curEscrow = Number(uData.escrowLockedCoins || 0)
             await updateDoc(userRef, {
+              coins: curCoins + amountCoins,
               escrowLockedCoins: Math.max(0, curEscrow - amountCoins),
               lastActiveAt: now
             }).catch(() => {})
           }
         }
         await setDoc(orderDocRef, {
-          status: 'completed',
+          status: 'cancelled',
           isEscrowLocked: false,
           completedAt: now,
+          resolutionNotes: resolutionNotes || 'Dictamen favorable para el cajero. Solicitud de retiro cancelada y garantía devuelta al disponible del jugador.',
           resolvedBy: adminName,
-          resolvedAt: now
+          resolvedAt: now,
+          lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro cancelado a favor del cajero. Fondos devueltos al disponible del jugador.`,
+          lastMessageTime: now
         }, { merge: true }).catch(() => {})
       } else {
         await setDoc(orderDocRef, {

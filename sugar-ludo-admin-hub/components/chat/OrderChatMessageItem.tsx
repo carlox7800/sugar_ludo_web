@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { OrderChatMessage } from '../../types/cashier'
-import { Shield, CreditCard, User, Image as ImageIcon, Eye, Check, CheckCheck } from 'lucide-react'
+import { Shield, CreditCard, User, Image as ImageIcon, Eye, Check, CheckCheck, RefreshCw } from 'lucide-react'
 import { clsx } from 'clsx'
 
 interface OrderChatMessageItemProps {
@@ -22,13 +22,25 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
     minute: '2-digit'
   })
 
+  const isRefundNotice = Boolean(
+    message.message.includes('devueltos a tu saldo disponible') ||
+    message.message.includes('reintegrados a tu saldo') ||
+    message.message.includes('fondos en garantía fueron devueltos') ||
+    message.message.includes('fondos en garantía devueltos') ||
+    message.message.includes('DICTAMEN DIRECTIVO - JUGADOR')
+  )
+
   const isFavorableResolution = Boolean(
-    message.message.includes('favor del JUGADOR') ||
-    message.message.includes('Retiro liquidado formalmente') ||
-    message.message.includes('Dictamen favorable emitido') ||
-    message.message.includes('VALIDADO CON ÉXITO') ||
-    message.message.includes('LIQUIDADO Y TRANSFERIDO') ||
-    (isAdmin && (message.message.includes('Dictamen favorable') || message.message.includes('acreditado y completado')))
+    !isRefundNotice && (
+      message.message.includes('favor del JUGADOR') ||
+      message.message.includes('Retiro liquidado formalmente') ||
+      message.message.includes('sin deducción de tu saldo flotante') ||
+      message.message.includes('DICTAMEN DIRECTIVO - CAJERO') ||
+      message.message.includes('Dictamen favorable emitido') ||
+      message.message.includes('VALIDADO CON ÉXITO') ||
+      message.message.includes('LIQUIDADO Y TRANSFERIDO') ||
+      (isAdmin && (message.message.includes('Dictamen favorable') || message.message.includes('acreditado y completado')))
+    )
   )
 
   if (isSystem) {
@@ -52,7 +64,9 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
       <div
         className={clsx(
           'size-7 rounded-xl flex items-center justify-center text-xs shrink-0 font-bold',
-          isFavorableResolution
+          isRefundNotice
+            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+            : isFavorableResolution
             ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
             : isAdmin
             ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -61,7 +75,9 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
             : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
         )}
       >
-        {isFavorableResolution ? (
+        {isRefundNotice ? (
+          <RefreshCw className="size-3.5 text-cyan-400" />
+        ) : isFavorableResolution ? (
           <Shield className="size-3.5 text-emerald-400" />
         ) : isAdmin ? (
           <Shield className="size-3.5" />
@@ -81,7 +97,9 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
           )}
         >
           <span className={clsx(
-            isFavorableResolution
+            isRefundNotice
+              ? 'text-cyan-300 font-extrabold'
+              : isFavorableResolution
               ? 'text-emerald-300 font-extrabold'
               : isAdmin
               ? 'text-amber-400 font-bold'
@@ -91,7 +109,12 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
           )}>
             {message.senderName}
           </span>
-          {isFavorableResolution ? (
+          {isRefundNotice ? (
+            <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[9px] font-black uppercase border border-cyan-500/40 shadow-sm flex items-center gap-1">
+              <RefreshCw className="size-2.5" />
+              <span>Garantía Reembolsada</span>
+            </span>
+          ) : isFavorableResolution ? (
             <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-black uppercase border border-emerald-500/40 shadow-sm">
               Dictamen Favorable
             </span>
@@ -107,6 +130,8 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
             'p-3.5 rounded-2xl text-xs leading-relaxed shadow-md relative',
             isCurrentUser
               ? 'bg-gradient-to-br from-cyan-600 to-cyan-700 text-white rounded-tr-none'
+              : isRefundNotice
+              ? 'bg-slate-900/90 border border-cyan-500/40 text-cyan-100 rounded-tl-none shadow-[0_0_15px_rgba(6,182,212,0.15)]'
               : isFavorableResolution
               ? 'bg-emerald-950/50 border border-emerald-500/40 text-emerald-100 rounded-tl-none shadow-[0_0_15px_rgba(16,185,129,0.15)]'
               : isAdmin

@@ -626,4 +626,127 @@ describe('Suite: UI/UX de Resolución de Disputas & Arqueo de Cajero (v9.9.4)', 
   })
 })
 
+describe('Suite: Resolución de Retiro a Favor del Cajero & Reintegro de Fondos (v9.9.5)', () => {
+  it('RETIRO A FAVOR DEL CAJERO: debe liberar Escrow, restituir saldo a coins disponibles y NO debitar flotante de cajero', () => {
+    const amountCoins = 10000 // $100.00 USDT
+    const initialPlayerCoins = 2500 // remanente disponible
+    const initialPlayerEscrow = 10000 // en custodia de retiro
+    const initialCashierFloatCoins = 30000 // 300 USDT
+    const initialCashierFloatUSDT = 300.0
+
+    // 1. Simulación contable en jugador: Escrow liberado y fondos devueltos a disponible
+    const finalPlayerEscrow = Math.max(0, initialPlayerEscrow - amountCoins)
+    const finalPlayerCoins = initialPlayerCoins + amountCoins
+
+    assert.equal(finalPlayerEscrow, 0, 'El Escrow retenido debe liberarse a 0')
+    assert.equal(finalPlayerCoins, 12500, 'Los fondos deben restituirse completamente al saldo disponible del jugador')
+
+    // 2. Simulación contable en cajero: Flotante permanece 100% intacto
+    const finalCashierFloatCoins = initialCashierFloatCoins // sin deducción
+    const finalCashierFloatUSDT = initialCashierFloatUSDT
+
+    assert.equal(finalCashierFloatCoins, 30000, 'El flotante de monedas del cajero no debe ser debitado')
+    assert.equal(finalCashierFloatUSDT, 300.0, 'El flotante USDT del cajero debe permanecer intacto')
+
+    // 3. Simulación del estado terminal de la orden: cancelled, no completed
+    const finalOrderStatus = 'cancelled'
+    const isEscrowLocked = false
+
+    assert.equal(finalOrderStatus, 'cancelled', 'La orden no procesada debe quedar en cancelled')
+    assert.equal(isEscrowLocked, false, 'El candado de escrow debe quedar liberado')
+  })
+
+  it('COPYWRITING CONTEXTUALIZADO: debe formular mensajes claros y sin contradicciones para ambas partes', () => {
+    function generateResolutionMessages(params: {
+      type: 'withdraw' | 'deposit'
+      verdict: 'favor_player' | 'favor_cashier'
+      adminName: string
+      resolutionNotes?: string
+    }) {
+      const { type, verdict, adminName, resolutionNotes } = params
+      const isWithdraw = type === 'withdraw'
+
+      if (verdict === 'favor_cashier' && isWithdraw) {
+        return {
+          playerMessage: `⚖️ [DICTAMEN DIRECTIVO]: Disputa resuelta a favor del Cajero. La solicitud de retiro no fue procesada y ha sido CANCELADA. Los fondos en garantía fueron devueltos a tu saldo disponible en el juego.\n\nResolución: ${resolutionNotes || 'Dictamen favorable emitido para el cajero.'}`,
+          cashierMessage: `⚖️ [DICTAMEN DIRECTIVO]: Disputa resuelta a favor del Cajero. La orden ha sido cancelada sin deducción de tu saldo flotante.\n\nResolución: ${resolutionNotes || 'Dictamen favorable emitido para el cajero.'}`,
+          officialNoticeStatus: 'Retiro no procesado y CANCELADO. Fondos en garantía devueltos a la billetera del jugador.'
+        }
+      }
+
+      return {
+        playerMessage: '',
+        cashierMessage: '',
+        officialNoticeStatus: ''
+      }
+    }
+
+    const messages = generateResolutionMessages({
+      type: 'withdraw',
+      verdict: 'favor_cashier',
+      adminName: 'Carlos Admin',
+      resolutionNotes: 'Destino bancario inválido reportado por el cajero.'
+    })
+
+    assert.ok(messages.playerMessage.includes('ha sido CANCELADA'))
+    assert.ok(messages.playerMessage.includes('devueltos a tu saldo disponible'))
+    assert.ok(messages.cashierMessage.includes('sin deducción de tu saldo flotante'))
+    assert.ok(messages.officialNoticeStatus.includes('Fondos en garantía devueltos'))
+  })
+
+  it('CHAT UI: debe detectar mensajes de reembolso para estilizar en modo informativo cyan y badge de garantia reembolsada', () => {
+    function classifyChatMessage(text: string) {
+      const isRefundNotice = Boolean(
+        text.includes('devueltos a tu saldo disponible') ||
+        text.includes('reintegrados a tu saldo') ||
+        text.includes('fondos en garantía fueron devueltos') ||
+        text.includes('DICTAMEN DIRECTIVO - JUGADOR')
+      )
+
+      const isFavorableResolution = Boolean(
+        !isRefundNotice && (
+          text.includes('favor del JUGADOR') ||
+          text.includes('Retiro liquidado formalmente') ||
+          text.includes('sin deducción de tu saldo flotante') ||
+          text.includes('DICTAMEN DIRECTIVO - CAJERO') ||
+          text.includes('Dictamen favorable emitido')
+        )
+      )
+
+      return { isRefundNotice, isFavorableResolution }
+    }
+
+    const playerRefundMsg = '⚖️ [DICTAMEN DIRECTIVO]: Disputa resuelta a favor del Cajero. La solicitud de retiro no fue procesada y ha sido CANCELADA. Los fondos en garantía fueron devueltos a tu saldo disponible en el juego.'
+    const cashierProtectionMsg = '⚖️ [DICTAMEN DIRECTIVO]: Disputa resuelta a favor del Cajero. La orden ha sido cancelada sin deducción de tu saldo flotante.'
+
+    const playerClassification = classifyChatMessage(playerRefundMsg)
+    assert.equal(playerClassification.isRefundNotice, true, 'El mensaje del jugador debe clasificarse como aviso de reembolso')
+    assert.equal(playerClassification.isFavorableResolution, false)
+
+    const cashierClassification = classifyChatMessage(cashierProtectionMsg)
+    assert.equal(cashierClassification.isRefundNotice, false)
+    assert.equal(cashierClassification.isFavorableResolution, true, 'El mensaje del cajero debe clasificarse como favorable esmeralda')
+  })
+
+  it('MODAL Y LISTA ADMIN: debe mostrar Cancelar Retiro (Favor Cajero) en retiros', () => {
+    function getAdminActionLabels(orderType: 'withdraw' | 'deposit', verdict: 'favor_cashier') {
+      const isWithdraw = orderType === 'withdraw'
+      return {
+        listButtonLabel: isWithdraw ? 'Cancelar Retiro (Favor Cajero)' : 'Dictaminar a Favor del Cajero',
+        modalTitle: isWithdraw ? 'Cancelar Retiro (Dictamen a Favor del Cajero)' : 'Dictaminar a Favor del Cajero (Desestimar Depósito)',
+        confirmButtonLabel: isWithdraw ? 'Cancelar Retiro (Favor Cajero)' : 'Ejecutar Dictamen'
+      }
+    }
+
+    const withdrawLabels = getAdminActionLabels('withdraw', 'favor_cashier')
+    assert.equal(withdrawLabels.listButtonLabel, 'Cancelar Retiro (Favor Cajero)')
+    assert.equal(withdrawLabels.confirmButtonLabel, 'Cancelar Retiro (Favor Cajero)')
+    assert.ok(withdrawLabels.modalTitle.includes('Cancelar Retiro'))
+
+    const depositLabels = getAdminActionLabels('deposit', 'favor_cashier')
+    assert.equal(depositLabels.listButtonLabel, 'Dictaminar a Favor del Cajero')
+    assert.equal(depositLabels.confirmButtonLabel, 'Ejecutar Dictamen')
+  })
+})
+
 

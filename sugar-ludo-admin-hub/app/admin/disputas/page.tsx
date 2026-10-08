@@ -193,8 +193,13 @@ export default function DisputasAdminPage() {
         ? 'Dictamen favorable emitido por el Super Admin. Retiro liquidado formalmente hacia la billetera externa del jugador.'
         : 'Dictamen favorable emitido por el Super Admin. Fondos acreditados al balance del jugador.'
     } else if (verdict === 'favor_cashier') {
-      title = 'Dictaminar a Favor del Cajero (Desbloquear Garantía)'
-      defaultNote = 'Dictamen favorable para el cajero. Fondos de garantía liberados de la orden.'
+      const isWithdraw = dispute.type === 'withdraw'
+      title = isWithdraw
+        ? 'Cancelar Retiro (Dictamen a Favor del Cajero)'
+        : 'Dictaminar a Favor del Cajero (Desestimar Depósito)'
+      defaultNote = isWithdraw
+        ? 'Dictamen favorable para el cajero. La solicitud de retiro no fue procesada y ha sido cancelada. Los fondos en garantía fueron devueltos a tu saldo disponible en el juego.'
+        : 'Dictamen favorable para el cajero. Depósito no validado y cancelado sin afectación a su flotante.'
     } else if (verdict === 'clarification') {
       title = 'Emitir Aclaratoria Oficial de Soporte'
       defaultNote = 'El equipo de auditoría revisó el caso. Se aplicó el reglamento oficial vigente de la plataforma.'
@@ -611,7 +616,7 @@ export default function DisputasAdminPage() {
                               className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                             >
                               <ShieldCheck className="size-3.5 text-slate-400" />
-                              <span>Dictaminar a Favor del Cajero</span>
+                              <span>{caseItem.type === 'withdraw' ? 'Cancelar Retiro (Favor Cajero)' : 'Dictaminar a Favor del Cajero'}</span>
                             </button>
                             <button
                               disabled={resolvingId === caseItem.id}
@@ -911,6 +916,8 @@ export default function DisputasAdminPage() {
                     ? 'Aprobar y Liquidar Retiro'
                     : actionModal.verdict === 'favor_player'
                     ? 'Acreditar al Jugador'
+                    : actionModal.verdict === 'favor_cashier' && actionModal.dispute.type === 'withdraw'
+                    ? 'Cancelar Retiro (Favor Cajero)'
                     : 'Ejecutar Dictamen'}
                 </span>
               </button>
