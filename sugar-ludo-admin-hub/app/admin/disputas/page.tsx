@@ -185,8 +185,13 @@ export default function DisputasAdminPage() {
     let defaultNote = ''
 
     if (verdict === 'favor_player') {
-      title = 'Dictaminar a Favor del Jugador (Acreditar Saldo)'
-      defaultNote = 'Dictamen favorable emitido por el Super Admin. Fondos acreditados al balance del jugador.'
+      const isWithdraw = dispute.type === 'withdraw'
+      title = isWithdraw
+        ? 'Aprobar y Liquidar Retiro (Dictamen Directivo)'
+        : 'Dictaminar a Favor del Jugador (Acreditar Saldo)'
+      defaultNote = isWithdraw
+        ? 'Dictamen favorable emitido por el Super Admin. Retiro liquidado formalmente hacia la billetera externa del jugador.'
+        : 'Dictamen favorable emitido por el Super Admin. Fondos acreditados al balance del jugador.'
     } else if (verdict === 'favor_cashier') {
       title = 'Dictaminar a Favor del Cajero (Desbloquear Garantía)'
       defaultNote = 'Dictamen favorable para el cajero. Fondos de garantía liberados de la orden.'
@@ -614,7 +619,7 @@ export default function DisputasAdminPage() {
                               className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 disabled:opacity-50 text-slate-950 text-xs font-black transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] cursor-pointer flex items-center gap-1.5"
                             >
                               <CheckCircle className="size-3.5" />
-                              <span>Acreditar al Jugador</span>
+                              <span>{caseItem.type === 'withdraw' ? 'Aprobar y Liquidar Retiro' : 'Acreditar al Jugador'}</span>
                             </button>
                           </>
                         )}
@@ -901,7 +906,13 @@ export default function DisputasAdminPage() {
                 ) : (
                   <CheckCircle className="size-3.5" />
                 )}
-                <span>Ejecutar Dictamen</span>
+                <span>
+                  {actionModal.verdict === 'favor_player' && actionModal.dispute.type === 'withdraw'
+                    ? 'Aprobar y Liquidar Retiro'
+                    : actionModal.verdict === 'favor_player'
+                    ? 'Acreditar al Jugador'
+                    : 'Ejecutar Dictamen'}
+                </span>
               </button>
             </div>
           </div>

@@ -1480,13 +1480,19 @@ export async function resolveDisputeCaseAtomics(params: {
         const amountUSDT = Number(dData.amountFiat || orderData?.amountFiat || (amountCoins / 100))
 
         const existingSupportMsgs = Array.isArray(orderData?.supportMessages) ? orderData.supportMessages : []
+        const defaultResolutionNote = verdict === 'favor_player'
+          ? (isWithdrawOrder
+              ? 'Dictamen favorable emitido por el Super Admin. Retiro liquidado formalmente hacia la billetera externa del jugador.'
+              : 'Dictamen favorable emitido por el Super Admin. Fondos acreditados al balance del jugador.')
+          : 'Dictamen favorable para el cajero.'
+
         const officialNoticeMsg = {
           id: `msg_disp_${now}`,
           orderId: finalOrderId,
           senderUid: adminUid,
           senderName: `Super Admin (${adminName})`,
           senderRole: 'admin',
-          message: `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${verdict === 'favor_player' ? 'favor del JUGADOR' : 'favor del CAJERO'} por Super Admin ${adminName}.\n\nResolución: ${resolutionNotes || (verdict === 'favor_player' ? 'Dictamen favorable para el jugador.' : 'Dictamen favorable para el cajero.')}\n\nEstatus: ${isWithdrawOrder ? 'Retiro liquidado y completado formalmente.' : (verdict === 'favor_player' ? 'Depósito acreditado y completado.' : 'Depósito desestimado y cancelado.')}`,
+          message: `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${verdict === 'favor_player' ? 'favor del JUGADOR' : 'favor del CAJERO'} por Super Admin ${adminName}.\n\nResolución: ${resolutionNotes || defaultResolutionNote}\n\nEstatus: ${isWithdrawOrder ? (verdict === 'favor_player' ? 'Retiro liquidado formalmente hacia la billetera externa del jugador.' : 'Retiro validado a favor del cajero.') : (verdict === 'favor_player' ? 'Depósito acreditado y completado.' : 'Depósito desestimado y cancelado.')}`,
           timestamp: now
         }
 
@@ -1546,7 +1552,7 @@ export async function resolveDisputeCaseAtomics(params: {
               completedAt: now,
               resolvedBy: adminName,
               resolvedAt: now,
-              resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Retiro liquidado.',
+              resolutionNotes: resolutionNotes || 'Dictamen favorable emitido por el Super Admin. Retiro liquidado formalmente hacia la billetera externa del jugador.',
               supportMessages: [...existingSupportMsgs, officialNoticeMsg],
               lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro liquidado a favor del jugador.`,
               lastMessageTime: now
@@ -1710,7 +1716,7 @@ export async function resolveDisputeCaseAtomics(params: {
             resolvedBy: adminName,
             resolvedByUid: adminUid,
             resolvedAt: now,
-            resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Fondos aplicados con éxito.'
+            resolutionNotes: resolutionNotes || defaultResolutionNote
           }, { merge: true })
 
           const auditRef = doc(collection(db, 'audit_logs'))

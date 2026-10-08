@@ -22,6 +22,15 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
     minute: '2-digit'
   })
 
+  const isFavorableResolution = Boolean(
+    message.message.includes('favor del JUGADOR') ||
+    message.message.includes('Retiro liquidado formalmente') ||
+    message.message.includes('Dictamen favorable emitido') ||
+    message.message.includes('VALIDADO CON ÉXITO') ||
+    message.message.includes('LIQUIDADO Y TRANSFERIDO') ||
+    (isAdmin && (message.message.includes('Dictamen favorable') || message.message.includes('acreditado y completado')))
+  )
+
   if (isSystem) {
     return (
       <div className="flex items-center justify-center my-3">
@@ -43,14 +52,24 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
       <div
         className={clsx(
           'size-7 rounded-xl flex items-center justify-center text-xs shrink-0 font-bold',
-          isAdmin
+          isFavorableResolution
+            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+            : isAdmin
             ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
             : isCashier
             ? 'bg-pink-500/20 text-pink-300 border border-pink-500/40'
             : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
         )}
       >
-        {isAdmin ? <Shield className="size-3.5" /> : isCashier ? <CreditCard className="size-3.5" /> : <User className="size-3.5" />}
+        {isFavorableResolution ? (
+          <Shield className="size-3.5 text-emerald-400" />
+        ) : isAdmin ? (
+          <Shield className="size-3.5" />
+        ) : isCashier ? (
+          <CreditCard className="size-3.5" />
+        ) : (
+          <User className="size-3.5" />
+        )}
       </div>
 
       {/* Message Bubble */}
@@ -61,14 +80,26 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
             isCurrentUser ? 'justify-end text-slate-400' : 'text-slate-400'
           )}
         >
-          <span className={clsx(isAdmin ? 'text-amber-400 font-bold' : isCashier ? 'text-pink-300 font-bold' : 'text-cyan-300')}>
+          <span className={clsx(
+            isFavorableResolution
+              ? 'text-emerald-300 font-extrabold'
+              : isAdmin
+              ? 'text-amber-400 font-bold'
+              : isCashier
+              ? 'text-pink-300 font-bold'
+              : 'text-cyan-300'
+          )}>
             {message.senderName}
           </span>
-          {isAdmin && (
+          {isFavorableResolution ? (
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-black uppercase border border-emerald-500/40 shadow-sm">
+              Dictamen Favorable
+            </span>
+          ) : isAdmin ? (
             <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px] font-black uppercase">
               Moderador
             </span>
-          )}
+          ) : null}
         </div>
 
         <div
@@ -76,6 +107,8 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
             'p-3.5 rounded-2xl text-xs leading-relaxed shadow-md relative',
             isCurrentUser
               ? 'bg-gradient-to-br from-cyan-600 to-cyan-700 text-white rounded-tr-none'
+              : isFavorableResolution
+              ? 'bg-emerald-950/50 border border-emerald-500/40 text-emerald-100 rounded-tl-none shadow-[0_0_15px_rgba(16,185,129,0.15)]'
               : isAdmin
               ? 'bg-amber-950/40 border border-amber-500/30 text-amber-100 rounded-tl-none'
               : 'bg-slate-800/80 border border-white/10 text-slate-200 rounded-tl-none'

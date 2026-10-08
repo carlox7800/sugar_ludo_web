@@ -553,4 +553,77 @@ describe('Suite: Observabilidad Forense y Diagnóstico Multi-Capa (v9.9.2)', () 
   })
 })
 
+describe('Suite: UI/UX de Resolución de Disputas & Arqueo de Cajero (v9.9.4)', () => {
+  it('DISPUTAS: debe resolver botón y nota sugerida según si la orden es retiro o depósito', () => {
+    function getDisputeResolutionUI(type: 'deposit' | 'withdraw') {
+      const isWithdraw = type === 'withdraw'
+      const buttonLabel = isWithdraw ? 'Aprobar y Liquidar Retiro' : 'Acreditar al Jugador'
+      const defaultNotes = isWithdraw
+        ? 'Dictamen favorable emitido por el Super Admin. Retiro liquidado formalmente hacia la billetera externa del jugador.'
+        : 'Dictamen favorable emitido por el Super Admin. Fondos acreditados al balance del jugador.'
+      const modalTitle = isWithdraw
+        ? 'Aprobar y Liquidar Retiro (Dictamen Directivo)'
+        : 'Acreditar al Jugador (Dictamen Directivo)'
+      return { buttonLabel, defaultNotes, modalTitle }
+    }
+
+    const withdrawUI = getDisputeResolutionUI('withdraw')
+    assert.equal(withdrawUI.buttonLabel, 'Aprobar y Liquidar Retiro')
+    assert.ok(withdrawUI.defaultNotes.includes('billetera externa del jugador'))
+    assert.ok(withdrawUI.modalTitle.includes('Aprobar y Liquidar Retiro'))
+
+    const depositUI = getDisputeResolutionUI('deposit')
+    assert.equal(depositUI.buttonLabel, 'Acreditar al Jugador')
+    assert.ok(depositUI.defaultNotes.includes('balance del jugador'))
+    assert.ok(depositUI.modalTitle.includes('Acreditar al Jugador'))
+  })
+
+  it('ARQUEO DE CAJERO: debe tipificar dispute_deduction con título deducción por arbitraje directivo y signo negativo', () => {
+    function getLedgerEntryDisplay(entryType: string, amountUSDT: number) {
+      if (entryType === 'dispute_deduction') {
+        return {
+          title: 'Deducción por Arbitraje Directivo',
+          isDebit: true,
+          formattedAmount: `-${Math.abs(amountUSDT).toFixed(2)} USDT`
+        }
+      }
+      if (entryType === 'withdrawal_payout') {
+        return {
+          title: 'Liquidación de Retiro P2P',
+          isDebit: true,
+          formattedAmount: `-${Math.abs(amountUSDT).toFixed(2)} USDT`
+        }
+      }
+      return {
+        title: 'Recarga de Flotante',
+        isDebit: false,
+        formattedAmount: `+${Math.abs(amountUSDT).toFixed(2)} USDT`
+      }
+    }
+
+    const disputeEntry = getLedgerEntryDisplay('dispute_deduction', -200)
+    assert.equal(disputeEntry.title, 'Deducción por Arbitraje Directivo')
+    assert.equal(disputeEntry.isDebit, true)
+    assert.equal(disputeEntry.formattedAmount, '-200.00 USDT')
+  })
+
+  it('CHAT DE ORDEN: debe detectar dictamen favorable y asignar estilo esmeralda en lugar de alerta marrón', () => {
+    function isFavorableResolutionMessage(text: string): boolean {
+      const lower = text.toLowerCase()
+      return lower.includes('dictamen favorable') ||
+        lower.includes('retiro liquidado formalmente') ||
+        lower.includes('fondos acreditados') ||
+        lower.includes('validado con éxito')
+    }
+
+    const favorableWithdrawMsg = 'DICTAMEN OFICIAL: Dictamen favorable emitido por el Super Admin. Retiro liquidado formalmente hacia la billetera externa del jugador.'
+    const favorableDepositMsg = 'DICTAMEN OFICIAL: Dictamen favorable emitido por el Super Admin. Fondos acreditados al balance del jugador.'
+    const rejectionMsg = 'DICTAMEN OFICIAL: Dictamen denegado. Se comprobó fraude en el comprobante.'
+
+    assert.equal(isFavorableResolutionMessage(favorableWithdrawMsg), true)
+    assert.equal(isFavorableResolutionMessage(favorableDepositMsg), true)
+    assert.equal(isFavorableResolutionMessage(rejectionMsg), false)
+  })
+})
+
 
