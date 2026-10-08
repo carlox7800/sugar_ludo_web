@@ -106,6 +106,14 @@ export interface CashierOrder {
 
   // Auditoría Antifraude Automatizada ($0.00 Spark)
   fraudAudit?: FraudAuditResult
+
+  // Control de Concurrencia, Bloqueo Optimista e Idempotencia (Fase 2)
+  orderVersion?: number
+  lockedByCashierUid?: string
+  lockedByCashierName?: string
+  lockedAt?: number
+  lockExpiresAt?: number
+  lastIdempotencyKey?: string
 }
 
 export interface FraudAuditResult {

@@ -1,6 +1,6 @@
 import { adminDb, admin, hasAdminCredentials } from './firebase-admin'
 import { db } from './firebase'
-import { doc, getDoc, updateDoc, setDoc, increment, collection } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, setDoc, increment, collection, runTransaction } from 'firebase/firestore'
 import { CashierOrder, CashierProfile, DailyStats, AuditLog, PaymentMethodType, PaymentAccount, FraudAuditResult } from '../types/cashier'
 
 export interface PlayerWalletTransaction {
@@ -205,8 +205,9 @@ export async function approveDepositOrder(params: {
   actorRole: string
   ipAddress?: string
   userAgent?: string
+  idempotencyKey?: string
 }): Promise<{ success: boolean; message: string }> {
-  const { orderId, cashierUid, referenceNumber, actorUid, actorRole, ipAddress, userAgent } = params
+  const { orderId, cashierUid, referenceNumber, actorUid, actorRole, ipAddress, userAgent, idempotencyKey } = params
 
   // 1. Intentar vía Firebase Admin SDK si existen credenciales válidas en el servidor
   if (adminDb && hasAdminCredentials) {
@@ -220,6 +221,9 @@ export async function approveDepositOrder(params: {
         }
 
         const order = orderSnap.data() as unknown as ExtendedCashierOrder
+        if (idempotencyKey && order.lastIdempotencyKey === idempotencyKey) {
+          return { success: true, message: 'La orden ya se encuentra completada (Idempotente).' }
+        }
         if (order.status === 'completed') {
           return { success: true, message: 'La orden ya se encuentra completada.' }
         }
@@ -281,7 +285,8 @@ export async function approveDepositOrder(params: {
           status: 'completed',
           receiptReferenceNumber: finalRef,
           completedAt: now,
-          verifiedAt: now
+          verifiedAt: now,
+          ...(idempotencyKey ? { lastIdempotencyKey: idempotencyKey } : {})
         })
 
         // Acreditar Sugar Coins al Jugador y agregar al historial
@@ -346,11 +351,125 @@ export async function approveDepositOrder(params: {
     }
   }
 
-  // 2. Motor de Respaldo Híbrido: Se ejecuta de forma segura cuando no hay credenciales ADC en Render
+  // 2. Motor de Respaldo Híbrido: Transacción Atómica Indivisible con Firestore Modular (runTransaction)
+  if (db) {
+    try {
+      return await runTransaction(db, async (transaction) => {
+        const orderDocRef = doc(db, 'cashier_orders', orderId)
+        const orderSnap = await transaction.get(orderDocRef)
+
+        if (!orderSnap.exists()) {
+          throw new Error('La orden de depósito no existe')
+        }
+
+        const orderData = orderSnap.data() as ExtendedCashierOrder
+        if (idempotencyKey && orderData.lastIdempotencyKey === idempotencyKey) {
+          return { success: true, message: 'La orden ya se encuentra completada (Idempotente).' }
+        }
+        if (orderData.status === 'completed') {
+          return { success: true, message: 'La orden ya se encuentra completada.' }
+        }
+
+        const now = Date.now()
+        const finalRef = referenceNumber || orderData.receiptReferenceNumber || `TX-${Date.now().toString(36).toUpperCase()}`
+        const amountCoins = Number(orderData.amountSugarCoins || Math.round(Number(orderData.amountFiat || 0) * 100))
+        const commissionCoins = Number(orderData.cashierCommissionCoins || Math.round(amountCoins * 0.02))
+
+        // Lecturas atómicas de todas las entidades antes de mutar
+        const userDocRef = orderData.playerUid ? doc(db, 'users', orderData.playerUid) : null
+        const userSnap = userDocRef ? await transaction.get(userDocRef) : null
+
+        const cashierDocRef = doc(db, 'cashier_profiles', cashierUid)
+        const cashierSnap = await transaction.get(cashierDocRef)
+
+        const ledgerDocRef = doc(db, 'system_treasury', 'global_ledger')
+
+        // 1. Escritura en Orden
+        transaction.set(orderDocRef, {
+          status: 'completed',
+          receiptReferenceNumber: finalRef,
+          completedAt: now,
+          verifiedAt: now,
+          settledByCashierUid: cashierUid,
+          ...(idempotencyKey ? { lastIdempotencyKey: idempotencyKey } : {})
+        }, { merge: true })
+
+        // 2. Acreditación atómica a usuario
+        if (userDocRef && userSnap && userSnap.exists()) {
+          const userData = userSnap.data() || {}
+          const currentCoins = Number(userData.coins || 0)
+          const existingHistory = Array.isArray(userData.walletHistory) ? (userData.walletHistory as PlayerWalletTransaction[]) : []
+          const newTxEntry: PlayerWalletTransaction = {
+            id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'deposit',
+            amount: amountCoins,
+            description: `Depósito P2P Aprobado (#${orderData.id.slice(0, 8)})`,
+            timestamp: now,
+            dateStr: new Date().toLocaleDateString('es-ES', { 
+              day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+            })
+          }
+          let updated = false
+          const updatedHistory = existingHistory.map((tx: PlayerWalletTransaction) => {
+            if (!updated && tx.description && tx.description.includes('(Pendiente)')) {
+              updated = true
+              return newTxEntry
+            }
+            return tx
+          })
+          if (!updated) {
+            updatedHistory.unshift(newTxEntry)
+          }
+
+          transaction.set(userDocRef, {
+            coins: currentCoins + amountCoins,
+            walletHistory: updatedHistory.slice(0, 50),
+            lastActiveAt: now
+          }, { merge: true })
+        }
+
+        // 3. Débito atómico del flotante del cajero
+        const cashierData = cashierSnap.exists() ? cashierSnap.data() : {}
+        const currentFloat = Number(cashierData.floatBalanceCoins || 50000)
+        const newCashierFloat = Math.max(0, currentFloat - amountCoins)
+        const newCommissions = Number(cashierData.totalCommissionEarnedCoins || 0) + commissionCoins
+
+        transaction.set(cashierDocRef, {
+          uid: cashierUid,
+          floatBalanceCoins: newCashierFloat,
+          totalCommissionEarnedCoins: newCommissions,
+          totalOrdersCompleted: (Number(cashierData.totalOrdersCompleted) || 0) + 1,
+          lastActiveAt: now
+        }, { merge: true })
+
+        // 4. Actualización en global_ledger
+        transaction.set(ledgerDocRef, {
+          id: 'global_ledger',
+          playerCustodyCoins: increment(amountCoins),
+          playerCustodyUSD: increment(amountCoins / 100),
+          totalVaultSugarCoins: increment(amountCoins),
+          totalVaultUSD: increment(amountCoins / 100),
+          lastAuditedAt: now
+        }, { merge: true })
+
+        return {
+          success: true,
+          message: `Depósito de +${amountCoins} SC acreditado con éxito al jugador.`
+        }
+      })
+    } catch (modularTxErr: unknown) {
+      if (modularTxErr instanceof Error && (modularTxErr.message.includes('completada') || modularTxErr.message.includes('no existe'))) {
+        throw modularTxErr
+      }
+      console.warn('[approveDepositOrder] modular runTransaction fallback:', getErrorMessage(modularTxErr))
+    }
+  }
+
+  // 3. Fallback de Red / REST secuencial de última instancia
   const now = Date.now()
   let orderData: CashierOrder | null = null
 
-  // 2.1. Buscar orden en Firestore
+  // 3.1. Buscar orden en Firestore
   try {
     const orderDocRef = doc(db, 'cashier_orders', orderId)
     const orderSnap = await getDoc(orderDocRef)
@@ -391,6 +510,10 @@ export async function approveDepositOrder(params: {
     throw new Error('La orden de depósito no existe')
   }
 
+  if (idempotencyKey && orderData.lastIdempotencyKey === idempotencyKey) {
+    return { success: true, message: 'La orden ya se encuentra completada (Idempotente).' }
+  }
+
   if (orderData.status === 'completed') {
     return { success: true, message: 'La orden ya se encuentra completada.' }
   }
@@ -408,7 +531,8 @@ export async function approveDepositOrder(params: {
       receiptReferenceNumber: finalRef,
       completedAt: now,
       verifiedAt: now,
-      settledByCashierUid: cashierUid
+      settledByCashierUid: cashierUid,
+      ...(idempotencyKey ? { lastIdempotencyKey: idempotencyKey } : {})
     }, { merge: true })
     orderCompletedInCloud = true
   } catch (err: unknown) {
@@ -1190,8 +1314,9 @@ export async function completeWithdrawalOrder(params: {
   actorUid: string
   actorRole: 'admin' | 'cashier'
   cashierName?: string
+  idempotencyKey?: string
 }): Promise<{ success: boolean; message: string }> {
-  const { orderId, cashierUid, payoutTxId, actorUid, actorRole, cashierName } = params
+  const { orderId, cashierUid, payoutTxId, actorUid, actorRole, cashierName, idempotencyKey } = params
   const now = Date.now()
 
   // 1. Vía Firebase Admin SDK si existen credenciales
@@ -1204,6 +1329,9 @@ export async function completeWithdrawalOrder(params: {
         if (!orderSnap.exists) throw new Error(`La orden #${orderId} no existe.`)
 
         const order = orderSnap.data() as unknown as ExtendedCashierOrder
+        if (idempotencyKey && order.lastIdempotencyKey === idempotencyKey) {
+          return { success: true, message: 'La orden ya se encuentra completada (Idempotente).' }
+        }
         if (order.status === 'completed') {
           return { success: true, message: 'La orden ya se encuentra completada.' }
         }
@@ -1261,7 +1389,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
           supportMessages: [...existingSupportMsgs, officialNoticeMsg],
           lastMessage: payoutNoticeText,
           lastMessageTime: now,
-          hasUnreadCashierMessage: true
+          hasUnreadCashierMessage: true,
+          ...(idempotencyKey ? { lastIdempotencyKey: idempotencyKey } : {})
         })
 
         // Liberar escrow del jugador y actualizar historial
@@ -1385,7 +1514,178 @@ Conserva este mensaje como comprobante formal de la transacción.`
     }
   }
 
-  // 2. Motor híbrido de respaldo (SDK cliente db + REST + disco local)
+  // 2. Motor de Respaldo Híbrido: Transacción Atómica Indivisible con Firestore Modular (runTransaction)
+  if (db) {
+    try {
+      return await runTransaction(db, async (transaction) => {
+        const orderDocRef = doc(db, 'cashier_orders', orderId)
+        const orderSnap = await transaction.get(orderDocRef)
+
+        if (!orderSnap.exists()) {
+          throw new Error(`La orden #${orderId} no existe.`)
+        }
+
+        const order = orderSnap.data() as ExtendedCashierOrder
+        if (idempotencyKey && order.lastIdempotencyKey === idempotencyKey) {
+          return { success: true, message: 'La orden ya se encuentra completada (Idempotente).' }
+        }
+        if (order.status === 'completed') {
+          return { success: true, message: 'La orden ya se encuentra completada.' }
+        }
+        if (order.fraudAudit?.status === 'blocked') {
+          throw new Error(`RETIRO BLOQUEADO POR AUDITORÍA: ${order.fraudAudit.reason || 'Discrepancia contable detectada. Escala esta orden a Super Admin.'}`)
+        }
+
+        const amountCoins = Number(order.amountSugarCoins || 0)
+        const commissionCoins = Number(order.cashierCommissionCoins || Math.round(amountCoins * 0.03))
+        const totalFiatRequestedUSD = Number(order.amountFiat || (amountCoins / 100))
+        const isVip = Boolean(order.isVip || order.isVipWithdraw || order.paymentMethod === 'usdt_bep20' || order.paymentMethod === 'usdt_trc20_vip')
+        const withdrawalFeePercent = isVip ? 0.10 : 0.05
+        const withdrawalFeeUSD = parseFloat((totalFiatRequestedUSD * withdrawalFeePercent).toFixed(2))
+        const netPayoutUSD = parseFloat(Math.max(0, totalFiatRequestedUSD - withdrawalFeeUSD).toFixed(2))
+        const netPayoutCoins = Math.round(netPayoutUSD * 100)
+        const feeCoins = Math.round(withdrawalFeeUSD * 100)
+
+        // Lecturas atómicas de todas las entidades antes de mutar
+        const userDocRef = order.playerUid ? doc(db, 'users', order.playerUid) : null
+        const userSnap = userDocRef ? await transaction.get(userDocRef) : null
+
+        const cashierDocRef = doc(db, 'cashier_profiles', cashierUid)
+        const cashierSnap = await transaction.get(cashierDocRef)
+
+        const globalLedgerDocRef = doc(db, 'system_treasury', 'global_ledger')
+
+        // CANDADO ESTRICTO ANTI-SOBREGIRO ATÓMICO:
+        const cData = cashierSnap.exists() ? cashierSnap.data() : {}
+        const currentFloatUSDT = Number(cData.floatBalanceUSDT ?? (Number(cData.floatBalanceCoins || 0) / 100))
+        if (currentFloatUSDT < netPayoutUSD) {
+          throw new Error(
+            `FLOAT_INSUFFICIENT: Saldo flotante insuficiente ($${currentFloatUSDT.toFixed(2)} USDT disponibles). ` +
+            `Se requieren $${netPayoutUSD.toFixed(2)} USDT para este retiro. ` +
+            `Solicita recarga al Administrador antes de intentar liquidar.`
+          )
+        }
+
+        const newFloatUSDT = Math.max(0, parseFloat((currentFloatUSDT - netPayoutUSD).toFixed(2)))
+        const newFloatCoins = Math.round(newFloatUSDT * 100)
+
+        const fallbackNoticeText = `💸 ¡${isVip ? 'RETIRO VIP' : 'RETIRO'} LIQUIDADO Y TRANSFERIDO!\n\nHola ${order.playerName || 'Jugador'}, hemos enviado tus fondos a tu cuenta de destino:\n━━━━━━━━━━━━━━━━━━━━\n💵 Monto Solicitado: $${totalFiatRequestedUSD.toFixed(2)} ${order.currency || 'USDT'}\n⚡ Modalidad: Retiro ${isVip ? 'VIP (Prioridad Máxima - Comisión 10%)' : 'Estándar (Comisión 5%)'}\n🏷️ Comisión Aplicada: -$${withdrawalFeeUSD.toFixed(2)} USD (${Math.round(withdrawalFeePercent * 100)}%)\n💰 Monto Neto Transferido: $${netPayoutUSD.toFixed(2)} ${order.currency || 'USDT'}\n🪙 Sugar Coins Liquidados: -${amountCoins} SC\n🏦 Destino: ${(order.paymentMethod || 'USDT').toUpperCase()} (${order.paymentAddress || order.receiptReferenceNumber || 'Dirección registrada'})\n🔗 Hash / TxID Oficial: ${payoutTxId}\n👨‍💼 Cajero Responsable: ${cashierName || 'Cajero Oficial'}\n━━━━━━━━━━━━━━━━━━━━\nConserva este mensaje como comprobante formal de la transacción.`
+
+        const existingSupportMsgs = Array.isArray(order.supportMessages) ? order.supportMessages : []
+        const officialNoticeMsg = {
+          id: `msg_payout_${now}`,
+          orderId,
+          senderUid: cashierUid,
+          senderName: cashierName || 'Cajero Oficial',
+          senderRole: 'cashier',
+          message: fallbackNoticeText,
+          timestamp: now
+        }
+
+        // 1. Escritura en Orden
+        transaction.set(orderDocRef, {
+          status: 'completed',
+          receiptReferenceNumber: payoutTxId,
+          completedAt: now,
+          isEscrowLocked: false,
+          settledByCashierUid: cashierUid,
+          netPayoutUSD,
+          withdrawalFeeUSD,
+          supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+          lastMessage: fallbackNoticeText,
+          lastMessageTime: now,
+          hasUnreadCashierMessage: true,
+          ...(idempotencyKey ? { lastIdempotencyKey: idempotencyKey } : {})
+        }, { merge: true })
+
+        // 2. Liberación atómica de Escrow en Usuario
+        if (userDocRef && userSnap && userSnap.exists()) {
+          const uData = userSnap.data() || {}
+          const currentEscrow = Number(uData.escrowLockedCoins || 0)
+          const currentCoins = Number(uData.coins ?? 0)
+          const newEscrow = Math.max(0, currentEscrow - amountCoins)
+          const isDeficit = currentEscrow < amountCoins
+          const finalCoins = isDeficit ? Math.max(0, currentCoins - (amountCoins - currentEscrow)) : currentCoins
+          const finalEscrow = isDeficit ? 0 : newEscrow
+
+          const existingHistory = Array.isArray(uData.walletHistory) ? (uData.walletHistory as PlayerWalletTransaction[]) : []
+          const cleanHistory: PlayerWalletTransaction[] = []
+          let matched = false
+          for (const tx of existingHistory) {
+            if (tx.orderId === orderId || (tx.description && tx.description.includes(orderId.slice(0, 8)))) {
+              if (!matched) {
+                matched = true
+                cleanHistory.push({
+                  ...tx,
+                  orderId,
+                  payoutTxId,
+                  description: `Retiro Liquidado (#${orderId.slice(0, 8)}) - TxID: ${payoutTxId}`
+                })
+              }
+            } else {
+              cleanHistory.push(tx)
+            }
+          }
+          if (!matched) {
+            cleanHistory.unshift({
+              id: `tx_wit_complete_${now}_${Math.random().toString(36).slice(2, 6)}`,
+              orderId,
+              payoutTxId,
+              type: 'withdraw',
+              amount: -amountCoins,
+              description: `Retiro Liquidado (#${orderId.slice(0, 8)}) - TxID: ${payoutTxId}`,
+              timestamp: now,
+              dateStr: new Date().toLocaleDateString('es-ES', {
+                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+              })
+            })
+          }
+
+          transaction.set(userDocRef, {
+            coins: finalCoins,
+            escrowLockedCoins: finalEscrow,
+            walletHistory: cleanHistory.slice(0, 50),
+            lastActiveAt: now
+          }, { merge: true })
+        }
+
+        // 3. Débito atómico de Flotante en Cajero
+        transaction.set(cashierDocRef, {
+          uid: cashierUid,
+          floatBalanceUSDT: newFloatUSDT,
+          floatBalanceCoins: newFloatCoins,
+          totalOrdersCompleted: (Number(cData.totalOrdersCompleted) || 0) + 1,
+          totalCommissionsEarnedCoins: (Number(cData.totalCommissionsEarnedCoins) || 0) + commissionCoins,
+          totalPaidWithdrawalsUSDT: (Number(cData.totalPaidWithdrawalsUSDT) || 0) + netPayoutUSD,
+          totalPaidWithdrawalsCoins: (Number(cData.totalPaidWithdrawalsCoins) || 0) + netPayoutCoins,
+          lastActiveAt: now
+        }, { merge: true })
+
+        // 4. Actualización en global_ledger
+        transaction.set(globalLedgerDocRef, {
+          id: 'global_ledger',
+          lastAuditedAt: now
+        }, { merge: true })
+
+        return {
+          success: true,
+          message: `Retiro #${orderId} liquidado exitosamente por $${netPayoutUSD.toFixed(2)} USDT.`
+        }
+      })
+    } catch (modularTxErr: unknown) {
+      if (modularTxErr instanceof Error && (
+        modularTxErr.message.includes('FLOAT_INSUFFICIENT') ||
+        modularTxErr.message.includes('RETIRO BLOQUEADO') ||
+        modularTxErr.message.includes('no existe') ||
+        modularTxErr.message.includes('completada')
+      )) {
+        throw modularTxErr
+      }
+      console.warn('[completeWithdrawalOrder] modular runTransaction fallback:', getErrorMessage(modularTxErr))
+    }
+  }
+
+  // 3. Fallback secuencial de última instancia (REST)
   const orderDocRef = doc(db, 'cashier_orders', orderId)
   let order: ExtendedCashierOrder | null = null
   try {
@@ -1398,6 +1698,10 @@ Conserva este mensaje como comprobante formal de la transacción.`
 
   if (!order) {
     throw new Error(`La orden #${orderId} no existe.`)
+  }
+
+  if (idempotencyKey && order.lastIdempotencyKey === idempotencyKey) {
+    return { success: true, message: 'La orden ya se encuentra completada (Idempotente).' }
   }
 
   if (order.status === 'completed') {
@@ -1457,7 +1761,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
       supportMessages: [...existingSupportMsgs, officialNoticeMsg],
       lastMessage: fallbackNoticeText,
       lastMessageTime: now,
-      hasUnreadCashierMessage: true
+      hasUnreadCashierMessage: true,
+      ...(idempotencyKey ? { lastIdempotencyKey: idempotencyKey } : {})
     }, { merge: true })
   } catch (err: unknown) {
     console.warn('[completeWithdrawalOrder Fallback] Error actualizando orden en Firestore SDK:', getErrorMessage(err))
