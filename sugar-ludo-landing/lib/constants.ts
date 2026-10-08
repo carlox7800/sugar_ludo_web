@@ -1,4 +1,4 @@
-export const APP_VERSION = '9.8.6';
+export const APP_VERSION = '9.8.7';
 
 // Rutas de descarga oficiales fijas (GitHub Releases v9.7.3)
 // CANDADO TÉCNICO INFRANQUEABLE: Asignación determinista que rechaza variables obsoletas de Render

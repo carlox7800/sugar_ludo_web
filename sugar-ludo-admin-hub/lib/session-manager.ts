@@ -53,9 +53,10 @@ export interface SessionVerificationResult {
   message?: string
 }
 
-// Almacén en memoria de sesiones activas concurrentes (Single Session Control)
-// Mapea uid -> activeSessionId
-const activeCashierSessions = new Map<string, { sessionId: string; updatedAt: number }>()
+// Almacén en memoria de sesiones activas concurrentes (Single Session Control para cajeros y administradores)
+// Mapea uid -> { sessionId, updatedAt }
+const activeStaffSessions = new Map<string, { sessionId: string; updatedAt: number }>()
+const activeCashierSessions = activeStaffSessions
 
 /**
  * Obtiene la clave secreta para la firma HMAC de sesiones
@@ -178,16 +179,14 @@ export function verifyStaffSessionToken(token: string): SessionVerificationResul
     }
   }
 
-  // 5. Control de sesión única activa para cajeros
-  if (payload.accountType === 'cashier') {
-    const active = activeCashierSessions.get(payload.uid)
-    if (active && active.sessionId !== payload.sessionId) {
-      return {
-        valid: false,
-        payload,
-        error: 'superseded',
-        message: 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
-      }
+  // 5. Control de sesión única activa para staff (cajeros y administradores)
+  const active = activeStaffSessions.get(payload.uid)
+  if (active && active.sessionId !== payload.sessionId) {
+    return {
+      valid: false,
+      payload,
+      error: 'superseded',
+      message: 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
     }
   }
 
@@ -195,40 +194,61 @@ export function verifyStaffSessionToken(token: string): SessionVerificationResul
 }
 
 /**
- * Registra una sesión de cajero como la única activa concurrente
+ * Registra una sesión de staff (cajero o admin) como la única activa concurrente
+ */
+export function registerActiveStaffSession(uid: string, sessionId: string): void {
+  activeStaffSessions.set(uid, { sessionId, updatedAt: Date.now() })
+}
+
+/**
+ * Registra una sesión de cajero como la única activa concurrente (compatibilidad)
  */
 export function registerActiveCashierSession(uid: string, sessionId: string): void {
-  activeCashierSessions.set(uid, { sessionId, updatedAt: Date.now() })
+  registerActiveStaffSession(uid, sessionId)
 }
 
 /**
- * Invalida cualquier sesión previa de un operador
+ * Invalida cualquier sesión previa de un operador o administrador
  */
 export function revokeStaffSession(uid: string): void {
-  activeCashierSessions.delete(uid)
+  activeStaffSessions.delete(uid)
 }
 
 /**
- * Desregistra una sesión de cajero (alias explícito)
+ * Desregistra una sesión de cajero (alias explícito de retrocompatibilidad)
  */
 export function unregisterActiveCashierSession(uid: string): void {
-  activeCashierSessions.delete(uid)
+  activeStaffSessions.delete(uid)
 }
 
 /**
- * Consulta la sesión activa registrada en memoria para un cajero
+ * Consulta la sesión activa registrada en memoria para un miembro de staff
+ */
+export function getActiveStaffSession(uid: string): { sessionId: string; updatedAt: number } | undefined {
+  return activeStaffSessions.get(uid)
+}
+
+/**
+ * Consulta la sesión activa registrada en memoria para un cajero (compatibilidad)
  */
 export function getActiveCashierSession(uid: string): { sessionId: string; updatedAt: number } | undefined {
-  return activeCashierSessions.get(uid)
+  return getActiveStaffSession(uid)
 }
 
 /**
- * Evalúa si la sesión de un cajero ha sido superada/invalidada por otro inicio concurrente
+ * Evalúa si la sesión de un operador/admin ha sido superada/invalidada por otro inicio concurrente
+ */
+export function isStaffSessionSuperseded(uid: string, sessionId?: string): boolean {
+  if (!uid || !sessionId) return false
+  const active = activeStaffSessions.get(uid)
+  return !!(active && active.sessionId !== sessionId)
+}
+
+/**
+ * Evalúa si la sesión de un cajero ha sido superada/invalidada por otro inicio concurrente (compatibilidad)
  */
 export function isCashierSessionSuperseded(uid: string, sessionId?: string): boolean {
-  if (!uid || !sessionId) return false
-  const active = activeCashierSessions.get(uid)
-  return !!(active && active.sessionId !== sessionId)
+  return isStaffSessionSuperseded(uid, sessionId)
 }
 
 /**

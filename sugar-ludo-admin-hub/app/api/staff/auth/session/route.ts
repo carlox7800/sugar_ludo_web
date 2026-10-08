@@ -4,6 +4,7 @@ import { verifyPassword, hashPassword } from '@/lib/password-hasher'
 import {
   createStaffSessionToken,
   buildStaffSessionCookie,
+  registerActiveStaffSession,
   registerActiveCashierSession,
   generateSessionId,
   SESSION_CONFIG
@@ -229,10 +230,8 @@ export async function POST(request: Request) {
     const sessionId = generateSessionId()
     const isCashier = matchedProfile.role === 'cashier' || requestedRole === 'cashier'
 
-    // Control de sesión única activa para cajeros
-    if (isCashier) {
-      registerActiveCashierSession(matchedProfile.uid, sessionId)
-    }
+    // Control de sesión única activa para staff (cajeros y administradores directivos)
+    registerActiveStaffSession(matchedProfile.uid, sessionId)
 
     const sessionResult = createStaffSessionToken({
       sessionId,

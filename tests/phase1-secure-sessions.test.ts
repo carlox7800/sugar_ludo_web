@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import {
   createStaffSessionToken,
   verifyStaffSessionToken,
+  registerActiveStaffSession,
   registerActiveCashierSession,
+  getActiveStaffSession,
   revokeStaffSession,
   unregisterActiveCashierSession,
   buildStaffSessionCookie,
@@ -122,6 +124,48 @@ describe('FASE 1: Sesiones Seguras HttpOnly y Control de Dispositivos', () => {
 
     // Limpieza
     unregisterActiveCashierSession(cashierUid)
+  })
+
+  it('SESIÓN ÚNICA SUPER ADMIN: debe invalidar sesión de administrador directivo si abre nueva sesión en otro navegador', () => {
+    const adminUid = 'adm_super_carlos_001'
+    const session1Id = generateSessionId()
+    const session2Id = generateSessionId()
+
+    // Navegador 1 inicia sesión
+    registerActiveStaffSession(adminUid, session1Id)
+    const { token: token1 } = createStaffSessionToken({
+      sessionId: session1Id,
+      uid: adminUid,
+      role: 'super_admin',
+      email: 'admin@sugarludo.com',
+      accountType: 'admin'
+    })
+
+    // Navegador 1 es válido inicialmente
+    const check1 = verifyStaffSessionToken(token1)
+    assert.equal(check1.valid, true)
+
+    // Navegador 2 inicia sesión con la misma cuenta directiva
+    registerActiveStaffSession(adminUid, session2Id)
+    const { token: token2 } = createStaffSessionToken({
+      sessionId: session2Id,
+      uid: adminUid,
+      role: 'super_admin',
+      email: 'admin@sugarludo.com',
+      accountType: 'admin'
+    })
+
+    // Navegador 1 ahora es invalidado con error superseded
+    const check1Superseded = verifyStaffSessionToken(token1)
+    assert.equal(check1Superseded.valid, false)
+    assert.equal(check1Superseded.error, 'superseded')
+
+    // Navegador 2 es la sesión legítima activa
+    const check2 = verifyStaffSessionToken(token2)
+    assert.equal(check2.valid, true)
+
+    // Limpieza
+    revokeStaffSession(adminUid)
   })
 
   it('COOKIES HTTPONLY: debe estructurar cabeceras de cookie protegidas con directivas de seguridad', () => {

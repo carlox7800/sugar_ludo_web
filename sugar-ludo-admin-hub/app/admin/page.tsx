@@ -281,6 +281,12 @@ export default function AdminDashboardPage() {
                   lastAuditedAt: l.lastAuditedAt || Date.now()
                 })
               }
+            } else if (recStatus === 429) {
+              // HTTP 429 TOO MANY REQUESTS: Congelar reconciliación y pausar intervalo respetando retryAfter (mínimo 35s)
+              const rawRetry = Number(recData?.retryAfter) || Number(reconcileRes.headers.get('Retry-After')) || 30
+              const retryAfterSec = Math.max(35, rawRetry)
+              reconcileCooldownUntilRef.current = now + (retryAfterSec * 1000)
+              console.warn(`[AdminTreasury] Reconciliación en enfriamiento por rate limit (HTTP 429). Reintentando en ${retryAfterSec}s.`)
             } else if (recStatus === 401) {
               const errCode = recData?.code || ''
               const errMsg = recData?.error || ''
@@ -412,6 +418,16 @@ export default function AdminDashboardPage() {
       try {
         ch = new BroadcastChannel('sugar_ludo_social_channel')
         ch.onmessage = (ev) => {
+          if (ev.data?.type === 'admin_new_session_started') {
+            if (adminUser?.uid && ev.data.adminUid === adminUser.uid && adminUser.sessionId && ev.data.sessionId !== adminUser.sessionId) {
+              isSessionTerminatedRef.current = true
+              reconcileCooldownUntilRef.current = Infinity
+              clearInterval(interval)
+              logout('Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+              router.push('/')
+              return
+            }
+          }
           if (ev.data?.type === 'telemetry_state_changed') {
             if (!isSessionTerminatedRef.current) {
               fetchLiveMetrics()
@@ -422,8 +438,16 @@ export default function AdminDashboardPage() {
       } catch {}
     }
 
+    const onFocus = () => {
+      if (!isSessionTerminatedRef.current) {
+        fetchLiveMetrics()
+      }
+    }
+    window.addEventListener('focus', onFocus)
+
     return () => {
       clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
       if (ch) ch.close()
     }
   }, [isAuthenticated, isLoading, router, adminUser?.role, cashierList])

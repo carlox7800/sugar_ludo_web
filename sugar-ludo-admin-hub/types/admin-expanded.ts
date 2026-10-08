@@ -179,4 +179,5 @@ export interface AdminUserProfile {
   isActive: boolean
   password?: string
   passwordHash?: string
+  sessionId?: string
 }

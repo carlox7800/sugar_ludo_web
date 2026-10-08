@@ -422,9 +422,25 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         isActive: true
       }
 
-      const updatedAdmin = { ...foundAdmin, lastLoginAt: Date.now() }
+      const updatedAdmin = {
+        ...foundAdmin,
+        sessionId: data.sessionId || (foundAdmin as any).sessionId,
+        lastLoginAt: Date.now()
+      }
       setAdminUser(updatedAdmin)
       localStorage.setItem('sugar_admin_session', JSON.stringify(updatedAdmin))
+
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        try {
+          const ch = new BroadcastChannel('sugar_ludo_social_channel')
+          ch.postMessage({
+            type: 'admin_new_session_started',
+            adminUid: updatedAdmin.uid,
+            sessionId: data.sessionId
+          })
+          ch.close()
+        } catch {}
+      }
 
       return { success: true, message: '¡Acceso concedido!' }
     } catch (e: any) {

@@ -101,6 +101,7 @@ import {
   extractStaffSessionCookie,
   verifyStaffSessionToken,
   buildClearStaffSessionCookie,
+  getActiveStaffSession,
   getActiveCashierSession
 } from './session-manager.ts'
 
@@ -433,22 +434,20 @@ export async function verifyStaffAuth(
     }
   }
 
-  // 2.1 Control de sesión única activa para cajeros (Single Active Session en Bearer Auth)
-  if (verifiedUser.role === 'cashier') {
-    const headerSessionId = request.headers.get('x-staff-session-id')
-    const active = getActiveCashierSession(verifiedUser.uid)
-    if (active && headerSessionId && active.sessionId !== headerSessionId) {
-      return {
-        authorized: false,
-        errorResponse: NextResponse.json(
-          {
-            success: false,
-            error: 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.',
-            code: 'SESSION_SUPERSEDED'
-          },
-          { status: 401, headers: corsHeaders }
-        )
-      }
+  // 2.1 Control de sesión única activa para Staff (Cajeros y Administradores / Super Admin en Bearer Auth)
+  const headerSessionId = request.headers.get('x-staff-session-id')
+  const activeStaffSession = getActiveStaffSession(verifiedUser.uid)
+  if (activeStaffSession && headerSessionId && activeStaffSession.sessionId !== headerSessionId) {
+    return {
+      authorized: false,
+      errorResponse: NextResponse.json(
+        {
+          success: false,
+          error: 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.',
+          code: 'SESSION_SUPERSEDED'
+        },
+        { status: 401, headers: corsHeaders }
+      )
     }
   }
 
