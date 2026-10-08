@@ -10,7 +10,6 @@ import { OrderRow } from '../../components/orders/OrderRow'
 import { ReceiptImageViewer } from '../../components/receipts/ReceiptImageViewer'
 import { CashierAdminChatModal } from '../../components/cashier/CashierAdminChatModal'
 import { CashierFloatHistoryModal } from '../../components/cashier/CashierFloatHistoryModal'
-import { CashierLogPanel } from '../../components/cashier/CashierLogPanel'
 import { CashierManagementProfile } from '../../types/admin-expanded'
 import { cashierLogger } from '../../lib/cashier-logger'
 import { useAdminAuth } from '../../lib/admin-auth-context'
@@ -811,9 +810,6 @@ Hola ${targetOrder.playerName}, tu recarga ha sido verificada y los fondos ya es
         cashier={currentCashier as any}
         orders={orders}
       />
-
-      {/* Consola de Diagnóstico & Observabilidad Forense */}
-      <CashierLogPanel />
     </div>
   )
 }

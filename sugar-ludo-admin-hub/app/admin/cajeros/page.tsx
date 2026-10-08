@@ -23,7 +23,6 @@ import { CashierDualChatPanel } from '../../../components/admin/CashierDualChatP
 import { RegisterCashierModal } from '../../../components/admin/RegisterCashierModal'
 import { EditCashierModal } from '../../../components/admin/EditCashierModal'
 import { cashierLogger } from '../../../lib/cashier-logger'
-import { CashierLogPanel } from '../../../components/cashier/CashierLogPanel'
 import { db } from '../../../lib/firebase'
 import { doc, setDoc, increment, collection, query, where, onSnapshot, limit } from 'firebase/firestore'
 import {
@@ -687,8 +686,6 @@ export default function AdminCajerosManagementPage() {
         cashier={selectedCashierForPdf}
       />
 
-      {/* Consola de Diagnóstico & Observabilidad Forense */}
-      <CashierLogPanel />
     </div>
   )
 }

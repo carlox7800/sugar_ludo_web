@@ -10,6 +10,7 @@ export function CashierLogPanel() {
   const [isOpen, setIsOpen] = useState(false)
   const [logs, setLogs] = useState<CashierLogEntry[]>([])
   const [copied, setCopied] = useState(false)
+  const [copiedJSON, setCopiedJSON] = useState(false)
   const [selectedLevel, setSelectedLevel] = useState<string>('ALL')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -34,8 +35,6 @@ export function CashierLogPanel() {
     }
   }, [])
 
-  if (!isMounted) return null
-
   const handleCopy = () => {
     const text = cashierLogger.exportLogs()
     navigator.clipboard.writeText(text || 'Sin registros de actividad')
@@ -43,7 +42,6 @@ export function CashierLogPanel() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const [copiedJSON, setCopiedJSON] = useState(false)
   const handleCopyJSON = () => {
     const jsonStr = cashierLogger.exportLogsJSON()
     navigator.clipboard.writeText(jsonStr || '{}')
@@ -129,6 +127,8 @@ export function CashierLogPanel() {
   const balanceAuditCount = logs.filter((l) => l.level === 'BALANCE-AUDIT').length
   const cashierFloatCount = logs.filter((l) => l.level === 'CASHIER-FLOAT').length
   const treasurySyncCount = logs.filter((l) => l.level === 'TREASURY-SYNC').length
+
+  if (!isMounted) return null
 
   return (
     <>

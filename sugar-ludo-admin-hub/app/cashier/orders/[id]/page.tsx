@@ -6,7 +6,6 @@ import { useParams, useRouter } from 'next/navigation'
 import { MOCK_ORDERS, MOCK_CHAT_MESSAGES } from '../../../../lib/mock-data'
 import { CashierOrder, OrderChatMessage } from '../../../../types/cashier'
 import { WithdrawalAuditInspectorCard } from '../../../../components/cashier/WithdrawalAuditInspectorCard'
-import { CashierLogPanel } from '../../../../components/cashier/CashierLogPanel'
 import { cashierLogger } from '../../../../lib/cashier-logger'
 import { db } from '../../../../lib/firebase'
 import { doc, onSnapshot, getDoc, updateDoc, setDoc } from 'firebase/firestore'
@@ -856,9 +855,6 @@ Conserva este mensaje como comprobante formal de la transacción.`
           onOpenDisputeModal={() => setIsDisputeOpen(true)}
         />
       </main>
-
-      {/* Auditoría en Vivo y Consola de Diagnóstico */}
-      <CashierLogPanel />
     </div>
   )
 }

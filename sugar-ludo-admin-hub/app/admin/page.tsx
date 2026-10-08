@@ -15,7 +15,6 @@ import { EconomicHardResetModal, EconomicResetOptions } from '../../components/a
 import { subscribeToAllPrivateChatsMeta } from '../../lib/staff-chat-service'
 import { subscribeToPendingDisputesCount } from '../../lib/disputes-service'
 import { cashierLogger } from '../../lib/cashier-logger'
-import { CashierLogPanel } from '../../components/cashier/CashierLogPanel'
 import { db, auth } from '../../lib/firebase'
 import { doc, onSnapshot, setDoc, collection, getDocs, query, limit, writeBatch, getCountFromServer } from 'firebase/firestore'
 import {
@@ -1225,9 +1224,6 @@ export default function AdminDashboardPage() {
         currentVault={vault}
         activeCashiersCount={cashierList.length}
       />
-
-      {/* Consola de Diagnóstico & Observabilidad Forense */}
-      <CashierLogPanel />
     </div>
   )
 }
