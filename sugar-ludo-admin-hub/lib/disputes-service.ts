@@ -8,7 +8,7 @@
  */
 
 import { db } from './firebase.ts'
-import { collection, query, onSnapshot, limit } from 'firebase/firestore'
+import { collection, query, onSnapshot, limit, where } from 'firebase/firestore'
 
 export interface PendingDisputesSummary {
   financial: number
@@ -79,7 +79,11 @@ export function subscribeToPendingDisputesCount(
     if (unsubSnapshot) return
 
     try {
-      const q = query(collection(db, 'dispute_cases'), limit(100))
+      const q = query(
+        collection(db, 'dispute_cases'),
+        where('status', 'in', ['open', 'investigating']),
+        limit(25)
+      )
       unsubSnapshot = onSnapshot(
         q,
         (snap) => {

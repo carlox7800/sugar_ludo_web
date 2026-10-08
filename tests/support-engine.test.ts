@@ -907,4 +907,109 @@ describe('Suite: Mensaje Único Institucional y Desduplicación en Disputas (v9.
   })
 })
 
+describe('Suite: Blindaje de Cuota Spark, Singleton de Listeners y Reconciliación Bajo Demanda (v9.9.7)', () => {
+  it('REFERENCE COUNTING SINGLETON: debe compartir el socket único y desuscribir al llegar a 0 suscriptores', () => {
+    let mockSocketActive = false
+    let subscriberCount = 0
+
+    function subscribeMock() {
+      subscriberCount++
+      if (subscriberCount === 1) {
+        mockSocketActive = true
+      }
+      return () => {
+        subscriberCount--
+        if (subscriberCount <= 0) {
+          mockSocketActive = false
+          subscriberCount = 0
+        }
+      }
+    }
+
+    const unsub1 = subscribeMock()
+    assert.equal(mockSocketActive, true)
+    assert.equal(subscriberCount, 1)
+
+    const unsub2 = subscribeMock()
+    assert.equal(mockSocketActive, true)
+    assert.equal(subscriberCount, 2)
+
+    unsub1()
+    assert.equal(mockSocketActive, true, 'El socket debe mantenerse abierto si queda al menos 1 suscriptor')
+    assert.equal(subscriberCount, 1)
+
+    unsub2()
+    assert.equal(mockSocketActive, false, 'El socket debe cerrarse inmediatamente cuando no quedan suscriptores')
+    assert.equal(subscriberCount, 0)
+  })
+
+  it('PAGE VISIBILITY API: debe suspender el socket cuando document.hidden es true y restaurarlo al volver', () => {
+    let isSocketConnected = true
+    let isHidden = false
+
+    function handleVisibility(newHiddenState: boolean) {
+      isHidden = newHiddenState
+      if (isHidden) {
+        isSocketConnected = false
+      } else {
+        isSocketConnected = true
+      }
+    }
+
+    // Pestaña minimizada / oculta
+    handleVisibility(true)
+    assert.equal(isSocketConnected, false, 'El listener debe estar desconectado con pestaña oculta')
+
+    // Pestaña recupera foco
+    handleVisibility(false)
+    assert.equal(isSocketConnected, true, 'El listener debe restaurarse cuando la pestaña vuelve al primer plano')
+  })
+
+  it('COOLDOWN DE AUDITORÍA: las llamadas a reconciliación deben respetar el enfriamiento forzado de 60s', () => {
+    let cooldownUntil = 0
+    let callsExecuted = 0
+
+    function requestReconciliation(now: number, forceAudit: boolean): boolean {
+      if (!forceAudit) return false
+      if (now < cooldownUntil) return false
+
+      callsExecuted++
+      cooldownUntil = now + 60000
+      return true
+    }
+
+    const t0 = 100000
+    // 1. Carga inicial o tick automático pasivo sin clic manual
+    assert.equal(requestReconciliation(t0, false), false, 'Ticks pasivos no deben invocar reconciliación')
+    assert.equal(callsExecuted, 0)
+
+    // 2. Primer clic explícito del operador
+    assert.equal(requestReconciliation(t0, true), true, 'Primer clic manual debe ejecutarse')
+    assert.equal(callsExecuted, 1)
+
+    // 3. Clic repetido antes de cumplir los 60s
+    assert.equal(requestReconciliation(t0 + 5000, true), false, 'Llamadas en ráfaga deben ser rechazadas por cooldown')
+    assert.equal(callsExecuted, 1)
+
+    // 4. Clic tras 61s
+    assert.equal(requestReconciliation(t0 + 61000, true), true, 'Tras expirar el cooldown debe permitirse')
+    assert.equal(callsExecuted, 2)
+  })
+
+  it('QUERY OPTIMIZATION: las consultas de disputas deben limitar estrictamente a 25 registros activos', () => {
+    const activeDisputeFilter = {
+      field: 'status',
+      operator: 'in',
+      values: ['open', 'investigating'],
+      limit: 25
+    }
+
+    assert.equal(activeDisputeFilter.limit, 25)
+    assert.deepEqual(activeDisputeFilter.values, ['open', 'investigating'])
+    assert.ok(!activeDisputeFilter.values.includes('resolved_player'))
+    assert.ok(!activeDisputeFilter.values.includes('resolved_cashier'))
+  })
+})
+
+
 

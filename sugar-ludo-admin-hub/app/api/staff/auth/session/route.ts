@@ -13,13 +13,14 @@ import {
   SESSION_CONFIG
 } from '@/lib/session-manager'
 import { verifyTOTPCode } from '@/lib/two-factor-auth'
+import { verifyStaffAuth } from '@/lib/api-auth-guard'
 
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization'
     }
   })
@@ -283,3 +284,28 @@ export async function POST(request: Request) {
     )
   }
 }
+
+/**
+ * Verificación ultraligera de sesión de staff (cero lecturas en Firestore).
+ * Valida la cookie o token en memoria y confirma que la sesión no haya sido invalidada o superada.
+ */
+export async function GET(request: Request) {
+  const authResult = await verifyStaffAuth(request, ['admin', 'cashier'])
+  if (!authResult.authorized) {
+    return authResult.errorResponse!
+  }
+
+  return NextResponse.json(
+    {
+      success: true,
+      user: authResult.user
+    },
+    {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, max-age=0'
+      }
+    }
+  )
+}
+

@@ -15,7 +15,7 @@ import { cashierLogger } from '../../lib/cashier-logger'
 import { useAdminAuth } from '../../lib/admin-auth-context'
 import { db } from '../../lib/firebase'
 import { collection, doc, onSnapshot, query, limit } from 'firebase/firestore'
-import { OrdersCache } from '../../lib/orders-cache'
+import { OrdersCache, subscribeToLiveOrdersSingleton } from '../../lib/orders-cache'
 import {
   subscribeToCashierChatMeta,
   subscribeToBroadcastUnreadCount,
@@ -213,16 +213,17 @@ export default function CashierMainDeskPage() {
     router.push('/')
   }, [logout, router])
 
-  // Verificación reactiva de sesión única activa (Single Active Session detection)
+  // Verificación reactiva de sesión única activa (Single Active Session detection) sin lecturas Firestore
   useEffect(() => {
     if (!currentCashier?.uid || isSessionTerminatedRef.current) return
     const activeUid = normalizeCashierUid(currentCashier.uid)
 
     const checkSessionStatus = async () => {
       if (isSessionTerminatedRef.current) return
+      if (typeof document !== 'undefined' && document.hidden) return
       try {
         const headers = await getStaffAuthHeadersAsync('cashier')
-        const res = await fetch('/api/cashier/orders?limit=1', {
+        const res = await fetch('/api/staff/auth/session', {
           headers,
           credentials: 'same-origin'
         })
@@ -237,9 +238,9 @@ export default function CashierMainDeskPage() {
       } catch {}
     }
 
-    // Comprobación inmediata y sondeo cada 5 segundos (idéntico a Super Admin)
+    // Comprobación inicial y sondeo periódico ligero cada 15s (en memoria, 0 lecturas Firestore)
     checkSessionStatus()
-    const interval = setInterval(checkSessionStatus, 5000)
+    const interval = setInterval(checkSessionStatus, 15000)
     const onFocus = () => checkSessionStatus()
     window.addEventListener('focus', onFocus)
 
@@ -271,38 +272,67 @@ export default function CashierMainDeskPage() {
     }
   }, [currentCashier?.uid, currentCashier?.sessionId, terminateCashierSession])
 
-  // Escuchar actualizaciones de saldo flotante en tiempo real desde Firestore (cashier_profiles/{uid})
+  // Escuchar actualizaciones de saldo flotante en tiempo real desde Firestore (cashier_profiles/{uid}) con Page Visibility API
   useEffect(() => {
     if (!currentCashier?.uid) return
     let unsubProfile: (() => void) | null = null
-    try {
-      const profileRef = doc(db, 'cashier_profiles', currentCashier.uid)
-      unsubProfile = onSnapshot(profileRef, (snap) => {
-        if (snap.exists()) {
-          const pData = snap.data()
-          const fUSDT = Number(pData.floatBalanceUSDT ?? (Number(pData.floatBalanceCoins || 0) / 100))
-          const fCoins = Number(pData.floatBalanceCoins ? pData.floatBalanceCoins : Math.round(fUSDT * 100))
-          setActiveCashierSession((prev: any) => ({
-            ...(prev || {}),
-            floatBalanceCoins: fCoins,
-            floatBalanceUSDT: fUSDT
-          }))
-          cashierLogger.cashierFloat('Lectura en vivo de cashier_profiles/{uid}', {
-            cashierUid: currentCashier.uid,
-            floatBalanceUSDT: fUSDT,
-            floatBalanceCoins: fCoins,
-            totalOrdersCompleted: pData.totalOrdersCompleted || 0,
-            lastActiveAt: pData.lastActiveAt
-          })
-        }
-      }, (err) => {
-        cashierLogger.errorTrace('Error en snapshot de cashier_profiles', err)
-        console.debug('[CashierMainDesk] Profile snapshot notice:', err?.message)
-      })
-    } catch {}
+
+    const startProfileListener = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (unsubProfile) return
+
+      try {
+        const profileRef = doc(db, 'cashier_profiles', currentCashier.uid)
+        unsubProfile = onSnapshot(profileRef, (snap) => {
+          if (snap.exists()) {
+            const pData = snap.data()
+            const fUSDT = Number(pData.floatBalanceUSDT ?? (Number(pData.floatBalanceCoins || 0) / 100))
+            const fCoins = Number(pData.floatBalanceCoins ? pData.floatBalanceCoins : Math.round(fUSDT * 100))
+            setActiveCashierSession((prev: any) => ({
+              ...(prev || {}),
+              floatBalanceCoins: fCoins,
+              floatBalanceUSDT: fUSDT
+            }))
+            cashierLogger.cashierFloat('Lectura en vivo de cashier_profiles/{uid}', {
+              cashierUid: currentCashier.uid,
+              floatBalanceUSDT: fUSDT,
+              floatBalanceCoins: fCoins,
+              totalOrdersCompleted: pData.totalOrdersCompleted || 0,
+              lastActiveAt: pData.lastActiveAt
+            })
+          }
+        }, (err) => {
+          cashierLogger.errorTrace('Error en snapshot de cashier_profiles', err)
+          console.debug('[CashierMainDesk] Profile snapshot notice:', err?.message)
+        })
+      } catch {}
+    }
+
+    const stopProfileListener = () => {
+      if (unsubProfile) {
+        unsubProfile()
+        unsubProfile = null
+      }
+    }
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        stopProfileListener()
+      } else {
+        startProfileListener()
+      }
+    }
+
+    startProfileListener()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
+    }
 
     return () => {
-      if (unsubProfile) unsubProfile()
+      stopProfileListener()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
     }
   }, [currentCashier?.uid])
 
@@ -391,6 +421,9 @@ export default function CashierMainDeskPage() {
     }
   }
 
+  const terminateSessionRef = useRef(terminateCashierSession)
+  terminateSessionRef.current = terminateCashierSession
+
   useEffect(() => {
     if (isSessionTerminatedRef.current) return
 
@@ -421,49 +454,28 @@ export default function CashierMainDeskPage() {
       }
     } catch {}
 
-    // 2. Realtime subscription to Firestore (Spark Plan Cost $0 with limit & stable singleton)
-    const startOrdersListener = () => {
-      if (isSessionTerminatedRef.current) return
-      if (ordersUnsubscribeRef.current) return
-
-      try {
-        cashierLogger.firestore(`Iniciando listener onSnapshot en colección cashier_orders (limit 25)`)
-        const q = query(collection(db, 'cashier_orders'), limit(25))
-        ordersUnsubscribeRef.current = onSnapshot(q, (snapshot) => {
-          const liveOrders: CashierOrder[] = []
-          snapshot.forEach((docSnap) => {
-            liveOrders.push({ ...docSnap.data(), id: docSnap.id } as CashierOrder)
-          })
-          cashierLogger.firestore(`Listener onSnapshot recibió actualización de colección`, { totalDocs: liveOrders.length })
-          if (liveOrders.length > 0 || snapshot.empty) {
-            setOrders(liveOrders)
-            OrdersCache.set(liveOrders)
-            setIsLoading(false)
-          }
-        }, (err) => {
-          cashierLogger.error(`Error en listener onSnapshot de cashier_orders`, {
-            code: err?.code,
-            message: err?.message
-          })
-          if (err?.code === 'permission-denied' || err?.code === 'unauthenticated') {
-            terminateCashierSession('Permisos revocados o sesión invalidada en la base de datos.')
-          }
+    // 2. Realtime subscription to Firestore Singleton (Spark Plan Cost $0 with limit & stable singleton)
+    const unsubSingleton = subscribeToLiveOrdersSingleton(
+      (liveOrders) => {
+        setOrders(liveOrders)
+        setIsLoading(false)
+      },
+      (err) => {
+        cashierLogger.error(`Error en listener onSnapshot de cashier_orders`, {
+          code: err?.code,
+          message: err?.message
         })
-      } catch (e: any) {
-        cashierLogger.error(`Excepción al conectar listener de cashier_orders`, { message: e?.message })
+        if (err?.code === 'permission-denied' || err?.code === 'unauthenticated') {
+          terminateSessionRef.current('Permisos revocados o sesión invalidada en la base de datos.')
+        }
       }
-    }
-
-    startOrdersListener()
+    )
 
     return () => {
       if (channel) channel.close()
-      if (ordersUnsubscribeRef.current) {
-        ordersUnsubscribeRef.current()
-        ordersUnsubscribeRef.current = null
-      }
+      unsubSingleton()
     }
-  }, [terminateCashierSession])
+  }, [])
 
   const handleApprove = async (orderId: string) => {
     const targetOrder = orders.find((o) => o.id === orderId)

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import { AdminUserProfile, CashierManagementProfile } from '../types/admin-expanded'
 import { MOCK_CASHIERS_MANAGEMENT } from './mock-admin-expanded'
 import { db, auth } from './firebase'
@@ -109,8 +109,6 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [sessionWarning, setSessionWarning] = useState<string | null>(null)
-
-  const clearSessionWarning = () => setSessionWarning(null)
 
   // 1. Carga inicial instantánea desde localStorage
   useEffect(() => {
@@ -233,93 +231,123 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [activeCashierSession])
 
-  // 2. Sincronización en vivo con Firestore (system_config) multiplataforma
+  // 2. Sincronización en vivo con Firestore (system_config) multiplataforma con Page Visibility API
   useEffect(() => {
-    // Sincronizar Cajeros
-    const cashierDocRef = doc(db, 'system_config', 'cashier_accounts')
-    const unsubCashiers = onSnapshot(cashierDocRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data()
-        if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
-          // Sanitizar para asegurar que ninguna contraseña en texto plano quede en cliente
-          const sanitizedAccounts = data.accounts.map((c: any) => {
-            const { password, ...rest } = c
-            return rest as CashierManagementProfile
-          })
-          setCashierList(sanitizedAccounts)
-          localStorage.setItem('sugar_cashier_accounts', JSON.stringify(sanitizedAccounts))
+    let unsubCashiers: (() => void) | null = null
+    let unsubAdmins: (() => void) | null = null
 
-          setActiveCashierSession((prev) => {
-            if (!prev) return prev
-            const matched = sanitizedAccounts.find((c) => c.uid === prev.uid || (prev.email && c.email?.toLowerCase() === prev.email.toLowerCase()))
-            if (matched) {
-              const updated = {
-                ...matched,
-                uid: prev.uid,
-                name: prev.name || matched.name,
-                email: prev.email || matched.email,
-                sessionId: prev.sessionId || (matched as any).sessionId
-              }
-              try {
-                localStorage.setItem('sugar_cashier_session', JSON.stringify(updated))
-              } catch {}
-              return updated
-            }
-            return prev
-          })
-          return
-        }
-      }
+    const startListeners = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
 
-      // Solo sembrar si explícitamente el documento no existe en absoluto y tenemos cuentas predeterminadas
-      if (!snap.exists()) {
-        try {
-          const localSaved = typeof window !== 'undefined' ? localStorage.getItem('sugar_cashier_accounts') : null
-          let initialAccounts = [DEFAULT_CASHIER]
-          if (localSaved) {
-            const parsed = JSON.parse(localSaved)
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              initialAccounts = parsed
+      if (!unsubCashiers) {
+        const cashierDocRef = doc(db, 'system_config', 'cashier_accounts')
+        unsubCashiers = onSnapshot(cashierDocRef, (snap) => {
+          if (snap.exists()) {
+            const data = snap.data()
+            if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
+              const sanitizedAccounts = data.accounts.map((c: any) => {
+                const { password, ...rest } = c
+                return rest as CashierManagementProfile
+              })
+              setCashierList(sanitizedAccounts)
+              localStorage.setItem('sugar_cashier_accounts', JSON.stringify(sanitizedAccounts))
+
+              setActiveCashierSession((prev) => {
+                if (!prev) return prev
+                const matched = sanitizedAccounts.find((c) => c.uid === prev.uid || (prev.email && c.email?.toLowerCase() === prev.email.toLowerCase()))
+                if (matched) {
+                  const updated = {
+                    ...matched,
+                    uid: prev.uid,
+                    name: prev.name || matched.name,
+                    email: prev.email || matched.email,
+                    sessionId: prev.sessionId || (matched as any).sessionId
+                  }
+                  try {
+                    localStorage.setItem('sugar_cashier_session', JSON.stringify(updated))
+                  } catch {}
+                  return updated
+                }
+                return prev
+              })
+              return
             }
           }
-          setDoc(cashierDocRef, {
-            accounts: initialAccounts,
-            updatedAt: Date.now()
-          }, { merge: true }).catch(() => {})
-        } catch {}
-      }
-    }, (err) => {
-      console.warn('[AdminAuth] Listener error cajeros:', err)
-    })
 
-    // Sincronizar Administradores
-    const adminDocRef = doc(db, 'system_config', 'admin_accounts')
-    const unsubAdmins = onSnapshot(adminDocRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data()
-        if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
-          // Sanitizar para asegurar que ninguna contraseña en texto plano quede en cliente
-          const sanitizedAdmins = data.accounts.map((a: any) => {
-            const { password, ...rest } = a
-            return rest as AdminUserProfile
-          })
-          setAdminList(sanitizedAdmins)
-          localStorage.setItem('sugar_admin_accounts', JSON.stringify(sanitizedAdmins))
-          return
-        }
+          if (!snap.exists()) {
+            try {
+              const localSaved = typeof window !== 'undefined' ? localStorage.getItem('sugar_cashier_accounts') : null
+              let initialAccounts = [DEFAULT_CASHIER]
+              if (localSaved) {
+                const parsed = JSON.parse(localSaved)
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  initialAccounts = parsed
+                }
+              }
+              setDoc(cashierDocRef, {
+                accounts: initialAccounts,
+                updatedAt: Date.now()
+              }, { merge: true }).catch(() => {})
+            } catch {}
+          }
+        }, (err) => {
+          console.warn('[AdminAuth] Listener error cajeros:', err)
+        })
       }
 
-      if (!snap.exists()) {
-        try {
-          setDoc(adminDocRef, {
-            accounts: INITIAL_ADMINS,
-            updatedAt: Date.now()
-          }, { merge: true }).catch(() => {})
-        } catch {}
+      if (!unsubAdmins) {
+        const adminDocRef = doc(db, 'system_config', 'admin_accounts')
+        unsubAdmins = onSnapshot(adminDocRef, (snap) => {
+          if (snap.exists()) {
+            const data = snap.data()
+            if (data && Array.isArray(data.accounts) && data.accounts.length > 0) {
+              const sanitizedAdmins = data.accounts.map((a: any) => {
+                const { password, ...rest } = a
+                return rest as AdminUserProfile
+              })
+              setAdminList(sanitizedAdmins)
+              localStorage.setItem('sugar_admin_accounts', JSON.stringify(sanitizedAdmins))
+              return
+            }
+          }
+
+          if (!snap.exists()) {
+            try {
+              setDoc(adminDocRef, {
+                accounts: INITIAL_ADMINS,
+                updatedAt: Date.now()
+              }, { merge: true }).catch(() => {})
+            } catch {}
+          }
+        }, (err) => {
+          console.warn('[AdminAuth] Listener error administradores:', err)
+        })
       }
-    }, (err) => {
-      console.warn('[AdminAuth] Listener error administradores:', err)
-    })
+    }
+
+    const stopListeners = () => {
+      if (unsubCashiers) {
+        unsubCashiers()
+        unsubCashiers = null
+      }
+      if (unsubAdmins) {
+        unsubAdmins()
+        unsubAdmins = null
+      }
+    }
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        stopListeners()
+      } else {
+        startListeners()
+      }
+    }
+
+    startListeners()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
+    }
 
     let ch: BroadcastChannel | null = null
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -348,14 +376,16 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     return () => {
-      unsubCashiers()
-      unsubAdmins()
+      stopListeners()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
       if (ch) ch.close()
     }
   }, [])
 
   // Guardar Cajeros en Firestore de forma atómica y universal
-  const persistCashiersToCloud = async (accounts: CashierManagementProfile[]) => {
+  const persistCashiersToCloud = useCallback(async (accounts: CashierManagementProfile[]) => {
     try {
       const cashierDocRef = doc(db, 'system_config', 'cashier_accounts')
       await setDoc(cashierDocRef, {
@@ -365,10 +395,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error('[AdminAuth] Error al persistir cajeros en Firestore:', e)
     }
-  }
+  }, [])
 
   // Guardar Administradores en Firestore de forma atómica
-  const persistAdminsToCloud = async (accounts: AdminUserProfile[]) => {
+  const persistAdminsToCloud = useCallback(async (accounts: AdminUserProfile[]) => {
     try {
       const adminDocRef = doc(db, 'system_config', 'admin_accounts')
       await setDoc(adminDocRef, {
@@ -378,10 +408,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error('[AdminAuth] Error al persistir administradores en Firestore:', e)
     }
-  }
+  }, [])
 
   // Login for Super Admin and Administrators con Firebase Auth
-  const login = async (identifier: string, pass: string): Promise<{ success: boolean; message: string }> => {
+  const login = useCallback(async (identifier: string, pass: string): Promise<{ success: boolean; message: string }> => {
     const trimmedId = identifier.trim().toLowerCase()
 
     try {
@@ -446,10 +476,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch (e: any) {
       return { success: false, message: e.message || 'Error al conectar con el servidor de autenticación.' }
     }
-  }
+  }, [adminList])
 
   // Login for Authorized Cashiers con Firebase Auth
-  const loginCashier = async (identifier: string, pass: string): Promise<{ success: boolean; message: string; cashier?: CashierManagementProfile }> => {
+  const loginCashier = useCallback(async (identifier: string, pass: string): Promise<{ success: boolean; message: string; cashier?: CashierManagementProfile }> => {
     const trimmedId = identifier.trim().toLowerCase()
 
     try {
@@ -521,9 +551,9 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch (e: any) {
       return { success: false, message: e.message || 'Error al conectar con el servidor de autenticación.' }
     }
-  }
+  }, [cashierList])
 
-  const logout = (reason?: string, targetRole: 'admin' | 'cashier' | 'all' = 'all') => {
+  const logout = useCallback((reason?: string, targetRole: 'admin' | 'cashier' | 'all' = 'all') => {
     try {
       fetch('/api/staff/auth/logout', {
         method: 'POST',
@@ -551,9 +581,13 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     if (reason) {
       setSessionWarning(reason)
     }
-  }
+  }, [])
 
-  const updateCurrentAdmin = async (displayName: string, email: string, newPassword?: string): Promise<boolean> => {
+  const clearSessionWarning = useCallback(() => {
+    setSessionWarning(null)
+  }, [])
+
+  const updateCurrentAdmin = useCallback(async (displayName: string, email: string, newPassword?: string): Promise<boolean> => {
     if (!adminUser) return false
 
     const updated = {
@@ -570,9 +604,9 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
 
     await persistAdminsToCloud(updatedList)
     return true
-  }
+  }, [adminUser, adminList, persistAdminsToCloud])
 
-  const createNewAdmin = async (
+  const createNewAdmin = useCallback(async (
     username: string,
     email: string,
     displayName: string,
@@ -626,17 +660,17 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     return { success: true, message: `Administrador ${cleanUser} creado y sincronizado en la red.` }
-  }
+  }, [adminList, persistAdminsToCloud])
 
-  const toggleAdminStatus = (uid: string) => {
+  const toggleAdminStatus = useCallback((uid: string) => {
     if (uid === DEFAULT_SUPER_ADMIN.uid) return
     const updatedList = adminList.map((a) => (a.uid === uid ? { ...a, isActive: !a.isActive } : a))
     setAdminList(updatedList)
     localStorage.setItem('sugar_admin_accounts', JSON.stringify(updatedList))
     persistAdminsToCloud(updatedList)
-  }
+  }, [adminList, persistAdminsToCloud])
 
-  const deleteAdminAccount = (uid: string): { success: boolean; message: string } => {
+  const deleteAdminAccount = useCallback((uid: string): { success: boolean; message: string } => {
     if (uid === DEFAULT_SUPER_ADMIN.uid) {
       return { success: false, message: 'La cuenta raíz Super Admin está protegida y no puede eliminarse.' }
     }
@@ -654,10 +688,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     return { success: true, message: 'Cuenta de administrador eliminada permanentemente.' }
-  }
+  }, [adminList, persistAdminsToCloud])
 
   // Alta de Cajero con Persistencia Global en Firestore
-  const createNewCashier = async (
+  const createNewCashier = useCallback(async (
     newCashier: CashierManagementProfile,
     pass?: string
   ): Promise<{ success: boolean; message: string }> => {
@@ -728,9 +762,9 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     return { success: true, message: `Cajero ${fullCashier.name} registrado con balance de ${fullCashier.floatBalanceCoins.toLocaleString()} SC ($${floatUSDT.toFixed(2)} USDT) sincronizado en la nube.` }
-  }
+  }, [cashierList, persistCashiersToCloud])
 
-  const deleteCashierAccount = (uid: string): { success: boolean; message: string } => {
+  const deleteCashierAccount = useCallback((uid: string): { success: boolean; message: string } => {
     const updatedList = cashierList.filter((c) => c.uid !== uid)
     setCashierList(updatedList)
     localStorage.setItem('sugar_cashier_accounts', JSON.stringify(updatedList))
@@ -745,10 +779,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     return { success: true, message: 'Cuenta de cajero eliminada permanentemente.' }
-  }
+  }, [cashierList, persistCashiersToCloud])
 
   // Modificar Datos y Credenciales de Cajero
-  const updateCashierProfile = async (
+  const updateCashierProfile = useCallback(async (
     uid: string,
     updates: Partial<CashierManagementProfile>,
     newPassword?: string
@@ -835,10 +869,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     return { success: true, message: `Datos y credenciales de ${(updatedCashier as CashierManagementProfile).name} actualizados exitosamente.` }
-  }
+  }, [cashierList, persistCashiersToCloud])
 
   // Recarga y Asignación de Saldo Flotante en Vivo
-  const updateCashierFloat = async (uid: string, newCoins: number, newUSDT?: number, paidWithdrawalDelta?: number) => {
+  const updateCashierFloat = useCallback(async (uid: string, newCoins: number, newUSDT?: number, paidWithdrawalDelta?: number) => {
     const finalUSDT = newUSDT !== undefined ? newUSDT : newCoins / 100
     const updatedList = cashierList.map((c) => {
       if (c.uid === uid) {
@@ -880,9 +914,9 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch {}
-  }
+  }, [cashierList, persistCashiersToCloud])
 
-  const resetAllCashiersFloat = async () => {
+  const resetAllCashiersFloat = useCallback(async () => {
     const now = Date.now()
     const resetAccounts = cashierList.map((c) => ({
       ...c,
@@ -904,34 +938,55 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
     await persistCashiersToCloud(resetAccounts)
-  }
+  }, [cashierList, persistCashiersToCloud])
+
+  const contextValue = useMemo(() => ({
+    adminUser,
+    isAuthenticated: !!adminUser,
+    isLoading,
+    login,
+    loginCashier,
+    logout,
+    sessionWarning,
+    clearSessionWarning,
+    updateCurrentAdmin,
+    adminList,
+    createNewAdmin,
+    toggleAdminStatus,
+    deleteAdminAccount,
+    cashierList,
+    activeCashierSession,
+    setActiveCashierSession,
+    createNewCashier,
+    updateCashierProfile,
+    deleteCashierAccount,
+    updateCashierFloat,
+    resetAllCashiersFloat
+  }), [
+    adminUser,
+    isLoading,
+    login,
+    loginCashier,
+    logout,
+    sessionWarning,
+    clearSessionWarning,
+    updateCurrentAdmin,
+    adminList,
+    createNewAdmin,
+    toggleAdminStatus,
+    deleteAdminAccount,
+    cashierList,
+    activeCashierSession,
+    setActiveCashierSession,
+    createNewCashier,
+    updateCashierProfile,
+    deleteCashierAccount,
+    updateCashierFloat,
+    resetAllCashiersFloat
+  ])
 
   return (
-    <AdminAuthContext.Provider
-      value={{
-        adminUser,
-        isAuthenticated: !!adminUser,
-        isLoading,
-        login,
-        loginCashier,
-        logout,
-        sessionWarning,
-        clearSessionWarning,
-        updateCurrentAdmin,
-        adminList,
-        createNewAdmin,
-        toggleAdminStatus,
-        deleteAdminAccount,
-        cashierList,
-        activeCashierSession,
-        setActiveCashierSession,
-        createNewCashier,
-        updateCashierProfile,
-        deleteCashierAccount,
-        updateCashierFloat,
-        resetAllCashiersFloat
-      }}
-    >
+    <AdminAuthContext.Provider value={contextValue}>
       {children}
     </AdminAuthContext.Provider>
   )

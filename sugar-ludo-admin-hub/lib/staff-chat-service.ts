@@ -220,30 +220,66 @@ export async function markPrivateChatAsReadByCashier(cashierUid: string): Promis
 export function subscribeToAllPrivateChatsMeta(
   callback: (metas: Record<string, PrivateChatMeta>) => void
 ): () => void {
-  try {
-    const q = query(collection(db, 'staff_private_chats'), limit(50))
-    return onSnapshot(q, (snap) => {
-      const map: Record<string, PrivateChatMeta> = {}
-      snap.docs.forEach((d) => {
-        const data = d.data()
-        const normId = normalizeCashierUid(d.id)
-        map[normId] = {
-          cashierUid: normId,
-          cashierName: data.cashierName,
-          lastMessage: data.lastMessage,
-          lastTimestamp: data.lastTimestamp,
-          unreadByAdmin: Number(data.unreadByAdmin || 0),
-          unreadByCashier: Number(data.unreadByCashier || 0),
-          updatedAt: data.updatedAt
-        }
+  if (typeof window === 'undefined') return () => {}
+
+  let unsub: (() => void) | null = null
+
+  const startListener = () => {
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (unsub) return
+
+    try {
+      const q = query(collection(db, 'staff_private_chats'), limit(50))
+      unsub = onSnapshot(q, (snap) => {
+        const map: Record<string, PrivateChatMeta> = {}
+        snap.docs.forEach((d) => {
+          const data = d.data()
+          const normId = normalizeCashierUid(d.id)
+          map[normId] = {
+            cashierUid: normId,
+            cashierName: data.cashierName,
+            lastMessage: data.lastMessage,
+            lastTimestamp: data.lastTimestamp,
+            unreadByAdmin: Number(data.unreadByAdmin || 0),
+            unreadByCashier: Number(data.unreadByCashier || 0),
+            updatedAt: data.updatedAt
+          }
+        })
+        callback(map)
+      }, (err) => {
+        console.warn('[StaffChat] Error en listener de metadatos de chat:', err)
+        callback({})
       })
-      callback(map)
-    }, (err) => {
-      console.warn('[StaffChat] Error en listener de metadatos de chat:', err)
-      callback({})
-    })
-  } catch {
-    return () => {}
+    } catch {
+      unsub = null
+    }
+  }
+
+  const stopListener = () => {
+    if (unsub) {
+      unsub()
+      unsub = null
+    }
+  }
+
+  const handleVisibility = () => {
+    if (typeof document !== 'undefined' && document.hidden) {
+      stopListener()
+    } else {
+      startListener()
+    }
+  }
+
+  startListener()
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibility)
+  }
+
+  return () => {
+    stopListener()
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }
 }
 
@@ -252,29 +288,64 @@ export function subscribeToCashierChatMeta(
   callback: (meta: PrivateChatMeta | null) => void
 ): () => void {
   const targetUid = normalizeCashierUid(cashierUid)
-  if (!targetUid) return () => {}
-  try {
-    const docRef = doc(db, 'staff_private_chats', targetUid)
-    return onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data()
-        callback({
-          cashierUid: targetUid,
-          cashierName: data.cashierName,
-          lastMessage: data.lastMessage,
-          lastTimestamp: data.lastTimestamp,
-          unreadByAdmin: Number(data.unreadByAdmin || 0),
-          unreadByCashier: Number(data.unreadByCashier || 0),
-          updatedAt: data.updatedAt
-        })
-      } else {
+  if (!targetUid || typeof window === 'undefined') return () => {}
+
+  let unsub: (() => void) | null = null
+
+  const startListener = () => {
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (unsub) return
+
+    try {
+      const docRef = doc(db, 'staff_private_chats', targetUid)
+      unsub = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data()
+          callback({
+            cashierUid: targetUid,
+            cashierName: data.cashierName,
+            lastMessage: data.lastMessage,
+            lastTimestamp: data.lastTimestamp,
+            unreadByAdmin: Number(data.unreadByAdmin || 0),
+            unreadByCashier: Number(data.unreadByCashier || 0),
+            updatedAt: data.updatedAt
+          })
+        } else {
+          callback(null)
+        }
+      }, () => {
         callback(null)
-      }
-    }, () => {
-      callback(null)
-    })
-  } catch {
-    return () => {}
+      })
+    } catch {
+      unsub = null
+    }
+  }
+
+  const stopListener = () => {
+    if (unsub) {
+      unsub()
+      unsub = null
+    }
+  }
+
+  const handleVisibility = () => {
+    if (typeof document !== 'undefined' && document.hidden) {
+      stopListener()
+    } else {
+      startListener()
+    }
+  }
+
+  startListener()
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibility)
+  }
+
+  return () => {
+    stopListener()
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }
 }
 
@@ -377,40 +448,77 @@ export function subscribeToBroadcastUnreadCount(
       }
     }
 
-    // 3. Escuchar en tiempo real el documento del cajero en Firestore (sincroniza terminales externas)
-    const chatMetaRef = doc(db, 'staff_private_chats', targetUid)
-    const unsubMeta = onSnapshot(chatMetaRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data()
-        const cloudTime = Number(data?.lastReadBroadcastAt || 0)
-        if (cloudTime > 0) {
-          cachedCloudLastRead = Math.max(cachedCloudLastRead, cloudTime)
-          if (typeof window !== 'undefined') {
-            try {
-              localStorage.setItem(`sugar_cashier_last_read_broadcast_${targetUid}`, cachedCloudLastRead.toString())
-            } catch {}
-          }
-          recompute()
-        }
-      }
-    }, () => {})
+    let unsubMeta: (() => void) | null = null
+    let unsubBroadcast: (() => void) | null = null
 
-    // 4. Escuchar mensajes de difusión
-    const q = query(
-      collection(db, 'staff_broadcast_messages'),
-      orderBy('timestamp', 'desc'),
-      limit(50)
-    )
-    const unsubBroadcast = onSnapshot(q, (snap) => {
-      lastSnapDocs = snap.docs
-      recompute()
-    }, () => {
-      callback(0)
-    })
+    const startBroadcastListeners = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
+
+      if (!unsubMeta) {
+        // 3. Escuchar en tiempo real el documento del cajero en Firestore (sincroniza terminales externas)
+        const chatMetaRef = doc(db, 'staff_private_chats', targetUid)
+        unsubMeta = onSnapshot(chatMetaRef, (snap) => {
+          if (snap.exists()) {
+            const data = snap.data()
+            const cloudTime = Number(data?.lastReadBroadcastAt || 0)
+            if (cloudTime > 0) {
+              cachedCloudLastRead = Math.max(cachedCloudLastRead, cloudTime)
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem(`sugar_cashier_last_read_broadcast_${targetUid}`, cachedCloudLastRead.toString())
+                } catch {}
+              }
+              recompute()
+            }
+          }
+        }, () => {})
+      }
+
+      if (!unsubBroadcast) {
+        // 4. Escuchar mensajes de difusión con límite de 20
+        const q = query(
+          collection(db, 'staff_broadcast_messages'),
+          orderBy('timestamp', 'desc'),
+          limit(20)
+        )
+        unsubBroadcast = onSnapshot(q, (snap) => {
+          lastSnapDocs = snap.docs
+          recompute()
+        }, () => {
+          callback(0)
+        })
+      }
+    }
+
+    const stopBroadcastListeners = () => {
+      if (unsubBroadcast) {
+        unsubBroadcast()
+        unsubBroadcast = null
+      }
+      if (unsubMeta) {
+        unsubMeta()
+        unsubMeta = null
+      }
+    }
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        stopBroadcastListeners()
+      } else {
+        startBroadcastListeners()
+      }
+    }
+
+    startBroadcastListeners()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
+    }
 
     return () => {
-      unsubBroadcast()
-      unsubMeta()
+      stopBroadcastListeners()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
       if (channel) channel.close()
       if (typeof window !== 'undefined') {
         window.removeEventListener('sugar_broadcast_read', onBroadcastRead)

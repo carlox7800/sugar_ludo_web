@@ -90,6 +90,8 @@ export default function AdminDashboardPage() {
   const [pendingDisputesCount, setPendingDisputesCount] = useState(0)
   const reconcileCooldownUntilRef = useRef<number>(0)
   const isSessionTerminatedRef = useRef<boolean>(false)
+  const cashierListRef = useRef(cashierList)
+  cashierListRef.current = cashierList
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -106,273 +108,312 @@ export default function AdminDashboardPage() {
     }
   }, [isAuthenticated])
 
-  // Suscripción en tiempo real a 1 solo documento global_ledger (Spark Plan Costo $0.00)
+  // Suscripción pasiva en tiempo real a 1 solo documento global_ledger y live_telemetry (Spark Plan Costo $0.00) con Page Visibility API
   useEffect(() => {
     if (!isAuthenticated) return
 
     let unsubLedger: (() => void) | null = null
-    try {
-      const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
-      unsubLedger = onSnapshot(
-        ledgerRef,
-        (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data() as any
-            const totalFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
-            const totalFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
+    let unsubTelemetry: (() => void) | null = null
 
-            const playerBalancesUSD = Number(data.playerCustodyUSD ?? data.playerBalancesUSD ?? 0)
-            const playerBalancesCoins = Number(data.playerCustodyCoins ?? data.playerBalancesCoins ?? Math.round(playerBalancesUSD * 100))
-            const houseNetProfitsUSD = Number(data.houseNetProfitsUSD ?? 0)
-            const houseNetProfitsCoins = Number(data.houseNetProfitsCoins ?? Math.round(houseNetProfitsUSD * 100))
+    const startTreasuryListeners = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
 
-            // REGLA DE ORO CONTABLE: Bóveda Total = Fondos de Jugadores (Custodia) + Ganancias Netas de la Casa
-            const vaultUSD = playerBalancesUSD + houseNetProfitsUSD
-            const vaultCoins = Math.round(vaultUSD * 100)
+      if (!unsubLedger) {
+        try {
+          const ledgerRef = doc(db, 'system_treasury', 'global_ledger')
+          unsubLedger = onSnapshot(
+            ledgerRef,
+            (docSnap) => {
+              if (docSnap.exists()) {
+                const data = docSnap.data() as any
+                const currentCashiers = cashierListRef.current || []
+                const totalFloatsUSD = currentCashiers.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
+                const totalFloatsCoins = currentCashiers.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
 
-            // Respetar auditoría autoritativa de ledger si existe o total consolidado de cajeros
-            const auditedFloatsUSD = data.cashierFloatsUSD !== undefined ? Number(data.cashierFloatsUSD) : totalFloatsUSD
-            const auditedFloatsCoins = data.cashierFloatsCoins !== undefined ? Number(data.cashierFloatsCoins) : totalFloatsCoins
+                const playerBalancesUSD = Number(data.playerCustodyUSD ?? data.playerBalancesUSD ?? 0)
+                const playerBalancesCoins = Number(data.playerCustodyCoins ?? data.playerBalancesCoins ?? Math.round(playerBalancesUSD * 100))
+                const houseNetProfitsUSD = Number(data.houseNetProfitsUSD ?? 0)
+                const houseNetProfitsCoins = Number(data.houseNetProfitsCoins ?? Math.round(houseNetProfitsUSD * 100))
 
-            const effectiveFloatsUSD = Math.max(0, auditedFloatsUSD)
-            const effectiveFloatsCoins = Math.max(0, auditedFloatsCoins)
+                // REGLA DE ORO CONTABLE: Bóveda Total = Fondos de Jugadores (Custodia) + Ganancias Netas de la Casa
+                const vaultUSD = playerBalancesUSD + houseNetProfitsUSD
+                const vaultCoins = Math.round(vaultUSD * 100)
 
-            setVault({
-              totalVaultUSD: vaultUSD,
-              totalVaultSugarCoins: vaultCoins,
-              playerBalancesUSD,
-              playerBalancesCoins,
-              cashierFloatsUSD: effectiveFloatsUSD,
-              cashierFloatsCoins: effectiveFloatsCoins,
-              houseNetProfitsUSD,
-              houseNetProfitsCoins,
-              lastAuditedAt: data.lastAuditedAt || Date.now()
-            })
+                // Respetar auditoría autoritativa de ledger si existe o total consolidado de cajeros
+                const auditedFloatsUSD = data.cashierFloatsUSD !== undefined ? Number(data.cashierFloatsUSD) : totalFloatsUSD
+                const auditedFloatsCoins = data.cashierFloatsCoins !== undefined ? Number(data.cashierFloatsCoins) : totalFloatsCoins
 
-            cashierLogger.treasurySync('Lectura en vivo de system_treasury/global_ledger', {
-              origen: 'firestore_onSnapshot',
-              vaultUSD,
-              playerBalancesUSD,
-              cashierFloatsUSD: effectiveFloatsUSD,
-              auditedFloatsUSD,
-              houseNetProfitsUSD,
-              timestamp: Date.now()
-            })
+                const effectiveFloatsUSD = Math.max(0, auditedFloatsUSD)
+                const effectiveFloatsCoins = Math.max(0, auditedFloatsCoins)
 
-            if (data.profitsBreakdown) {
-              const normalUSD = data.profitsBreakdown.normalWithdrawalFeesUSD !== undefined
-                ? Number(data.profitsBreakdown.normalWithdrawalFeesUSD)
-                : Number(data.profitsBreakdown.withdrawalFeesUSD || 0)
-              const vipUSD = Number(data.profitsBreakdown.vipWithdrawalFeesUSD || 0)
-              const tournamentUSD = Number(data.profitsBreakdown.tournamentMarginUSD || 0)
-              const cashierOpsUSD = Number(data.profitsBreakdown.cashierOperationsUSD || 0)
-              const rakeUSD = Number(data.profitsBreakdown.tableRakeUSD || 0)
-              const storeUSD = Number(data.profitsBreakdown.storeSalesUSD || 0)
+                setVault({
+                  totalVaultUSD: vaultUSD,
+                  totalVaultSugarCoins: vaultCoins,
+                  playerBalancesUSD,
+                  playerBalancesCoins,
+                  cashierFloatsUSD: effectiveFloatsUSD,
+                  cashierFloatsCoins: effectiveFloatsCoins,
+                  houseNetProfitsUSD,
+                  houseNetProfitsCoins,
+                  lastAuditedAt: data.lastAuditedAt || Date.now()
+                })
 
-              setProfits((prev) => ({
-                ...prev,
-                tableRakeUSD: rakeUSD,
-                tableRakeCoins: Math.round(rakeUSD * 100),
-                storeSalesUSD: storeUSD,
-                storeSalesCoins: Math.round(storeUSD * 100),
-                tournamentMarginUSD: tournamentUSD,
-                tournamentMarginCoins: Math.round(tournamentUSD * 100),
-                cashierOperationsUSD: cashierOpsUSD,
-                cashierOperationsCoins: Math.round(cashierOpsUSD * 100),
-                normalWithdrawalFeesUSD: normalUSD,
-                normalWithdrawalFeesCoins: Math.round(normalUSD * 100),
-                vipWithdrawalFeesUSD: vipUSD,
-                vipWithdrawalFeesCoins: Math.round(vipUSD * 100),
-                totalProfitUSD: houseNetProfitsUSD,
-                totalProfitCoins: houseNetProfitsCoins
-              }))
+                cashierLogger.treasurySync('Lectura en vivo de system_treasury/global_ledger', {
+                  origen: 'firestore_onSnapshot',
+                  vaultUSD,
+                  playerBalancesUSD,
+                  cashierFloatsUSD: effectiveFloatsUSD,
+                  auditedFloatsUSD,
+                  houseNetProfitsUSD,
+                  timestamp: Date.now()
+                })
+
+                if (data.profitsBreakdown) {
+                  const normalUSD = data.profitsBreakdown.normalWithdrawalFeesUSD !== undefined
+                    ? Number(data.profitsBreakdown.normalWithdrawalFeesUSD)
+                    : Number(data.profitsBreakdown.withdrawalFeesUSD || 0)
+                  const vipUSD = Number(data.profitsBreakdown.vipWithdrawalFeesUSD || 0)
+                  const tournamentUSD = Number(data.profitsBreakdown.tournamentMarginUSD || 0)
+                  const cashierOpsUSD = Number(data.profitsBreakdown.cashierOperationsUSD || 0)
+                  const rakeUSD = Number(data.profitsBreakdown.tableRakeUSD || 0)
+                  const storeUSD = Number(data.profitsBreakdown.storeSalesUSD || 0)
+
+                  setProfits((prev) => ({
+                    ...prev,
+                    tableRakeUSD: rakeUSD,
+                    tableRakeCoins: Math.round(rakeUSD * 100),
+                    storeSalesUSD: storeUSD,
+                    storeSalesCoins: Math.round(storeUSD * 100),
+                    tournamentMarginUSD: tournamentUSD,
+                    tournamentMarginCoins: Math.round(tournamentUSD * 100),
+                    cashierOperationsUSD: cashierOpsUSD,
+                    cashierOperationsCoins: Math.round(cashierOpsUSD * 100),
+                    normalWithdrawalFeesUSD: normalUSD,
+                    normalWithdrawalFeesCoins: Math.round(normalUSD * 100),
+                    vipWithdrawalFeesUSD: vipUSD,
+                    vipWithdrawalFeesCoins: Math.round(vipUSD * 100),
+                    totalProfitUSD: houseNetProfitsUSD,
+                    totalProfitCoins: houseNetProfitsCoins
+                  }))
+                }
+              }
+            },
+            (err) => {
+              console.warn('[AdminTreasury] Firestore snapshot global_ledger error suprimido:', err.message)
             }
-          }
-        },
-        (err) => {
-          console.warn('[AdminTreasury] Firestore snapshot global_ledger error suprimido:', err.message)
+          )
+        } catch (err) {
+          console.warn('[AdminTreasury] Error iniciando snapshot ledger:', err)
         }
-      )
-    } catch (err) {
-      console.warn('[AdminTreasury] Error iniciando snapshot ledger:', err)
+      }
+
+      if (!unsubTelemetry) {
+        try {
+          const telRef = doc(db, 'system_treasury', 'live_telemetry')
+          unsubTelemetry = onSnapshot(
+            telRef,
+            (tSnap) => {
+              if (tSnap.exists()) {
+                const tData = tSnap.data()
+                const pLobby = Math.max(0, Number(tData.playersInLobby || 0))
+                const pAI = Math.max(0, Number(tData.playersInAITraining || 0))
+                const pOnline = Math.max(0, Number(tData.playersInOnlineTraining || 0))
+                const pComp = Math.max(0, Number(tData.playersInCompetitive || 0))
+                const totalOnline = pLobby + pAI + pOnline + pComp
+                const rooms = Math.max(0, Number(tData.activeMatchRooms || Math.ceil((pOnline + pComp) / 2)))
+
+                setTelemetry((prev) => ({
+                  ...prev,
+                  playersInLobby: pLobby,
+                  playersInAITraining: pAI,
+                  playersInOnlineTraining: pOnline,
+                  playersInCompetitive: pComp,
+                  totalOnlinePlayers: totalOnline,
+                  activeMatchRooms: rooms,
+                  modeDistribution: tData.modeDistribution || prev.modeDistribution,
+                  serverStatus: 'online',
+                  updatedAt: tData.updatedAt || Date.now()
+                }))
+              }
+            },
+            (err) => {
+              console.warn('[AdminTelemetry] Firestore snapshot live_telemetry error suprimido:', err.message)
+            }
+          )
+        } catch (err) {
+          console.warn('[AdminTelemetry] Error iniciando snapshot telemetría:', err)
+        }
+      }
     }
 
-    let unsubTelemetry: (() => void) | null = null
-    try {
-      const telRef = doc(db, 'system_treasury', 'live_telemetry')
-      unsubTelemetry = onSnapshot(
-        telRef,
-        (tSnap) => {
-          if (tSnap.exists()) {
-            const tData = tSnap.data()
-            const pLobby = Math.max(0, Number(tData.playersInLobby || 0))
-            const pAI = Math.max(0, Number(tData.playersInAITraining || 0))
-            const pOnline = Math.max(0, Number(tData.playersInOnlineTraining || 0))
-            const pComp = Math.max(0, Number(tData.playersInCompetitive || 0))
-            const totalOnline = pLobby + pAI + pOnline + pComp
-            const rooms = Math.max(0, Number(tData.activeMatchRooms || Math.ceil((pOnline + pComp) / 2)))
+    const stopTreasuryListeners = () => {
+      if (unsubLedger) {
+        unsubLedger()
+        unsubLedger = null
+      }
+      if (unsubTelemetry) {
+        unsubTelemetry()
+        unsubTelemetry = null
+      }
+    }
 
-            setTelemetry((prev) => ({
-              ...prev,
-              playersInLobby: pLobby,
-              playersInAITraining: pAI,
-              playersInOnlineTraining: pOnline,
-              playersInCompetitive: pComp,
-              totalOnlinePlayers: totalOnline,
-              activeMatchRooms: rooms,
-              modeDistribution: tData.modeDistribution || prev.modeDistribution,
-              serverStatus: 'online',
-              updatedAt: tData.updatedAt || Date.now()
-            }))
-          }
-        },
-        (err) => {
-          console.warn('[AdminTelemetry] Firestore snapshot live_telemetry error suprimido:', err.message)
-        }
-      )
-    } catch (err) {
-      console.warn('[AdminTelemetry] Error iniciando snapshot telemetría:', err)
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        stopTreasuryListeners()
+      } else {
+        startTreasuryListeners()
+      }
+    }
+
+    startTreasuryListeners()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility)
     }
 
     return () => {
-      if (unsubLedger) unsubLedger()
-      if (unsubTelemetry) unsubTelemetry()
+      stopTreasuryListeners()
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility)
+      }
     }
-  }, [isAuthenticated, cashierList])
+  }, [isAuthenticated])
 
-  // Polling y consolidación de saldos y telemetría en tiempo real
-  const fetchLiveMetrics = async () => {
+  // Consolidación de saldos y telemetría (Conciliación patrimonial bajo demanda / cero polling Firestore)
+  const fetchLiveMetrics = async (forceAudit: boolean = false) => {
     if (isSessionTerminatedRef.current) return
     setIsRefreshing(true)
     const startTime = Date.now()
     try {
       // 1. Ejecutar Conciliación Patrimonial Autoritativa en el Backend (/api/admin/treasury/reconcile)
-      try {
-        const now = Date.now()
-        if (now >= reconcileCooldownUntilRef.current && !isSessionTerminatedRef.current) {
-          const authHeaders = await getStaffAuthHeadersAsync('admin')
-          if (authHeaders.Authorization) {
-            const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...authHeaders
-              },
-              body: JSON.stringify({
-                adminUid: adminUser?.uid || 'adm_super_carlos_001',
-                adminName: adminUser?.displayName || 'Carlos (Super Admin)'
+      // REGLA SPARK PLAN $0.00: Solo se ejecuta bajo demanda explícita del operador (forceAudit === true) con cooldown mínimo de 60s
+      if (forceAudit) {
+        try {
+          const now = Date.now()
+          if (now >= reconcileCooldownUntilRef.current && !isSessionTerminatedRef.current) {
+            const authHeaders = await getStaffAuthHeadersAsync('admin')
+            if (authHeaders.Authorization) {
+              const reconcileRes = await fetch('/api/admin/treasury/reconcile', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...authHeaders
+                },
+                body: JSON.stringify({
+                  adminUid: adminUser?.uid || 'adm_super_carlos_001',
+                  adminName: adminUser?.displayName || 'Carlos (Super Admin)'
+                })
               })
-            })
 
-            const recStatus = reconcileRes.status
-            const recData = await reconcileRes.json().catch(() => ({}))
+              const recStatus = reconcileRes.status
+              const recData = await reconcileRes.json().catch(() => ({}))
 
-            if (reconcileRes.ok) {
-              reconcileCooldownUntilRef.current = 0
-              if (recData.ledger) {
-                const l = recData.ledger
-                const playerUSD = Number(l.playerCustodyUSD ?? l.playerBalancesUSD ?? 0)
-                const playerCoins = Number(l.playerCustodyCoins ?? l.playerBalancesCoins ?? Math.round(playerUSD * 100))
-                const profitsUSD = Number(l.houseNetProfitsUSD ?? 0)
-                const profitsCoins = Number(l.houseNetProfitsCoins ?? Math.round(profitsUSD * 100))
-                const floatsUSD = Number(l.cashierFloatsUSD ?? 0)
-                const floatsCoins = Number(l.cashierFloatsCoins ?? Math.round(floatsUSD * 100))
-                const totalUSD = Number(l.totalVaultUSD ?? (playerUSD + profitsUSD))
-                const totalCoins = Number(l.totalVaultSugarCoins ?? Math.round(totalUSD * 100))
+              if (reconcileRes.ok) {
+                reconcileCooldownUntilRef.current = now + 60000 // Cooldown de 60s entre auditorías completas
+                if (recData.ledger) {
+                  const l = recData.ledger
+                  const playerUSD = Number(l.playerCustodyUSD ?? l.playerBalancesUSD ?? 0)
+                  const playerCoins = Number(l.playerCustodyCoins ?? l.playerBalancesCoins ?? Math.round(playerUSD * 100))
+                  const profitsUSD = Number(l.houseNetProfitsUSD ?? 0)
+                  const profitsCoins = Number(l.houseNetProfitsCoins ?? Math.round(profitsUSD * 100))
+                  const floatsUSD = Number(l.cashierFloatsUSD ?? 0)
+                  const floatsCoins = Number(l.cashierFloatsCoins ?? Math.round(floatsUSD * 100))
+                  const totalUSD = Number(l.totalVaultUSD ?? (playerUSD + profitsUSD))
+                  const totalCoins = Number(l.totalVaultSugarCoins ?? Math.round(totalUSD * 100))
 
-                setVault({
-                  totalVaultUSD: totalUSD,
-                  totalVaultSugarCoins: totalCoins,
-                  playerBalancesUSD: playerUSD,
-                  playerBalancesCoins: playerCoins,
-                  cashierFloatsUSD: floatsUSD,
-                  cashierFloatsCoins: floatsCoins,
-                  houseNetProfitsUSD: profitsUSD,
-                  houseNetProfitsCoins: profitsCoins,
-                  lastAuditedAt: l.lastAuditedAt || Date.now()
+                  setVault({
+                    totalVaultUSD: totalUSD,
+                    totalVaultSugarCoins: totalCoins,
+                    playerBalancesUSD: playerUSD,
+                    playerBalancesCoins: playerCoins,
+                    cashierFloatsUSD: floatsUSD,
+                    cashierFloatsCoins: floatsCoins,
+                    houseNetProfitsUSD: profitsUSD,
+                    houseNetProfitsCoins: profitsCoins,
+                    lastAuditedAt: l.lastAuditedAt || Date.now()
+                  })
+
+                  cashierLogger.treasurySync('Conciliación autoritativa exitosa (/api/admin/treasury/reconcile)', {
+                    status: recStatus,
+                    floatsUSD,
+                    floatsCoins,
+                    playerUSD,
+                    totalUSD,
+                    stats: recData.stats,
+                    lastAuditedAt: l.lastAuditedAt
+                  })
+                }
+              } else if (recStatus === 429) {
+                // HTTP 429 TOO MANY REQUESTS: Congelar reconciliación respetando retryAfter (mínimo 35s)
+                const rawRetry = Number(recData?.retryAfter) || Number(reconcileRes.headers.get('Retry-After')) || 30
+                const retryAfterSec = Math.max(35, rawRetry)
+                reconcileCooldownUntilRef.current = now + (retryAfterSec * 1000)
+                cashierLogger.errorTrace(`Reconciliación en enfriamiento por rate limit (HTTP 429). RetryAfter: ${retryAfterSec}s`, {
+                  status: 429,
+                  retryAfterSec
+                })
+                console.warn(`[AdminTreasury] Reconciliación en enfriamiento por rate limit (HTTP 429). Reintentando en ${retryAfterSec}s.`)
+              } else if (recStatus === 401) {
+                const errCode = recData?.code || ''
+                const errMsg = recData?.error || ''
+
+                cashierLogger.errorTrace(`Error de autenticación en conciliación (HTTP 401): ${errCode}`, {
+                  status: 401,
+                  errCode,
+                  errMsg
                 })
 
-                cashierLogger.treasurySync('Conciliación autoritativa exitosa (/api/admin/treasury/reconcile)', {
-                  status: recStatus,
-                  floatsUSD,
-                  floatsCoins,
-                  playerUSD,
-                  totalUSD,
-                  stats: recData.stats,
-                  lastAuditedAt: l.lastAuditedAt
+                if (errCode === 'SESSION_SUPERSEDED' || errCode.startsWith('SESSION_EXPIRED') || errCode === 'SESSION_INVALID') {
+                  isSessionTerminatedRef.current = true
+                  reconcileCooldownUntilRef.current = Infinity
+                  const alertMessage = errCode === 'SESSION_SUPERSEDED'
+                    ? 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
+                    : (errMsg || 'Sesión expirada por motivos de seguridad.')
+                  logout(alertMessage)
+                  router.push('/')
+                  return
+                }
+
+                reconcileCooldownUntilRef.current = now + 60000
+              } else if (recStatus === 403) {
+                cashierLogger.errorTrace(`Permisos insuficientes en conciliación (HTTP 403)`, {
+                  status: 403,
+                  adminUid: adminUser?.uid
                 })
-              }
-            } else if (recStatus === 429) {
-              // HTTP 429 TOO MANY REQUESTS: Congelar reconciliación y pausar intervalo respetando retryAfter (mínimo 35s)
-              const rawRetry = Number(recData?.retryAfter) || Number(reconcileRes.headers.get('Retry-After')) || 30
-              const retryAfterSec = Math.max(35, rawRetry)
-              reconcileCooldownUntilRef.current = now + (retryAfterSec * 1000)
-              cashierLogger.errorTrace(`Reconciliación en enfriamiento por rate limit (HTTP 429). RetryAfter: ${retryAfterSec}s`, {
-                status: 429,
-                retryAfterSec
-              })
-              console.warn(`[AdminTreasury] Reconciliación en enfriamiento por rate limit (HTTP 429). Reintentando en ${retryAfterSec}s.`)
-            } else if (recStatus === 401) {
-              const errCode = recData?.code || ''
-              const errMsg = recData?.error || ''
-
-              cashierLogger.errorTrace(`Error de autenticación en conciliación (HTTP 401): ${errCode}`, {
-                status: 401,
-                errCode,
-                errMsg
-              })
-
-              // SESIÓN INVALIDADA POR CONCURRENCIA O EXPIRACIÓN: CORTAR INTERVALOS Y REDIRIGIR
-              if (errCode === 'SESSION_SUPERSEDED' || errCode.startsWith('SESSION_EXPIRED') || errCode === 'SESSION_INVALID') {
-                isSessionTerminatedRef.current = true
                 reconcileCooldownUntilRef.current = Infinity
-                const alertMessage = errCode === 'SESSION_SUPERSEDED'
-                  ? 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
-                  : (errMsg || 'Sesión expirada por motivos de seguridad.')
-                logout(alertMessage)
-                router.push('/')
-                return
+                if ((adminUser as any)?.role === 'cashier' || (typeof window !== 'undefined' && localStorage.getItem('sugar_cashier_session'))) {
+                  router.push('/cashier')
+                  return
+                }
+              } else {
+                cashierLogger.errorTrace(`Respuesta no esperada en conciliación (HTTP ${recStatus})`, {
+                  status: recStatus,
+                  data: recData
+                })
               }
-
-              reconcileCooldownUntilRef.current = now + 60000
-            } else if (recStatus === 403) {
-              cashierLogger.errorTrace(`Permisos insuficientes en conciliación (HTTP 403)`, {
-                status: 403,
-                adminUid: adminUser?.uid
-              })
-              // PERMISOS INSUFICIENTES: CANCELAR DEFINITIVAMENTE BUCLE DE RECONCILIACIÓN
-              reconcileCooldownUntilRef.current = Infinity
-              if ((adminUser as any)?.role === 'cashier' || (typeof window !== 'undefined' && localStorage.getItem('sugar_cashier_session'))) {
-                router.push('/cashier')
-                return
-              }
-            } else {
-              cashierLogger.errorTrace(`Respuesta no esperada en conciliación (HTTP ${recStatus})`, {
-                status: recStatus,
-                data: recData
-              })
             }
           }
+        } catch (recErr) {
+          cashierLogger.errorTrace('Excepción de red/fetch al consultar conciliación', recErr)
+          console.warn('[AdminTreasury] Conciliación fallback local:', recErr)
         }
-      } catch (recErr) {
-        cashierLogger.errorTrace('Excepción de red/fetch al consultar conciliación', recErr)
-        console.warn('[AdminTreasury] Conciliación fallback local:', recErr)
       }
 
-      // 2. Conteo real de usuarios registrados en Firestore (Spark $0.00)
-      try {
-        const userCountSnap = await getCountFromServer(collection(db, 'users'))
-        const realCount = userCountSnap.data().count
-        setTelemetry((prev) => ({
-          ...prev,
-          totalRegisteredUsers: realCount,
-          totalDownloadsCount: Math.max(realCount, prev.totalRegisteredUsers || realCount)
-        }))
-      } catch (err) {
-        console.warn('[AdminTelemetry] Error leyendo conteo de usuarios:', err)
+      // 2. Conteo real de usuarios registrados (solo cuando se solicita auditoría manual explícita)
+      if (forceAudit) {
+        try {
+          const userCountSnap = await getCountFromServer(collection(db, 'users'))
+          const realCount = userCountSnap.data().count
+          setTelemetry((prev) => ({
+            ...prev,
+            totalRegisteredUsers: realCount,
+            totalDownloadsCount: Math.max(realCount, prev.totalRegisteredUsers || realCount)
+          }))
+        } catch (err) {
+          console.warn('[AdminTelemetry] Error leyendo conteo de usuarios:', err)
+        }
       }
 
-      // 3. Ping de latencia y estado
+      // 3. Ping de latencia y estado ligero
       const res = await fetch('/api/telemetry')
       const ping = Date.now() - startTime
       setServerPingMs(ping)
@@ -402,12 +443,12 @@ export default function AdminDashboardPage() {
         }
       }
 
-      // 4. Consolidación de saldos reales de cajeros y pasivos en custodia
-      const totalCashierFloatsUSD = cashierList.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
-      const totalCashierFloatsCoins = cashierList.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
+      // 4. Consolidación de saldos reales de cajeros y pasivos en custodia desde memoria
+      const currentCashiers = cashierListRef.current || []
+      const totalCashierFloatsUSD = currentCashiers.reduce((acc, c) => acc + ((c as any).floatBalanceUSDT ?? (c.floatBalanceCoins / 100)), 0)
+      const totalCashierFloatsCoins = currentCashiers.reduce((acc, c) => acc + (c.floatBalanceCoins || 0), 0)
 
       setVault((prev) => {
-        // Ecuación Contable: Bóveda Total = Custodia de Jugadores + Ganancias Netas
         const playerBal = Number(prev.playerBalancesUSD || 0)
         const houseProf = Number(prev.houseNetProfitsUSD || 0)
         const vaultUSD = playerBal + houseProf
@@ -447,15 +488,8 @@ export default function AdminDashboardPage() {
       return
     }
 
-    fetchLiveMetrics()
-    // Polling periódico cada 5 segundos para reactividad en vivo ($0.00 Firestore / In-Memory Relay)
-    const interval = setInterval(() => {
-      if (isSessionTerminatedRef.current) {
-        clearInterval(interval)
-        return
-      }
-      fetchLiveMetrics()
-    }, 5000)
+    // Carga inicial pasiva de telemetría (cero polling en bucle, $0.00 Firestore)
+    fetchLiveMetrics(false)
 
     // Escucha reactiva en tiempo real por BroadcastChannel entre pestañas locales
     let ch: BroadcastChannel | null = null
@@ -467,7 +501,6 @@ export default function AdminDashboardPage() {
             if (adminUser?.uid && ev.data.adminUid === adminUser.uid && adminUser.sessionId && ev.data.sessionId !== adminUser.sessionId) {
               isSessionTerminatedRef.current = true
               reconcileCooldownUntilRef.current = Infinity
-              clearInterval(interval)
               logout('Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
               router.push('/')
               return
@@ -475,8 +508,7 @@ export default function AdminDashboardPage() {
           }
           if (ev.data?.type === 'telemetry_state_changed') {
             if (!isSessionTerminatedRef.current) {
-              fetchLiveMetrics()
-              setTimeout(fetchLiveMetrics, 200)
+              fetchLiveMetrics(false)
             }
           }
         }
@@ -485,17 +517,16 @@ export default function AdminDashboardPage() {
 
     const onFocus = () => {
       if (!isSessionTerminatedRef.current) {
-        fetchLiveMetrics()
+        fetchLiveMetrics(false)
       }
     }
     window.addEventListener('focus', onFocus)
 
     return () => {
-      clearInterval(interval)
       window.removeEventListener('focus', onFocus)
       if (ch) ch.close()
     }
-  }, [isAuthenticated, isLoading, router, adminUser?.role, cashierList])
+  }, [isAuthenticated, isLoading, router, adminUser?.role])
 
   const [isResetModalOpen, setIsResetModalOpen] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
@@ -1144,7 +1175,7 @@ export default function AdminDashboardPage() {
 
           {/* 5. Sincronizar */}
           <button
-            onClick={fetchLiveMetrics}
+            onClick={() => fetchLiveMetrics(true)}
             disabled={isRefreshing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-bold transition-all cursor-pointer"
             title="Sincronizar telemetría y balances reales"
