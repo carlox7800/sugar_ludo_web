@@ -145,6 +145,66 @@ describe('Suite: Endurecimiento de Seguridad & Staff Auth Guard (v9.6.0)', () =>
     const headers = getStaffAuthHeaders('admin')
     assert.equal(headers.Authorization, undefined)
   })
+
+  it('AISLAMIENTO DE SESIÓN: sesión de cajero no debe invalidar sesión de admin en mismo navegador', async () => {
+    const {
+      registerActiveAdminSession,
+      registerActiveCashierSession,
+      getActiveAdminSession,
+      getActiveCashierSession,
+      isStaffSessionSuperseded,
+      ADMIN_SESSION_COOKIE_NAME,
+      CASHIER_SESSION_COOKIE_NAME,
+      buildAdminSessionCookie,
+      buildCashierSessionCookie,
+      extractStaffSessionCookie
+    } = await import('../sugar-ludo-admin-hub/lib/session-manager.ts')
+
+    const operatorUid = 'adm_carlos_operator_001'
+    const adminSess1 = 'sess_admin_tab1'
+    const cashierSess1 = 'sess_cashier_tab2'
+
+    // 1. Iniciar sesión como Admin en pestaña 1
+    registerActiveAdminSession(operatorUid, adminSess1)
+    assert.equal(getActiveAdminSession(operatorUid)?.sessionId, adminSess1)
+    assert.equal(isStaffSessionSuperseded(operatorUid, adminSess1, 'admin'), false)
+
+    // 2. Iniciar sesión como Cajero en pestaña 2
+    registerActiveCashierSession(operatorUid, cashierSess1)
+    assert.equal(getActiveCashierSession(operatorUid)?.sessionId, cashierSess1)
+    assert.equal(isStaffSessionSuperseded(operatorUid, cashierSess1, 'cashier'), false)
+
+    // 3. La sesión de Admin en pestaña 1 NO debe ser invalidada por la de Cajero
+    assert.equal(isStaffSessionSuperseded(operatorUid, adminSess1, 'admin'), false, 'Sesión de Admin debe permanecer válida')
+    assert.equal(getActiveAdminSession(operatorUid)?.sessionId, adminSess1)
+
+    // 4. Si el cajero abre otra terminal de cajero (cashierSess2), la previa de cajero se invalida
+    const cashierSess2 = 'sess_cashier_terminal_B'
+    registerActiveCashierSession(operatorUid, cashierSess2)
+    assert.equal(isStaffSessionSuperseded(operatorUid, cashierSess1, 'cashier'), true, 'Sesión previa de cajero debe marcarse superseded')
+    assert.equal(isStaffSessionSuperseded(operatorUid, cashierSess2, 'cashier'), false, 'Nueva sesión de cajero debe estar activa')
+
+    // 5. Pero la sesión de Admin permanece INTACTA
+    assert.equal(isStaffSessionSuperseded(operatorUid, adminSess1, 'admin'), false, 'Sesión de Admin debe permanecer intacta tras nuevo login de cajero')
+
+    // 6. Validar nombres de cookies segregadas
+    const adminCookie = buildAdminSessionCookie('token_admin_xyz')
+    const cashierCookie = buildCashierSessionCookie('token_cashier_abc')
+    assert.ok(adminCookie.startsWith(`${ADMIN_SESSION_COOKIE_NAME}=`))
+    assert.ok(cashierCookie.startsWith(`${CASHIER_SESSION_COOKIE_NAME}=`))
+
+    // 7. Simular cabecera Cookie con ambas sesiones coexistiendo
+    const multiCookieHeader = `${ADMIN_SESSION_COOKIE_NAME}=token_admin_xyz; ${CASHIER_SESSION_COOKIE_NAME}=token_cashier_abc`
+    const fakeAdminReq = new Request('https://admin.sugarludo.com/api/admin/treasury', {
+      headers: { cookie: multiCookieHeader }
+    })
+    const fakeCashierReq = new Request('https://admin.sugarludo.com/api/cashier/orders', {
+      headers: { cookie: multiCookieHeader }
+    })
+
+    assert.equal(extractStaffSessionCookie(fakeAdminReq, 'admin'), 'token_admin_xyz')
+    assert.equal(extractStaffSessionCookie(fakeCashierReq, 'cashier'), 'token_cashier_abc')
+  })
 })
 
 

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CashierOrder, OrderType } from '../../types/cashier'
@@ -34,6 +34,7 @@ export default function CashierMainDeskPage() {
   const { cashierList, logout, adminUser, activeCashierSession, setActiveCashierSession } = useAdminAuth()
   const [orders, setOrders] = useState<CashierOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const ordersUnsubscribeRef = useRef<(() => void) | null>(null)
   const [currentStatus, setCurrentStatus] = useState<FilterStatus>('pending')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'all'>('today')
@@ -143,16 +144,28 @@ export default function CashierMainDeskPage() {
           if (parsed && parsed.uid) {
             const live = cashierList.find((c) => c.uid === parsed.uid || (parsed.email && c.email?.toLowerCase() === parsed.email?.toLowerCase()))
             if (live) {
-              setActiveCashierSession({
-                ...parsed,
-                ...live,
-                uid: parsed.uid,
-                name: parsed.name || live.name,
-                email: parsed.email || live.email,
-                sessionId: parsed.sessionId || (live as any).sessionId
+              setActiveCashierSession((prev) => {
+                if (
+                  prev &&
+                  prev.uid === live.uid &&
+                  prev.name === live.name &&
+                  prev.floatBalanceCoins === live.floatBalanceCoins &&
+                  prev.floatBalanceUSDT === live.floatBalanceUSDT &&
+                  prev.sessionId === (parsed.sessionId || (live as any).sessionId)
+                ) {
+                  return prev
+                }
+                return {
+                  ...parsed,
+                  ...live,
+                  uid: parsed.uid,
+                  name: parsed.name || live.name,
+                  email: parsed.email || live.email,
+                  sessionId: parsed.sessionId || (live as any).sessionId
+                }
               })
             } else {
-              setActiveCashierSession(parsed)
+              setActiveCashierSession((prev) => (prev?.uid === parsed.uid ? prev : parsed))
             }
             return
           }
@@ -160,27 +173,29 @@ export default function CashierMainDeskPage() {
       } catch {}
     }
     if (!localStorage.getItem('sugar_cashier_session') && cashierList && cashierList.length > 0) {
-      setActiveCashierSession(cashierList[0])
+      setActiveCashierSession((prev) => (prev?.uid === cashierList[0].uid ? prev : cashierList[0]))
     }
   }, [cashierList])
 
-  const currentCashier: CashierManagementProfile = activeCashierSession || {
-    uid: CANONICAL_PRIMARY_CASHIER_UID,
-    name: 'Cajero Autorizado',
-    email: 'carlos.cajero@sugarludo.com',
-    avatarUrl: 'https://i.ibb.co/3YBC35Xm/avatar-1786744277377.jpg',
-    shiftStatus: 'on_shift',
-    floatBalanceCoins: 30000,
-    assignedShiftAt: Date.now(),
-    lastRechargeAt: Date.now(),
-    ordersCompletedToday: 0,
-    commissionEarnedTodayCoins: 0,
-    paymentMethodsCount: 2,
-    phone: '+58 412-0000000',
-    idDocument: 'V-12345678',
-    role: 'cashier',
-    sessionId: undefined
-  }
+  const currentCashier: CashierManagementProfile = useMemo(() => {
+    return activeCashierSession || {
+      uid: CANONICAL_PRIMARY_CASHIER_UID,
+      name: 'Cajero Autorizado',
+      email: 'carlos.cajero@sugarludo.com',
+      avatarUrl: 'https://i.ibb.co/3YBC35Xm/avatar-1786744277377.jpg',
+      shiftStatus: 'on_shift',
+      floatBalanceCoins: 30000,
+      assignedShiftAt: Date.now(),
+      lastRechargeAt: Date.now(),
+      ordersCompletedToday: 0,
+      commissionEarnedTodayCoins: 0,
+      paymentMethodsCount: 2,
+      phone: '+58 412-0000000',
+      idDocument: 'V-12345678',
+      role: 'cashier',
+      sessionId: undefined
+    }
+  }, [activeCashierSession])
 
   // Verificación reactiva de sesión única activa (Single Active Session detection)
   useEffect(() => {
@@ -191,7 +206,7 @@ export default function CashierMainDeskPage() {
     const handleSessionSuperseded = (msg?: string) => {
       if (isTerminated) return
       isTerminated = true
-      logout(msg || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+      logout(msg || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.', 'cashier')
       router.push('/')
     }
 
@@ -347,7 +362,7 @@ export default function CashierMainDeskPage() {
               const alertMsg = errCode === 'SESSION_SUPERSEDED'
                 ? 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
                 : (errData?.error || 'Sesión expirada por motivos de seguridad.')
-              logout(alertMsg)
+              logout(alertMsg, 'cashier')
               router.push('/')
               return
             }
@@ -390,16 +405,14 @@ export default function CashierMainDeskPage() {
     } catch {}
 
     // 2. Realtime subscription to Firestore (Spark Plan Cost $0 with limit & auto-pause)
-    let unsubscribe: (() => void) | null = null
-
     const startOrdersListener = () => {
       if (typeof document !== 'undefined' && document.hidden) return
-      if (unsubscribe) return
+      if (ordersUnsubscribeRef.current) return
 
       try {
         cashierLogger.firestore(`Iniciando listener onSnapshot en colección cashier_orders (limit 25)`)
         const q = query(collection(db, 'cashier_orders'), limit(25))
-        unsubscribe = onSnapshot(q, (snapshot) => {
+        ordersUnsubscribeRef.current = onSnapshot(q, (snapshot) => {
           const liveOrders: CashierOrder[] = []
           snapshot.forEach((docSnap) => {
             liveOrders.push({ ...docSnap.data(), id: docSnap.id } as CashierOrder)
@@ -423,9 +436,9 @@ export default function CashierMainDeskPage() {
 
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.hidden) {
-        if (unsubscribe) {
-          unsubscribe()
-          unsubscribe = null
+        if (ordersUnsubscribeRef.current) {
+          ordersUnsubscribeRef.current()
+          ordersUnsubscribeRef.current = null
         }
       } else {
         startOrdersListener()
@@ -439,7 +452,10 @@ export default function CashierMainDeskPage() {
 
     return () => {
       if (channel) channel.close()
-      if (unsubscribe) unsubscribe()
+      if (ordersUnsubscribeRef.current) {
+        ordersUnsubscribeRef.current()
+        ordersUnsubscribeRef.current = null
+      }
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibility)
       }

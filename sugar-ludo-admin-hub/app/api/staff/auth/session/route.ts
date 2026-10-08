@@ -4,7 +4,10 @@ import { verifyPassword, hashPassword } from '@/lib/password-hasher'
 import {
   createStaffSessionToken,
   buildStaffSessionCookie,
+  buildAdminSessionCookie,
+  buildCashierSessionCookie,
   registerActiveStaffSession,
+  registerActiveAdminSession,
   registerActiveCashierSession,
   generateSessionId,
   SESSION_CONFIG
@@ -226,12 +229,17 @@ export async function POST(request: Request) {
       email: targetEmail
     })
 
-    // 4. Creación de Sesión Segura HttpOnly y Control de Dispositivos (Fase 1)
+    // 4. Creación de Sesión Segura HttpOnly y Control de Dispositivos segregado por rol
     const sessionId = generateSessionId()
     const isCashier = matchedProfile.role === 'cashier' || requestedRole === 'cashier'
+    const maxAgeSeconds = isCashier ? SESSION_CONFIG.cashierMaxLifeSeconds : SESSION_CONFIG.adminMaxLifeSeconds
 
-    // Control de sesión única activa para staff (cajeros y administradores directivos)
-    registerActiveStaffSession(matchedProfile.uid, sessionId, targetEmail)
+    // Control de sesión única activa segregado estrictamente por rol
+    if (isCashier) {
+      registerActiveCashierSession(matchedProfile.uid, sessionId, targetEmail)
+    } else {
+      registerActiveAdminSession(matchedProfile.uid, sessionId, targetEmail)
+    }
 
     const sessionResult = createStaffSessionToken({
       sessionId,
@@ -242,8 +250,9 @@ export async function POST(request: Request) {
       accountType: resolvedAccountType
     })
 
-    const cookieHeader = buildStaffSessionCookie(sessionResult.token)
-    const maxAgeSeconds = isCashier ? SESSION_CONFIG.cashierMaxLifeSeconds : SESSION_CONFIG.adminMaxLifeSeconds
+    const cookieHeader = isCashier
+      ? buildCashierSessionCookie(sessionResult.token, { maxAgeSeconds })
+      : buildAdminSessionCookie(sessionResult.token, { maxAgeSeconds })
 
     const response = NextResponse.json(
       {

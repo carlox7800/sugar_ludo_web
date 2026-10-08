@@ -14,7 +14,7 @@ interface AdminAuthContextType {
   isLoading: boolean
   login: (identifier: string, pass: string) => Promise<{ success: boolean; message: string }>
   loginCashier: (identifier: string, pass: string) => Promise<{ success: boolean; message: string; cashier?: CashierManagementProfile }>
-  logout: (reason?: string) => void
+  logout: (reason?: string, targetRole?: 'admin' | 'cashier' | 'all') => void
   sessionWarning: string | null
   clearSessionWarning: () => void
   updateCurrentAdmin: (displayName: string, email: string, newPassword?: string) => Promise<boolean>
@@ -523,17 +523,31 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const logout = (reason?: string) => {
+  const logout = (reason?: string, targetRole: 'admin' | 'cashier' | 'all' = 'all') => {
     try {
-      fetch('/api/staff/auth/logout', { method: 'POST' }).catch(() => {})
+      fetch('/api/staff/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: targetRole === 'all' ? undefined : targetRole })
+      }).catch(() => {})
     } catch {}
-    signOut(auth).catch(() => {})
-    sessionStorage.removeItem('sugar_staff_id_token')
-    localStorage.removeItem('sugar_staff_id_token')
-    setAdminUser(null)
-    setActiveCashierSession(null)
-    localStorage.removeItem('sugar_admin_session')
-    localStorage.removeItem('sugar_cashier_session')
+
+    if (targetRole === 'cashier') {
+      setActiveCashierSession(null)
+      localStorage.removeItem('sugar_cashier_session')
+    } else if (targetRole === 'admin') {
+      setAdminUser(null)
+      localStorage.removeItem('sugar_admin_session')
+    } else {
+      signOut(auth).catch(() => {})
+      sessionStorage.removeItem('sugar_staff_id_token')
+      localStorage.removeItem('sugar_staff_id_token')
+      setAdminUser(null)
+      setActiveCashierSession(null)
+      localStorage.removeItem('sugar_admin_session')
+      localStorage.removeItem('sugar_cashier_session')
+    }
+
     if (reason) {
       setSessionWarning(reason)
     }

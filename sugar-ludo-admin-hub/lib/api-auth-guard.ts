@@ -101,8 +101,13 @@ import {
   extractStaffSessionCookie,
   verifyStaffSessionToken,
   buildClearStaffSessionCookie,
+  buildClearAdminSessionCookie,
+  buildClearCashierSessionCookie,
   getActiveStaffSession,
-  getActiveCashierSession
+  getActiveCashierSession,
+  getActiveAdminSession,
+  ADMIN_SESSION_COOKIE_NAME,
+  CASHIER_SESSION_COOKIE_NAME
 } from './session-manager.ts'
 
 /**
@@ -116,12 +121,18 @@ export async function verifyStaffAuth(
   request: Request,
   allowedRoles?: StaffRole[]
 ): Promise<AuthVerificationResult> {
-  // A) Verificación prioritaria vía Cookie HttpOnly Segura (Fase 1)
-  const sessionCookieToken = extractStaffSessionCookie(request)
+  // Deducir dominio de rol esperado a partir de la ruta o de allowedRoles
+  const urlPath = request.url ? new URL(request.url, 'http://localhost').pathname : ''
+  const isCashierRoute = urlPath.startsWith('/api/cashier')
+  const isExplicitCashierRole = allowedRoles && allowedRoles.length === 1 && allowedRoles[0] === 'cashier'
+  const roleDomain: 'admin' | 'cashier' = (isCashierRoute || isExplicitCashierRole) ? 'cashier' : 'admin'
+
+  // A) Verificación prioritaria vía Cookie HttpOnly Segura segregada (Fase 1)
+  const sessionCookieToken = extractStaffSessionCookie(request, roleDomain)
   if (sessionCookieToken) {
-    const sessionRes = verifyStaffSessionToken(sessionCookieToken)
+    const sessionRes = verifyStaffSessionToken(sessionCookieToken, roleDomain)
     if (!sessionRes.valid) {
-      const clearCookie = buildClearStaffSessionCookie()
+      const clearCookie = roleDomain === 'cashier' ? buildClearCashierSessionCookie() : buildClearAdminSessionCookie()
       return {
         authorized: false,
         errorResponse: NextResponse.json(
@@ -144,14 +155,18 @@ export async function verifyStaffAuth(
     if (sessionRes.payload) {
       const payload = sessionRes.payload
 
-      // Control estricto de sesión única activa (Single Active Session) para Cookie Auth
+      // Control estricto de sesión única activa (Single Active Session) segregado por rol
       const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
       const headerStaffUid = (request.headers.get('x-staff-uid') || request.headers.get('X-Staff-Uid') || '').trim()
 
       const lookupKeys = [payload.uid, headerStaffUid, payload.email].filter((k): k is string => Boolean(k))
       let activeStaffSession: { sessionId: string; updatedAt: number } | undefined
+      const getActiveSessionFn = (payload.accountType === 'cashier' || payload.role === 'cashier' || roleDomain === 'cashier')
+        ? getActiveCashierSession
+        : getActiveAdminSession
+
       for (const k of lookupKeys) {
-        activeStaffSession = getActiveStaffSession(k)
+        activeStaffSession = getActiveSessionFn(k)
         if (activeStaffSession) break
       }
 
@@ -159,7 +174,9 @@ export async function verifyStaffAuth(
       const isHeaderSuperseded = activeStaffSession && headerSessionId && activeStaffSession.sessionId !== headerSessionId
 
       if (isCookieSuperseded || isHeaderSuperseded) {
-        const clearCookie = buildClearStaffSessionCookie()
+        const clearCookie = (payload.accountType === 'cashier' || payload.role === 'cashier' || roleDomain === 'cashier')
+          ? buildClearCashierSessionCookie()
+          : buildClearAdminSessionCookie()
         return {
           authorized: false,
           errorResponse: NextResponse.json(
@@ -470,17 +487,20 @@ export async function verifyStaffAuth(
     }
   }
 
-  // 2.1 Control de sesión única activa para Staff (Cajeros y Administradores / Super Admin en Bearer Auth)
+  // 2.1 Control de sesión única activa para Staff segregado por rol (Cajeros vs Administradores)
   const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
   const lookupKeys = [verifiedUser.uid, headerStaffUid, verifiedUser.email, headerStaffEmail].filter((k): k is string => Boolean(k))
+  const isCashierUser = verifiedUser.role === 'cashier' || roleDomain === 'cashier'
+  const getActiveSessionFn = isCashierUser ? getActiveCashierSession : getActiveAdminSession
+
   let activeStaffSession: { sessionId: string; updatedAt: number } | undefined
   for (const k of lookupKeys) {
-    activeStaffSession = getActiveStaffSession(k)
+    activeStaffSession = getActiveSessionFn(k)
     if (activeStaffSession) break
   }
 
   if (activeStaffSession && headerSessionId && activeStaffSession.sessionId !== headerSessionId) {
-    const clearCookie = buildClearStaffSessionCookie()
+    const clearCookie = isCashierUser ? buildClearCashierSessionCookie() : buildClearAdminSessionCookie()
     return {
       authorized: false,
       errorResponse: NextResponse.json(

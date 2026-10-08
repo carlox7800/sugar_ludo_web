@@ -14,6 +14,8 @@ export type StaffRole = 'cashier' | 'admin' | 'super_admin' | 'financial_admin' 
  * 5. Costo $0.00 en cuota Spark de Firebase Firestore.
  */
 
+export const ADMIN_SESSION_COOKIE_NAME = 'sugar_admin_session'
+export const CASHIER_SESSION_COOKIE_NAME = 'sugar_cashier_session'
 export const STAFF_SESSION_COOKIE_NAME = 'sugar_staff_session'
 
 // Tiempos de inactividad (Idle Timeouts)
@@ -53,10 +55,11 @@ export interface SessionVerificationResult {
   message?: string
 }
 
-// Almacén en memoria de sesiones activas concurrentes (Single Session Control para cajeros y administradores)
-// Mapea uid -> { sessionId, updatedAt }
-const activeStaffSessions = new Map<string, { sessionId: string; updatedAt: number }>()
-const activeCashierSessions = activeStaffSessions
+// Almacén en memoria de sesiones activas segregado estrictamente por rol
+// Evita que la sesión de un Administrador invalide la de un Cajero y viceversa en el mismo navegador
+const activeAdminSessions = new Map<string, { sessionId: string; updatedAt: number }>()
+const activeCashierSessions = new Map<string, { sessionId: string; updatedAt: number }>()
+const activeStaffSessions = activeAdminSessions
 
 /**
  * Obtiene la clave secreta para la firma HMAC de sesiones
@@ -124,7 +127,10 @@ export function createStaffSessionToken(
 /**
  * Verifica la firma criptográfica, inactividad y vigencia de un token de sesión
  */
-export function verifyStaffSessionToken(token: string): SessionVerificationResult {
+export function verifyStaffSessionToken(
+  token: string,
+  expectedRoleDomain?: 'admin' | 'cashier'
+): SessionVerificationResult {
   if (!token || typeof token !== 'string') {
     return { valid: false, error: 'malformed', message: 'Token de sesión ausente o vacío.' }
   }
@@ -179,8 +185,12 @@ export function verifyStaffSessionToken(token: string): SessionVerificationResul
     }
   }
 
-  // 5. Control de sesión única activa para staff (cajeros y administradores)
-  const active = getActiveStaffSession(payload.uid) || (payload.email ? getActiveStaffSession(payload.email) : undefined)
+  // 5. Control de sesión única activa segregado por rol (Admin vs Cajero)
+  const isCashierPayload = expectedRoleDomain === 'cashier' || payload.accountType === 'cashier' || payload.role === 'cashier'
+  const active = isCashierPayload
+    ? (getActiveCashierSession(payload.uid) || (payload.email ? getActiveCashierSession(payload.email) : undefined))
+    : (getActiveAdminSession(payload.uid) || (payload.email ? getActiveAdminSession(payload.email) : undefined))
+
   if (active && active.sessionId !== payload.sessionId) {
     return {
       valid: false,
@@ -194,85 +204,144 @@ export function verifyStaffSessionToken(token: string): SessionVerificationResul
 }
 
 /**
- * Registra una sesión de staff (cajero o admin) como la única activa concurrente
+ * Registra una sesión de Administrador como la única activa concurrente
  */
-export function registerActiveStaffSession(uid: string, sessionId: string, email?: string): void {
+export function registerActiveAdminSession(uid: string, sessionId: string, email?: string): void {
   const record = { sessionId, updatedAt: Date.now() }
   if (uid) {
-    activeStaffSessions.set(uid, record)
-    activeStaffSessions.set(uid.toLowerCase().trim(), record)
+    activeAdminSessions.set(uid, record)
+    activeAdminSessions.set(uid.toLowerCase().trim(), record)
   }
   if (email) {
-    activeStaffSessions.set(email.toLowerCase().trim(), record)
+    activeAdminSessions.set(email.toLowerCase().trim(), record)
   }
 }
 
 /**
- * Registra una sesión de cajero como la única activa concurrente (compatibilidad)
+ * Registra una sesión de Cajero como la única activa concurrente
  */
 export function registerActiveCashierSession(uid: string, sessionId: string, email?: string): void {
-  registerActiveStaffSession(uid, sessionId, email)
+  const record = { sessionId, updatedAt: Date.now() }
+  if (uid) {
+    activeCashierSessions.set(uid, record)
+    activeCashierSessions.set(uid.toLowerCase().trim(), record)
+  }
+  if (email) {
+    activeCashierSessions.set(email.toLowerCase().trim(), record)
+  }
 }
 
 /**
- * Invalida cualquier sesión previa de un operador o administrador
+ * Registra una sesión de staff según rol (compatibilidad universal)
+ */
+export function registerActiveStaffSession(uid: string, sessionId: string, email?: string, role?: string): void {
+  if (role === 'cashier') {
+    registerActiveCashierSession(uid, sessionId, email)
+  } else {
+    registerActiveAdminSession(uid, sessionId, email)
+  }
+}
+
+/**
+ * Invalida cualquier sesión previa de un Administrador
+ */
+export function revokeAdminSession(uid: string): void {
+  activeAdminSessions.delete(uid)
+  activeAdminSessions.delete(uid.toLowerCase().trim())
+}
+
+/**
+ * Invalida cualquier sesión previa de un Cajero
+ */
+export function revokeCashierSession(uid: string): void {
+  activeCashierSessions.delete(uid)
+  activeCashierSessions.delete(uid.toLowerCase().trim())
+}
+
+/**
+ * Invalida cualquier sesión previa de un operador o administrador (compatibilidad)
  */
 export function revokeStaffSession(uid: string): void {
-  activeStaffSessions.delete(uid)
-  activeStaffSessions.delete(uid.toLowerCase().trim())
+  revokeAdminSession(uid)
+  revokeCashierSession(uid)
 }
 
 /**
- * Desregistra una sesión de cajero (alias explícito de retrocompatibilidad)
+ * Desregistra una sesión de cajero (alias explícito)
  */
 export function unregisterActiveCashierSession(uid: string): void {
-  revokeStaffSession(uid)
+  revokeCashierSession(uid)
+}
+
+/**
+ * Consulta la sesión activa registrada en memoria para un Administrador
+ */
+export function getActiveAdminSession(uid: string): { sessionId: string; updatedAt: number } | undefined {
+  if (!uid) return undefined
+  return activeAdminSessions.get(uid) || activeAdminSessions.get(uid.toLowerCase().trim())
+}
+
+/**
+ * Consulta la sesión activa registrada en memoria para un Cajero
+ */
+export function getActiveCashierSession(uid: string): { sessionId: string; updatedAt: number } | undefined {
+  if (!uid) return undefined
+  return activeCashierSessions.get(uid) || activeCashierSessions.get(uid.toLowerCase().trim())
 }
 
 /**
  * Consulta la sesión activa registrada en memoria para un miembro de staff
  */
-export function getActiveStaffSession(uid: string): { sessionId: string; updatedAt: number } | undefined {
+export function getActiveStaffSession(uid: string, roleDomain?: 'admin' | 'cashier'): { sessionId: string; updatedAt: number } | undefined {
   if (!uid) return undefined
-  return activeStaffSessions.get(uid) || activeStaffSessions.get(uid.toLowerCase().trim())
-}
-
-/**
- * Consulta la sesión activa registrada en memoria para un cajero (compatibilidad)
- */
-export function getActiveCashierSession(uid: string): { sessionId: string; updatedAt: number } | undefined {
-  return getActiveStaffSession(uid)
+  if (roleDomain === 'cashier') {
+    return getActiveCashierSession(uid)
+  }
+  if (roleDomain === 'admin') {
+    return getActiveAdminSession(uid)
+  }
+  return getActiveAdminSession(uid) || getActiveCashierSession(uid)
 }
 
 /**
  * Evalúa si la sesión de un operador/admin ha sido superada/invalidada por otro inicio concurrente
  */
-export function isStaffSessionSuperseded(uid: string, sessionId?: string): boolean {
+export function isStaffSessionSuperseded(uid: string, sessionId?: string, roleDomain?: 'admin' | 'cashier'): boolean {
   if (!uid || !sessionId) return false
-  const active = getActiveStaffSession(uid)
+  const active = getActiveStaffSession(uid, roleDomain)
   return !!(active && active.sessionId !== sessionId)
 }
 
 /**
- * Evalúa si la sesión de un cajero ha sido superada/invalidada por otro inicio concurrente (compatibilidad)
+ * Evalúa si la sesión de un cajero ha sido superada/invalidada por otro inicio concurrente
  */
 export function isCashierSessionSuperseded(uid: string, sessionId?: string): boolean {
-  return isStaffSessionSuperseded(uid, sessionId)
+  if (!uid || !sessionId) return false
+  const active = getActiveCashierSession(uid)
+  return !!(active && active.sessionId !== sessionId)
 }
 
 /**
- * Parsea una cabecera Cookie cruda y extrae el token de staff
+ * Parsea una cabecera Cookie cruda y extrae el token según el nombre deseado
  */
-export function parseStaffSessionCookie(cookieHeader?: string | null): string | null {
+export function parseStaffSessionCookie(cookieHeader?: string | null, cookieName?: string): string | null {
   if (!cookieHeader) return null
-  const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${STAFF_SESSION_COOKIE_NAME}=([^;]+)`))
-  return match ? decodeURIComponent(match[1].trim()) : null
+  if (cookieName) {
+    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`))
+    if (match) return decodeURIComponent(match[1].trim())
+  }
+  // Búsqueda en orden de precedencia estándar: Cashier, Admin, Legacy Staff
+  for (const name of [CASHIER_SESSION_COOKIE_NAME, ADMIN_SESSION_COOKIE_NAME, STAFF_SESSION_COOKIE_NAME]) {
+    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))
+    if (match) return decodeURIComponent(match[1].trim())
+  }
+  return null
 }
 
 /**
- * Construye la cabecera Set-Cookie para la sesión HttpOnly
+ * Construye la cabecera Set-Cookie para la sesión de Administrador
  */
-export function buildStaffSessionCookie(
+export function buildAdminSessionCookie(
   token: string,
   options?: { maxAgeSeconds?: number; isProduction?: boolean }
 ): string {
@@ -280,43 +349,121 @@ export function buildStaffSessionCookie(
   const maxAge = options?.maxAgeSeconds ?? Math.floor(ADMIN_MAX_SESSION_MS / 1000)
 
   const flags = [
-    `${STAFF_SESSION_COOKIE_NAME}=${token}`,
+    `${ADMIN_SESSION_COOKIE_NAME}=${token}`,
     `Path=/`,
     `Max-Age=${maxAge}`,
     `HttpOnly`,
     `SameSite=Lax`
   ]
-
-  if (isProd) {
-    flags.push('Secure')
-  }
-
+  if (isProd) flags.push('Secure')
   return flags.join('; ')
 }
 
 /**
- * Construye la cabecera Set-Cookie para purgar/limpiar la sesión
+ * Construye la cabecera Set-Cookie para la sesión de Cajero
  */
-export function buildClearStaffSessionCookie(isProduction?: boolean): string {
+export function buildCashierSessionCookie(
+  token: string,
+  options?: { maxAgeSeconds?: number; isProduction?: boolean }
+): string {
+  const isProd = options?.isProduction ?? (process.env.NODE_ENV === 'production')
+  const maxAge = options?.maxAgeSeconds ?? Math.floor(CASHIER_MAX_SESSION_MS / 1000)
+
+  const flags = [
+    `${CASHIER_SESSION_COOKIE_NAME}=${token}`,
+    `Path=/`,
+    `Max-Age=${maxAge}`,
+    `HttpOnly`,
+    `SameSite=Lax`
+  ]
+  if (isProd) flags.push('Secure')
+  return flags.join('; ')
+}
+
+/**
+ * Construye la cabecera Set-Cookie para la sesión HttpOnly genérica o específica
+ */
+export function buildStaffSessionCookie(
+  token: string,
+  options?: { maxAgeSeconds?: number; isProduction?: boolean; cookieName?: string }
+): string {
+  const cookieName = options?.cookieName || STAFF_SESSION_COOKIE_NAME
+  const isProd = options?.isProduction ?? (process.env.NODE_ENV === 'production')
+  const maxAge = options?.maxAgeSeconds ?? Math.floor(ADMIN_MAX_SESSION_MS / 1000)
+
+  const flags = [
+    `${cookieName}=${token}`,
+    `Path=/`,
+    `Max-Age=${maxAge}`,
+    `HttpOnly`,
+    `SameSite=Lax`
+  ]
+  if (isProd) flags.push('Secure')
+  return flags.join('; ')
+}
+
+/**
+ * Construye la cabecera Set-Cookie para purgar/limpiar la sesión de Admin
+ */
+export function buildClearAdminSessionCookie(isProduction?: boolean): string {
   const isProd = isProduction ?? (process.env.NODE_ENV === 'production')
   const flags = [
-    `${STAFF_SESSION_COOKIE_NAME}=`,
+    `${ADMIN_SESSION_COOKIE_NAME}=`,
     `Path=/`,
     `Max-Age=0`,
     `Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
     `HttpOnly`,
     `SameSite=Lax`
   ]
-  if (isProd) {
-    flags.push('Secure')
-  }
+  if (isProd) flags.push('Secure')
   return flags.join('; ')
 }
 
 /**
- * Extrae el token de la cookie de sesión de una petición Request
+ * Construye la cabecera Set-Cookie para purgar/limpiar la sesión de Cajero
  */
-export function extractStaffSessionCookie(request: Request): string | null {
+export function buildClearCashierSessionCookie(isProduction?: boolean): string {
+  const isProd = isProduction ?? (process.env.NODE_ENV === 'production')
+  const flags = [
+    `${CASHIER_SESSION_COOKIE_NAME}=`,
+    `Path=/`,
+    `Max-Age=0`,
+    `Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
+    `HttpOnly`,
+    `SameSite=Lax`
+  ]
+  if (isProd) flags.push('Secure')
+  return flags.join('; ')
+}
+
+/**
+ * Construye la cabecera Set-Cookie para purgar/limpiar la sesión genérica
+ */
+export function buildClearStaffSessionCookie(isProduction?: boolean, cookieName?: string): string {
+  const targetCookie = cookieName || STAFF_SESSION_COOKIE_NAME
+  const isProd = isProduction ?? (process.env.NODE_ENV === 'production')
+  const flags = [
+    `${targetCookie}=`,
+    `Path=/`,
+    `Max-Age=0`,
+    `Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
+    `HttpOnly`,
+    `SameSite=Lax`
+  ]
+  if (isProd) flags.push('Secure')
+  return flags.join('; ')
+}
+
+/**
+ * Extrae el token de la cookie de sesión de una petición Request según el rol esperado o por defecto
+ */
+export function extractStaffSessionCookie(request: Request, roleDomain?: 'admin' | 'cashier'): string | null {
   const cookieHeader = request.headers.get('cookie') || ''
+  if (roleDomain === 'cashier') {
+    return parseStaffSessionCookie(cookieHeader, CASHIER_SESSION_COOKIE_NAME) || parseStaffSessionCookie(cookieHeader, STAFF_SESSION_COOKIE_NAME)
+  }
+  if (roleDomain === 'admin') {
+    return parseStaffSessionCookie(cookieHeader, ADMIN_SESSION_COOKIE_NAME) || parseStaffSessionCookie(cookieHeader, STAFF_SESSION_COOKIE_NAME)
+  }
   return parseStaffSessionCookie(cookieHeader)
 }
