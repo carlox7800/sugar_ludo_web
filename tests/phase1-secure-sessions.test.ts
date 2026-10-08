@@ -168,6 +168,29 @@ describe('FASE 1: Sesiones Seguras HttpOnly y Control de Dispositivos', () => {
     revokeStaffSession(adminUid)
   })
 
+  it('INDEXACIÓN MULTI-CLAVE Y NORMALIZACIÓN: debe indexar por UID y email y normalizar alias de cajero', () => {
+    const cashierUid = 'csh_carlosandroid_001'
+    const cashierEmail = 'carlos.cajero@sugarludo.com'
+    const sessionId = generateSessionId()
+
+    registerActiveStaffSession(cashierUid, sessionId, cashierEmail)
+
+    // Debe resolver por UID exacto, minúsculas, y por email
+    const byUid = getActiveStaffSession(cashierUid)
+    const byUidLower = getActiveStaffSession('CSH_CARLOSANDROID_001')
+    const byEmail = getActiveStaffSession('carlos.cajero@sugarludo.com')
+    const byEmailUpper = getActiveStaffSession('CARLOS.CAJERO@SUGARLUDO.COM')
+
+    assert.equal(byUid?.sessionId, sessionId)
+    assert.equal(byUidLower?.sessionId, sessionId)
+    assert.equal(byEmail?.sessionId, sessionId)
+    assert.equal(byEmailUpper?.sessionId, sessionId)
+
+    // Revocación
+    revokeStaffSession(cashierUid)
+    assert.equal(getActiveStaffSession(cashierUid), undefined)
+  })
+
   it('COOKIES HTTPONLY: debe estructurar cabeceras de cookie protegidas con directivas de seguridad', () => {
     const dummyToken = 'header.payload.signature'
     const cookie = buildStaffSessionCookie(dummyToken, { isProduction: true })

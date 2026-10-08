@@ -3,6 +3,20 @@ import { auth } from './firebase.ts'
 function injectStaffSessionMetadata(headers: Record<string, string>, overrideRole?: 'cashier' | 'admin' | string): Record<string, string> {
   if (typeof window === 'undefined') return headers
   try {
+    const isCashierPriority = overrideRole === 'cashier'
+
+    if (isCashierPriority) {
+      const cashierSession = localStorage.getItem('sugar_cashier_session')
+      if (cashierSession) {
+        const parsed = JSON.parse(cashierSession)
+        if (parsed.uid) headers['X-Staff-Uid'] = parsed.uid
+        if (parsed.email) headers['X-Staff-Email'] = parsed.email
+        headers['X-Staff-Role'] = 'cashier'
+        if (parsed.sessionId) headers['X-Staff-Session-Id'] = parsed.sessionId
+        return headers
+      }
+    }
+
     const adminSession = localStorage.getItem('sugar_admin_session')
     if (adminSession) {
       const parsed = JSON.parse(adminSession)
@@ -12,14 +26,17 @@ function injectStaffSessionMetadata(headers: Record<string, string>, overrideRol
       if (parsed.sessionId) headers['X-Staff-Session-Id'] = parsed.sessionId
       return headers
     }
-    const cashierSession = localStorage.getItem('sugar_cashier_session')
-    if (cashierSession) {
-      const parsed = JSON.parse(cashierSession)
-      if (parsed.uid) headers['X-Staff-Uid'] = parsed.uid
-      if (parsed.email) headers['X-Staff-Email'] = parsed.email
-      headers['X-Staff-Role'] = 'cashier'
-      if (parsed.sessionId) headers['X-Staff-Session-Id'] = parsed.sessionId
-      return headers
+
+    if (!isCashierPriority) {
+      const cashierSession = localStorage.getItem('sugar_cashier_session')
+      if (cashierSession) {
+        const parsed = JSON.parse(cashierSession)
+        if (parsed.uid) headers['X-Staff-Uid'] = parsed.uid
+        if (parsed.email) headers['X-Staff-Email'] = parsed.email
+        headers['X-Staff-Role'] = 'cashier'
+        if (parsed.sessionId) headers['X-Staff-Session-Id'] = parsed.sessionId
+        return headers
+      }
     }
   } catch {}
   if (overrideRole) {
@@ -38,11 +55,13 @@ export function getStaffAuthHeaders(overrideRole?: 'cashier' | 'admin' | string)
   if (typeof window !== 'undefined') {
     try {
       const token = sessionStorage.getItem('sugar_staff_id_token') || localStorage.getItem('sugar_staff_id_token')
+      const headers: Record<string, string> = {}
       if (token) {
-        const headers: Record<string, string> = {
-          Authorization: `Bearer ${token}`
-        }
-        return injectStaffSessionMetadata(headers, overrideRole)
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      const injected = injectStaffSessionMetadata(headers, overrideRole)
+      if (Object.keys(injected).length > 0) {
+        return injected
       }
     } catch {}
   }
@@ -90,5 +109,5 @@ export async function getStaffAuthHeadersAsync(overrideRole?: 'cashier' | 'admin
     } catch {}
   }
 
-  return {}
+  return syncHeaders
 }

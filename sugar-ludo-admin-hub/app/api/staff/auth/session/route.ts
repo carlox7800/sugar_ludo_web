@@ -231,7 +231,7 @@ export async function POST(request: Request) {
     const isCashier = matchedProfile.role === 'cashier' || requestedRole === 'cashier'
 
     // Control de sesión única activa para staff (cajeros y administradores directivos)
-    registerActiveStaffSession(matchedProfile.uid, sessionId)
+    registerActiveStaffSession(matchedProfile.uid, sessionId, targetEmail)
 
     const sessionResult = createStaffSessionToken({
       sessionId,

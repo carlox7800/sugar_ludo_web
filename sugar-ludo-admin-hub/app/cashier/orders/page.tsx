@@ -11,7 +11,8 @@ import { ReceiptImageViewer } from '../../../components/receipts/ReceiptImageVie
 import { CashierFloatHistoryModal } from '../../../components/cashier/CashierFloatHistoryModal'
 import { useAdminAuth } from '../../../lib/admin-auth-context'
 import { db } from '../../../lib/firebase'
-import { getStaffAuthHeaders } from '../../../lib/auth-headers'
+import { getStaffAuthHeaders, getStaffAuthHeadersAsync } from '../../../lib/auth-headers'
+import { normalizeCashierUid, CANONICAL_PRIMARY_CASHIER_UID } from '../../../lib/staff-chat-service'
 import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, LayoutList, LayoutGrid } from 'lucide-react'
 
@@ -75,11 +76,84 @@ export default function CashierOrdersPage() {
     }
   }, [cashierList])
 
-  const currentCashier = activeCashierSession || {
-    uid: 'csh_primary',
+  const currentCashier: CashierManagementProfile = activeCashierSession || {
+    uid: CANONICAL_PRIMARY_CASHIER_UID,
     name: 'Cajero Autorizado',
-    floatBalanceCoins: 30000
+    email: 'carlos.cajero@sugarludo.com',
+    avatarUrl: 'https://i.ibb.co/3YBC35Xm/avatar-1786744277377.jpg',
+    shiftStatus: 'on_shift',
+    floatBalanceCoins: 30000,
+    assignedShiftAt: Date.now(),
+    lastRechargeAt: Date.now(),
+    ordersCompletedToday: 0,
+    commissionEarnedTodayCoins: 0,
+    paymentMethodsCount: 2,
+    phone: '+58 412-0000000',
+    idDocument: 'V-12345678',
+    role: 'cashier',
+    sessionId: undefined
   }
+
+  // Verificación reactiva de sesión única activa (Single Active Session detection)
+  useEffect(() => {
+    if (!currentCashier?.uid) return
+    const activeUid = normalizeCashierUid(currentCashier.uid)
+    let isTerminated = false
+
+    const handleSessionSuperseded = (msg?: string) => {
+      if (isTerminated) return
+      isTerminated = true
+      logout?.(msg || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+      if (typeof window !== 'undefined') window.location.href = '/'
+    }
+
+    const checkSessionStatus = async () => {
+      if (isTerminated) return
+      try {
+        const headers = await getStaffAuthHeadersAsync('cashier')
+        const res = await fetch('/api/cashier/orders?limit=1', {
+          headers
+        })
+        if (res.status === 401) {
+          const data = await res.json().catch(() => null)
+          if (data?.code === 'SESSION_SUPERSEDED') {
+            handleSessionSuperseded(data?.error)
+          }
+        }
+      } catch {}
+    }
+
+    checkSessionStatus()
+    const interval = setInterval(checkSessionStatus, 5000)
+    const onFocus = () => checkSessionStatus()
+    window.addEventListener('focus', onFocus)
+
+    let channel: BroadcastChannel | null = null
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        channel = new BroadcastChannel('sugar_ludo_social_channel')
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'cashier_new_session_started') {
+            const { cashierUid, sessionId } = event.data
+            const targetUid = normalizeCashierUid(cashierUid)
+            if (
+              targetUid === activeUid &&
+              currentCashier.sessionId &&
+              currentCashier.sessionId !== sessionId
+            ) {
+              handleSessionSuperseded()
+            }
+          }
+        }
+      } catch {}
+    }
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+      if (channel) channel.close()
+    }
+  }, [currentCashier?.uid, currentCashier?.sessionId])
 
   const fetchOrders = async () => {
     setIsLoading(true)
@@ -93,10 +167,9 @@ export default function CashierOrdersPage() {
       }
 
       // 2. Cargar desde API
+      const headers = await getStaffAuthHeadersAsync('cashier')
       const res = await fetch('/api/cashier/orders', {
-        headers: {
-          ...getStaffAuthHeaders('cashier')
-        }
+        headers
       })
       if (res.ok) {
         const data = await res.json()

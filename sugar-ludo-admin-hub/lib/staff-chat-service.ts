@@ -103,6 +103,15 @@ export async function sendBroadcastMessage(
   }
 }
 
+export const CANONICAL_PRIMARY_CASHIER_UID = 'csh_carlosandroid_001'
+
+export function normalizeCashierUid(uid?: string | null): string {
+  if (!uid || uid === 'csh_primary' || uid === 'primary' || uid === 'cajero') {
+    return CANONICAL_PRIMARY_CASHIER_UID
+  }
+  return uid.trim()
+}
+
 /**
  * 2. CHAT PRIVADO (ADMIN <-> CAJERO ESPECÍFICO)
  */
@@ -110,10 +119,11 @@ export function subscribeToCashierPrivateMessages(
   cashierUid: string,
   callback: (messages: StaffChatMessage[]) => void
 ): () => void {
-  if (!cashierUid) return () => {}
+  const targetUid = normalizeCashierUid(cashierUid)
+  if (!targetUid) return () => {}
   try {
     const q = query(
-      collection(db, 'staff_private_chats', cashierUid, 'messages'),
+      collection(db, 'staff_private_chats', targetUid, 'messages'),
       orderBy('timestamp', 'asc'),
       limit(50)
     )
@@ -131,7 +141,7 @@ export function subscribeToCashierPrivateMessages(
       })
       callback(msgs)
     }, (err) => {
-      console.warn(`[StaffChat] Error listener privado de ${cashierUid}:`, err)
+      console.warn(`[StaffChat] Error listener privado de ${targetUid}:`, err)
       callback([])
     })
   } catch {
@@ -148,10 +158,11 @@ export async function sendPrivateMessage(params: {
   text: string
 }): Promise<void> {
   const { senderUid, senderName, senderRole, cashierUid, cashierName, text } = params
+  const targetUid = normalizeCashierUid(cashierUid)
   const now = Date.now()
 
   // 1. Agregar mensaje a la subcolección
-  const msgRef = collection(db, 'staff_private_chats', cashierUid, 'messages')
+  const msgRef = collection(db, 'staff_private_chats', targetUid, 'messages')
   await addDoc(msgRef, {
     senderUid,
     senderName,
@@ -161,12 +172,12 @@ export async function sendPrivateMessage(params: {
   })
 
   // 2. Actualizar metadatos del hilo y sumar no leídos
-  const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
+  const chatMetaRef = doc(db, 'staff_private_chats', targetUid)
   const isFromAdmin = senderRole === 'super_admin'
 
   await setDoc(chatMetaRef, {
-    cashierUid,
-    cashierName: cashierName || cashierUid,
+    cashierUid: targetUid,
+    cashierName: cashierName || targetUid,
     lastMessage: text.trim(),
     lastTimestamp: now,
     unreadByAdmin: isFromAdmin ? 0 : increment(1),
@@ -176,9 +187,10 @@ export async function sendPrivateMessage(params: {
 }
 
 export async function markPrivateChatAsReadByAdmin(cashierUid: string): Promise<void> {
-  if (!cashierUid) return
+  const targetUid = normalizeCashierUid(cashierUid)
+  if (!targetUid) return
   try {
-    const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
+    const chatMetaRef = doc(db, 'staff_private_chats', targetUid)
     await setDoc(chatMetaRef, {
       unreadByAdmin: 0,
       updatedAt: Date.now()
@@ -189,9 +201,10 @@ export async function markPrivateChatAsReadByAdmin(cashierUid: string): Promise<
 }
 
 export async function markPrivateChatAsReadByCashier(cashierUid: string): Promise<void> {
-  if (!cashierUid) return
+  const targetUid = normalizeCashierUid(cashierUid)
+  if (!targetUid) return
   try {
-    const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
+    const chatMetaRef = doc(db, 'staff_private_chats', targetUid)
     await setDoc(chatMetaRef, {
       unreadByCashier: 0,
       updatedAt: Date.now()
@@ -213,8 +226,9 @@ export function subscribeToAllPrivateChatsMeta(
       const map: Record<string, PrivateChatMeta> = {}
       snap.docs.forEach((d) => {
         const data = d.data()
-        map[d.id] = {
-          cashierUid: d.id,
+        const normId = normalizeCashierUid(d.id)
+        map[normId] = {
+          cashierUid: normId,
           cashierName: data.cashierName,
           lastMessage: data.lastMessage,
           lastTimestamp: data.lastTimestamp,
@@ -237,14 +251,15 @@ export function subscribeToCashierChatMeta(
   cashierUid: string,
   callback: (meta: PrivateChatMeta | null) => void
 ): () => void {
-  if (!cashierUid) return () => {}
+  const targetUid = normalizeCashierUid(cashierUid)
+  if (!targetUid) return () => {}
   try {
-    const docRef = doc(db, 'staff_private_chats', cashierUid)
+    const docRef = doc(db, 'staff_private_chats', targetUid)
     return onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data()
         callback({
-          cashierUid: docSnap.id,
+          cashierUid: targetUid,
           cashierName: data.cashierName,
           lastMessage: data.lastMessage,
           lastTimestamp: data.lastTimestamp,
@@ -267,9 +282,10 @@ export function subscribeToCashierChatMeta(
  * 4. SEGUIMIENTO DE COMUNICADOS DE DIFUSIÓN NO LEÍDOS POR CAJERO (SINCRONIZADO MULTI-TERMINAL)
  */
 export function getCashierLastReadBroadcastTime(cashierUid: string): number {
-  if (typeof window === 'undefined' || !cashierUid) return 0
+  const targetUid = normalizeCashierUid(cashierUid)
+  if (typeof window === 'undefined' || !targetUid) return 0
   try {
-    const val = localStorage.getItem(`sugar_cashier_last_read_broadcast_${cashierUid}`)
+    const val = localStorage.getItem(`sugar_cashier_last_read_broadcast_${targetUid}`)
     return val ? parseInt(val, 10) : 0
   } catch {
     return 0
@@ -277,18 +293,19 @@ export function getCashierLastReadBroadcastTime(cashierUid: string): number {
 }
 
 export async function markBroadcastAsReadByCashier(cashierUid: string): Promise<void> {
-  if (!cashierUid) return
+  const targetUid = normalizeCashierUid(cashierUid)
+  if (!targetUid) return
   const now = Date.now()
 
   // 1. Guardar localmente de inmediato para reactividad a 0ms
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(`sugar_cashier_last_read_broadcast_${cashierUid}`, now.toString())
-      window.dispatchEvent(new CustomEvent('sugar_broadcast_read', { detail: { cashierUid, timestamp: now } }))
+      localStorage.setItem(`sugar_cashier_last_read_broadcast_${targetUid}`, now.toString())
+      window.dispatchEvent(new CustomEvent('sugar_broadcast_read', { detail: { cashierUid: targetUid, timestamp: now } }))
       
       if ('BroadcastChannel' in window) {
         const ch = new BroadcastChannel('sugar_ludo_social_channel')
-        ch.postMessage({ type: 'cashier_broadcast_read', cashierUid, timestamp: now })
+        ch.postMessage({ type: 'cashier_broadcast_read', cashierUid: targetUid, timestamp: now })
         ch.close()
       }
     } catch {}
@@ -296,9 +313,9 @@ export async function markBroadcastAsReadByCashier(cashierUid: string): Promise<
 
   // 2. Persistir en Firestore para sincronización estricta entre terminales y dispositivos ($0.00 Spark)
   try {
-    const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
+    const chatMetaRef = doc(db, 'staff_private_chats', targetUid)
     await setDoc(chatMetaRef, {
-      cashierUid,
+      cashierUid: targetUid,
       lastReadBroadcastAt: now,
       updatedAt: now
     }, { merge: true })
@@ -311,13 +328,14 @@ export function subscribeToBroadcastUnreadCount(
   cashierUid: string,
   callback: (unreadCount: number) => void
 ): () => void {
-  if (!cashierUid) return () => {}
+  const targetUid = normalizeCashierUid(cashierUid)
+  if (!targetUid) return () => {}
   try {
     let lastSnapDocs: any[] = []
-    let cachedCloudLastRead = getCashierLastReadBroadcastTime(cashierUid)
+    let cachedCloudLastRead = getCashierLastReadBroadcastTime(targetUid)
 
     const recompute = () => {
-      const localLastRead = getCashierLastReadBroadcastTime(cashierUid)
+      const localLastRead = getCashierLastReadBroadcastTime(targetUid)
       const effectiveLastRead = Math.max(localLastRead, cachedCloudLastRead)
       let count = 0
       lastSnapDocs.forEach((d) => {
@@ -332,7 +350,8 @@ export function subscribeToBroadcastUnreadCount(
 
     // 1. Escuchar eventos locales en la ventana
     const onBroadcastRead = (e: any) => {
-      if (!e?.detail || e.detail.cashierUid === cashierUid) {
+      const eventUid = normalizeCashierUid(e?.detail?.cashierUid)
+      if (!e?.detail || eventUid === targetUid) {
         if (e?.detail?.timestamp) {
           cachedCloudLastRead = Math.max(cachedCloudLastRead, Number(e.detail.timestamp))
         }
@@ -348,7 +367,8 @@ export function subscribeToBroadcastUnreadCount(
         try {
           channel = new BroadcastChannel('sugar_ludo_social_channel')
           channel.onmessage = (ev) => {
-            if (ev.data?.type === 'cashier_broadcast_read' && ev.data?.cashierUid === cashierUid) {
+            const evUid = normalizeCashierUid(ev.data?.cashierUid)
+            if (ev.data?.type === 'cashier_broadcast_read' && evUid === targetUid) {
               cachedCloudLastRead = Math.max(cachedCloudLastRead, Number(ev.data.timestamp || 0))
               recompute()
             }
@@ -358,21 +378,19 @@ export function subscribeToBroadcastUnreadCount(
     }
 
     // 3. Escuchar en tiempo real el documento del cajero en Firestore (sincroniza terminales externas)
-    const chatMetaRef = doc(db, 'staff_private_chats', cashierUid)
+    const chatMetaRef = doc(db, 'staff_private_chats', targetUid)
     const unsubMeta = onSnapshot(chatMetaRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data()
-        if (data?.lastReadBroadcastAt) {
-          const cloudTime = Number(data.lastReadBroadcastAt)
-          if (cloudTime > cachedCloudLastRead) {
-            cachedCloudLastRead = cloudTime
-            if (typeof window !== 'undefined') {
-              try {
-                localStorage.setItem(`sugar_cashier_last_read_broadcast_${cashierUid}`, cloudTime.toString())
-              } catch {}
-            }
-            recompute()
+        const cloudTime = Number(data?.lastReadBroadcastAt || 0)
+        if (cloudTime > 0) {
+          cachedCloudLastRead = Math.max(cachedCloudLastRead, cloudTime)
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(`sugar_cashier_last_read_broadcast_${targetUid}`, cachedCloudLastRead.toString())
+            } catch {}
           }
+          recompute()
         }
       }
     }, () => {})

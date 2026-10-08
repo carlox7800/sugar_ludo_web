@@ -180,7 +180,7 @@ export function verifyStaffSessionToken(token: string): SessionVerificationResul
   }
 
   // 5. Control de sesión única activa para staff (cajeros y administradores)
-  const active = activeStaffSessions.get(payload.uid)
+  const active = getActiveStaffSession(payload.uid) || (payload.email ? getActiveStaffSession(payload.email) : undefined)
   if (active && active.sessionId !== payload.sessionId) {
     return {
       valid: false,
@@ -196,15 +196,22 @@ export function verifyStaffSessionToken(token: string): SessionVerificationResul
 /**
  * Registra una sesión de staff (cajero o admin) como la única activa concurrente
  */
-export function registerActiveStaffSession(uid: string, sessionId: string): void {
-  activeStaffSessions.set(uid, { sessionId, updatedAt: Date.now() })
+export function registerActiveStaffSession(uid: string, sessionId: string, email?: string): void {
+  const record = { sessionId, updatedAt: Date.now() }
+  if (uid) {
+    activeStaffSessions.set(uid, record)
+    activeStaffSessions.set(uid.toLowerCase().trim(), record)
+  }
+  if (email) {
+    activeStaffSessions.set(email.toLowerCase().trim(), record)
+  }
 }
 
 /**
  * Registra una sesión de cajero como la única activa concurrente (compatibilidad)
  */
-export function registerActiveCashierSession(uid: string, sessionId: string): void {
-  registerActiveStaffSession(uid, sessionId)
+export function registerActiveCashierSession(uid: string, sessionId: string, email?: string): void {
+  registerActiveStaffSession(uid, sessionId, email)
 }
 
 /**
@@ -212,20 +219,22 @@ export function registerActiveCashierSession(uid: string, sessionId: string): vo
  */
 export function revokeStaffSession(uid: string): void {
   activeStaffSessions.delete(uid)
+  activeStaffSessions.delete(uid.toLowerCase().trim())
 }
 
 /**
  * Desregistra una sesión de cajero (alias explícito de retrocompatibilidad)
  */
 export function unregisterActiveCashierSession(uid: string): void {
-  activeStaffSessions.delete(uid)
+  revokeStaffSession(uid)
 }
 
 /**
  * Consulta la sesión activa registrada en memoria para un miembro de staff
  */
 export function getActiveStaffSession(uid: string): { sessionId: string; updatedAt: number } | undefined {
-  return activeStaffSessions.get(uid)
+  if (!uid) return undefined
+  return activeStaffSessions.get(uid) || activeStaffSessions.get(uid.toLowerCase().trim())
 }
 
 /**
@@ -240,7 +249,7 @@ export function getActiveCashierSession(uid: string): { sessionId: string; updat
  */
 export function isStaffSessionSuperseded(uid: string, sessionId?: string): boolean {
   if (!uid || !sessionId) return false
-  const active = activeStaffSessions.get(uid)
+  const active = getActiveStaffSession(uid)
   return !!(active && active.sessionId !== sessionId)
 }
 

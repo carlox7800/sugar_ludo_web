@@ -143,6 +143,42 @@ export async function verifyStaffAuth(
 
     if (sessionRes.payload) {
       const payload = sessionRes.payload
+
+      // Control estricto de sesión única activa (Single Active Session) para Cookie Auth
+      const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
+      const headerStaffUid = (request.headers.get('x-staff-uid') || request.headers.get('X-Staff-Uid') || '').trim()
+
+      const lookupKeys = [payload.uid, headerStaffUid, payload.email].filter((k): k is string => Boolean(k))
+      let activeStaffSession: { sessionId: string; updatedAt: number } | undefined
+      for (const k of lookupKeys) {
+        activeStaffSession = getActiveStaffSession(k)
+        if (activeStaffSession) break
+      }
+
+      const isCookieSuperseded = activeStaffSession && activeStaffSession.sessionId !== payload.sessionId
+      const isHeaderSuperseded = activeStaffSession && headerSessionId && activeStaffSession.sessionId !== headerSessionId
+
+      if (isCookieSuperseded || isHeaderSuperseded) {
+        const clearCookie = buildClearStaffSessionCookie()
+        return {
+          authorized: false,
+          errorResponse: NextResponse.json(
+            {
+              success: false,
+              error: 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.',
+              code: 'SESSION_SUPERSEDED'
+            },
+            {
+              status: 401,
+              headers: {
+                ...corsHeaders,
+                'Set-Cookie': clearCookie
+              }
+            }
+          )
+        }
+      }
+
       if (allowedRoles && allowedRoles.length > 0) {
         const hasRole = roleMatches(payload.role, allowedRoles)
         if (!hasRole) {
@@ -435,9 +471,16 @@ export async function verifyStaffAuth(
   }
 
   // 2.1 Control de sesión única activa para Staff (Cajeros y Administradores / Super Admin en Bearer Auth)
-  const headerSessionId = request.headers.get('x-staff-session-id')
-  const activeStaffSession = getActiveStaffSession(verifiedUser.uid)
+  const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
+  const lookupKeys = [verifiedUser.uid, headerStaffUid, verifiedUser.email, headerStaffEmail].filter((k): k is string => Boolean(k))
+  let activeStaffSession: { sessionId: string; updatedAt: number } | undefined
+  for (const k of lookupKeys) {
+    activeStaffSession = getActiveStaffSession(k)
+    if (activeStaffSession) break
+  }
+
   if (activeStaffSession && headerSessionId && activeStaffSession.sessionId !== headerSessionId) {
+    const clearCookie = buildClearStaffSessionCookie()
     return {
       authorized: false,
       errorResponse: NextResponse.json(
@@ -446,7 +489,13 @@ export async function verifyStaffAuth(
           error: 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.',
           code: 'SESSION_SUPERSEDED'
         },
-        { status: 401, headers: corsHeaders }
+        {
+          status: 401,
+          headers: {
+            ...corsHeaders,
+            'Set-Cookie': clearCookie
+          }
+        }
       )
     }
   }
