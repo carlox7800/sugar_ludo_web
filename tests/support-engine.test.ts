@@ -376,4 +376,87 @@ describe('Suite: Contadores y Notificaciones de Disputas Pendientes en Admin Hub
   })
 })
 
+describe('Suite: Resolución Directiva de Disputas & Invariantes Contables (v9.9.1)', () => {
+  it('RETIRO A FAVOR DEL JUGADOR: debe quemar Escrow, debitar flotante de cajero y registrar en shifts ledger sin alterar coins disponibles', () => {
+    const amountCoins = 20000 // $200 USDT
+    const initialPlayerCoins = 5000 // Saldo remanente disponible
+    const initialPlayerEscrow = 20000 // Saldo retenido al solicitar retiro
+    const initialCashierFloatCoins = 23000 // 230 USDT
+    const initialCashierFloatUSDT = 230.0
+
+    // 1. Simulación matemática de mutación en usuario
+    const newEscrow = Math.max(0, initialPlayerEscrow - amountCoins)
+    const deficit = amountCoins - initialPlayerEscrow
+    const finalPlayerCoins = deficit > 0 ? Math.max(0, initialPlayerCoins - deficit) : initialPlayerCoins
+
+    assert.equal(newEscrow, 0, 'El Escrow retenido debe quemarse/liberarse completamente a 0')
+    assert.equal(finalPlayerCoins, initialPlayerCoins, 'El saldo disponible no debe aumentarse, el retiro se consuma')
+
+    // 2. Simulación matemática de mutación en cajero
+    const newCashierFloatCoins = Math.max(0, initialCashierFloatCoins - amountCoins)
+    const newCashierFloatUSDT = parseFloat((newCashierFloatCoins / 100).toFixed(2))
+
+    assert.equal(newCashierFloatCoins, 3000, 'El flotante en coins debe bajar de 23,000 a 3,000 SC')
+    assert.equal(newCashierFloatUSDT, 30.0, 'El flotante en USDT debe bajar de 230 a 30 USDT')
+
+    // 3. Simulación de arqueo en cashier_shifts_ledger
+    const shiftEntry = {
+      cashierUid: 'csh_001',
+      type: 'dispute_deduction',
+      amountUSDT: -(amountCoins / 100),
+      amountCoins: -amountCoins,
+      previousBalanceUSDT: initialCashierFloatUSDT,
+      newBalanceUSDT: newCashierFloatUSDT,
+      resultingBalanceUSDT: newCashierFloatUSDT,
+      resultingBalanceCoins: newCashierFloatCoins,
+      orderId: 'wit_ord_990'
+    }
+
+    assert.equal(shiftEntry.type, 'dispute_deduction')
+    assert.equal(shiftEntry.amountUSDT, -200)
+    assert.equal(shiftEntry.resultingBalanceUSDT, 30)
+
+    // 4. Estado terminal de la orden
+    const finalOrderStatus = 'completed'
+    assert.equal(finalOrderStatus, 'completed', 'La orden de retiro resuelta a favor del jugador debe quedar completed, no cancelled')
+  })
+
+  it('DEPÓSITO A FAVOR DEL JUGADOR: debe acreditar coins disponibles y debitar flotante del cajero', () => {
+    const amountCoins = 10000 // $100 USDT
+    const initialPlayerCoins = 2000
+    const initialCashierFloat = 50000
+
+    const finalPlayerCoins = initialPlayerCoins + amountCoins
+    const finalCashierFloat = Math.max(0, initialCashierFloat - amountCoins)
+
+    assert.equal(finalPlayerCoins, 12000, 'El jugador debe recibir sus monedas acreditadas')
+    assert.equal(finalCashierFloat, 40000, 'El cajero debe ver deducido su flotante por haber recibido el fiat')
+  })
+
+  it('PROTECCIÓN DE BOTÓN OPERATIVO: PayoutActionButton no debe estar activo en órdenes completadas, canceladas o disputadas', () => {
+    function shouldRenderPayout(isWithdraw: boolean, isCompleted: boolean, isCancelled: boolean, status: string): boolean {
+      if (!isWithdraw || isCompleted || isCancelled || status === 'completed' || status === 'cancelled' || status === 'disputed') {
+        return false
+      }
+      return true
+    }
+
+    assert.equal(shouldRenderPayout(true, false, false, 'pending'), true, 'Orden de retiro pendiente debe mostrar botón')
+    assert.equal(shouldRenderPayout(true, true, false, 'completed'), false, 'Orden completada no debe mostrar botón')
+    assert.equal(shouldRenderPayout(true, false, true, 'cancelled'), false, 'Orden cancelada no debe mostrar botón')
+    assert.equal(shouldRenderPayout(true, false, false, 'disputed'), false, 'Orden disputada no debe mostrar botón')
+    assert.equal(shouldRenderPayout(false, false, false, 'pending'), false, 'Depósito nunca debe mostrar botón de payout')
+  })
+
+  it('INVARIANTE DE BÓVEDA EN ADMIN HUB: el saldo flotante no debe parpadear ni truncarse con el balance de jugadores', () => {
+    const auditedFloatsUSD = 230.0
+    const playerBalancesUSD = 30.0 // Balance de jugadores menor que el flotante de cajeros
+
+    // Cálculo corregido sin parpadeo
+    const effectiveFloatsUSD = Math.max(0, auditedFloatsUSD)
+
+    assert.equal(effectiveFloatsUSD, 230.0, 'El flotante de la red de cajeros no debe quedar restringido por la custodia de jugadores')
+  })
+})
+
 

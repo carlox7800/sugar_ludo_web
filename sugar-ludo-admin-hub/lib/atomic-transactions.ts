@@ -1064,147 +1064,330 @@ export async function resolveDisputeCaseAtomics(params: {
   const { disputeId, verdict, adminUid, adminName, resolutionNotes } = params
   const now = Date.now()
 
+  // 1. CAPA 1: Firebase Admin SDK si existen credenciales en el servidor
   if (adminDb && hasAdminCredentials) {
     try {
       return await (adminDb as unknown as AdminFirestoreService).runTransaction(async (transaction: AdminTransactionHandler) => {
         const disputeRef = adminDb.collection('dispute_cases').doc(disputeId)
         const disputeSnap = await transaction.get(disputeRef)
 
-        if (disputeSnap.exists) {
-          const disputeData = (disputeSnap.data() || {}) as DisputeData
-          const orderRef = disputeData.orderId && disputeData.orderId !== 'none'
-            ? adminDb.collection('cashier_orders').doc(disputeData.orderId)
-            : null
-          const playerRef = disputeData.playerUid
-            ? adminDb.collection('users').doc(disputeData.playerUid)
-            : null
-          const cashierUid = disputeData.cashierUid && disputeData.cashierUid !== 'staff_support'
-            ? disputeData.cashierUid
-            : null
-          const cashierRef = cashierUid
-            ? adminDb.collection('cashier_profiles').doc(cashierUid)
-            : null
+        if (!disputeSnap.exists) {
+          throw new Error(`La disputa #${disputeId} no existe.`)
+        }
 
-          const [orderSnap, playerSnap, cashierSnap] = await Promise.all([
-            orderRef ? transaction.get(orderRef) : Promise.resolve(null),
-            playerRef ? transaction.get(playerRef) : Promise.resolve(null),
-            cashierRef ? transaction.get(cashierRef) : Promise.resolve(null)
-          ])
+        const disputeData = (disputeSnap.data() || {}) as DisputeData
+        const finalOrderId = disputeData.orderId && disputeData.orderId !== 'none'
+          ? disputeData.orderId
+          : disputeId
+        const orderRef = adminDb.collection('cashier_orders').doc(finalOrderId)
+        const playerRef = disputeData.playerUid
+          ? adminDb.collection('users').doc(disputeData.playerUid)
+          : null
+        const cashierUid = disputeData.cashierUid && disputeData.cashierUid !== 'staff_support'
+          ? disputeData.cashierUid
+          : null
+        const cashierRef = cashierUid
+          ? adminDb.collection('cashier_profiles').doc(cashierUid)
+          : null
+        const configRef = adminDb.collection('system_config').doc('cashier_accounts')
+        const globalLedgerRef = adminDb.collection('system_treasury').doc('global_ledger')
 
-          const amountCoins = Number(disputeData.amountSugarCoins || 0)
-          const orderData = (orderSnap && orderSnap.exists ? orderSnap.data() : null) as ExtendedCashierOrder | null
-          const isWithdrawOrder = orderData?.type === 'withdraw'
+        const [orderSnap, playerSnap, cashierSnap, configSnap] = await Promise.all([
+          transaction.get(orderRef),
+          playerRef ? transaction.get(playerRef) : Promise.resolve(null),
+          cashierRef ? transaction.get(cashierRef) : Promise.resolve(null),
+          transaction.get(configRef)
+        ])
 
-          if (verdict === 'favor_player') {
-            if (playerSnap && playerSnap.exists && playerRef) {
+        const orderData = (orderSnap && orderSnap.exists ? orderSnap.data() : null) as ExtendedCashierOrder | null
+        const isWithdrawOrder = orderData?.type === 'withdraw' || disputeData.orderType === 'withdraw'
+        const amountCoins = Number(disputeData.amountSugarCoins || orderData?.amountSugarCoins || 0)
+        const amountUSDT = Number(disputeData.amountFiat || orderData?.amountFiat || (amountCoins / 100))
+
+        const existingSupportMsgs = Array.isArray(orderData?.supportMessages) ? orderData.supportMessages : []
+        const officialNoticeMsg = {
+          id: `msg_disp_${now}`,
+          orderId: finalOrderId,
+          senderUid: adminUid,
+          senderName: `Super Admin (${adminName})`,
+          senderRole: 'admin',
+          message: `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${verdict === 'favor_player' ? 'favor del JUGADOR' : 'favor del CAJERO'} por Super Admin ${adminName}.\n\nResolución: ${resolutionNotes || (verdict === 'favor_player' ? 'Dictamen favorable para el jugador.' : 'Dictamen favorable para el cajero.')}\n\nEstatus: ${isWithdrawOrder ? 'Retiro liquidado y completado formalmente.' : (verdict === 'favor_player' ? 'Depósito acreditado y completado.' : 'Depósito desestimado y cancelado.')}`,
+          timestamp: now
+        }
+
+        if (verdict === 'favor_player') {
+          // --- A FAVOR DEL JUGADOR ---
+          if (isWithdrawOrder) {
+            // RETIRO A FAVOR DEL JUGADOR: Liquidar retiro, quemar Escrow y debitar flotante del cajero
+            if (playerRef && playerSnap && playerSnap.exists) {
               const playerData = playerSnap.data() as UserData
-              const currentCoins = Number(playerData?.coins || 0)
-              const currentEscrow = Number(playerData?.escrowLockedCoins || 0)
-              
-              if (isWithdrawOrder) {
-                // Si el retiro estaba en disputa a favor del jugador, se le reembolsa el saldo liberando el escrow retenido
-                const newEscrow = Math.max(0, currentEscrow - amountCoins)
-                const newCoins = currentCoins + (currentEscrow >= amountCoins ? amountCoins : Math.max(0, currentEscrow))
-                transaction.update(playerRef, {
-                  coins: newCoins,
-                  escrowLockedCoins: newEscrow,
-                  lastActiveAt: now
+              const currentCoins = Number(playerData.coins || 0)
+              const currentEscrow = Number(playerData.escrowLockedCoins || 0)
+              const newEscrow = Math.max(0, currentEscrow - amountCoins)
+              const deficit = amountCoins - currentEscrow
+              const newCoins = deficit > 0 ? Math.max(0, currentCoins - deficit) : currentCoins
+
+              const existingHistory = Array.isArray(playerData.walletHistory) ? playerData.walletHistory : []
+              const cleanHistory: PlayerWalletTransaction[] = []
+              let matched = false
+              for (const tx of existingHistory) {
+                if (tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8)))) {
+                  if (!matched) {
+                    matched = true
+                    cleanHistory.push({
+                      ...tx,
+                      orderId: finalOrderId,
+                      type: 'withdraw',
+                      amount: -amountCoins,
+                      description: `Retiro Liquidado por Arbitraje Directivo (#${finalOrderId.slice(0, 8)})`
+                    })
+                  }
+                } else {
+                  cleanHistory.push(tx)
+                }
+              }
+              if (!matched) {
+                cleanHistory.unshift({
+                  id: `tx_disp_wit_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                  orderId: finalOrderId,
+                  type: 'withdraw',
+                  amount: -amountCoins,
+                  description: `Retiro Liquidado por Arbitraje Directivo (#${finalOrderId.slice(0, 8)})`,
+                  timestamp: now,
+                  dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                 })
-              } else {
-                // Depósito P2P validado a favor del jugador
-                transaction.update(playerRef, {
-                  coins: currentCoins + amountCoins,
-                  lastActiveAt: now
+              }
+
+              transaction.update(playerRef, {
+                coins: newCoins,
+                escrowLockedCoins: newEscrow,
+                walletHistory: cleanHistory.slice(0, 50),
+                lastActiveAt: now
+              })
+            }
+
+            // Orden pasa a COMPLETED y no cancelled
+            transaction.set(orderRef, {
+              status: 'completed',
+              isEscrowLocked: false,
+              completedAt: now,
+              resolvedBy: adminName,
+              resolvedAt: now,
+              resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Retiro liquidado.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro liquidado a favor del jugador.`,
+              lastMessageTime: now
+            }, { merge: true })
+
+            // Flotante del cajero responsable
+            let prevFloatCoins = 0
+            let prevFloatUSDT = 0
+            let newFloatCoins = 0
+            let newFloatUSDT = 0
+            if (cashierRef && cashierSnap && cashierSnap.exists) {
+              const cData = (cashierSnap.data() || {}) as CashierProfileData
+              prevFloatCoins = Number(cData.floatBalanceCoins ?? Math.round(Number(cData.floatBalanceUSDT || 0) * 100))
+              prevFloatUSDT = Number(cData.floatBalanceUSDT ?? (prevFloatCoins / 100))
+              newFloatCoins = Math.max(0, prevFloatCoins - amountCoins)
+              newFloatUSDT = parseFloat((newFloatCoins / 100).toFixed(2))
+
+              transaction.update(cashierRef, {
+                floatBalanceCoins: newFloatCoins,
+                floatBalanceUSDT: newFloatUSDT,
+                totalPaidWithdrawalsCoins: admin.firestore.FieldValue.increment(amountCoins),
+                totalPaidWithdrawalsUSDT: admin.firestore.FieldValue.increment(amountCoins / 100),
+                lastActiveAt: now
+              })
+
+              // Arqueo inmutable en el ledger de turnos del cajero
+              const shiftLedgerRef = adminDb.collection('cashier_shifts_ledger').doc()
+              transaction.set(shiftLedgerRef, {
+                id: shiftLedgerRef.id,
+                cashierUid,
+                type: 'dispute_deduction',
+                amountUSDT: -(amountCoins / 100),
+                amountFiatUSD: -(amountCoins / 100),
+                amountCoins: -amountCoins,
+                previousBalanceUSDT: prevFloatUSDT,
+                newBalanceUSDT: newFloatUSDT,
+                resultingBalanceUSDT: newFloatUSDT,
+                resultingBalanceCoins: newFloatCoins,
+                orderId: finalOrderId,
+                notes: `Deducción por arbitraje directivo de retiro #${finalOrderId.slice(0, 8)} a favor del jugador por Super Admin ${adminName}: ${resolutionNotes || ''}`,
+                timestamp: now
+              })
+
+              // Sincronizar system_config/cashier_accounts
+              if (configSnap && configSnap.exists) {
+                const confData = configSnap.data() as { accounts?: CashierAccountConfig[] }
+                const accounts = Array.isArray(confData?.accounts) ? confData.accounts : []
+                const updatedAccounts = accounts.map((acc: CashierAccountConfig) => {
+                  if (acc.uid === cashierUid) {
+                    return {
+                      ...acc,
+                      floatBalanceCoins: newFloatCoins,
+                      floatBalanceUSDT: newFloatUSDT,
+                      totalPaidWithdrawalsUSDT: (acc.totalPaidWithdrawalsUSDT || 0) + (amountCoins / 100),
+                      lastActiveAt: now
+                    }
+                  }
+                  return acc
                 })
+                transaction.update(configRef, { accounts: updatedAccounts, updatedAt: now })
               }
             }
 
-            if (cashierSnap && cashierSnap.exists && cashierRef) {
-              const currentFloat = Number((cashierSnap.data() as CashierProfileData)?.floatBalanceCoins || 0)
-              const newFloat = Math.max(0, currentFloat - amountCoins)
-              transaction.update(cashierRef, {
-                floatBalanceCoins: newFloat,
-                floatBalanceUSDT: newFloat / 100,
-                lastActiveAt: now
-              })
-            }
+            // Actualizar Bóveda global
+            transaction.set(globalLedgerRef, {
+              id: 'global_ledger',
+              cashierFloatsUSD: admin.firestore.FieldValue.increment(-(amountCoins / 100)),
+              cashierFloatsCoins: admin.firestore.FieldValue.increment(-amountCoins),
+              playerCustodyCoins: admin.firestore.FieldValue.increment(-amountCoins),
+              playerCustodyUSD: admin.firestore.FieldValue.increment(-(amountCoins / 100)),
+              lastAuditedAt: now
+            }, { merge: true })
 
-            transaction.update(disputeRef, {
-              status: 'resolved_player',
-              resolvedBy: adminName,
-              resolvedByUid: adminUid,
-              resolvedAt: now,
-              resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Fondos acreditados.'
-            })
-
-            if (orderRef) {
-              transaction.update(orderRef, {
-                status: isWithdrawOrder ? 'cancelled' : 'completed',
-                isEscrowLocked: false,
-                completedAt: now,
-                resolvedBy: adminName,
-                resolvedAt: now,
-                resolutionNotes: resolutionNotes || 'Resuelto a favor del jugador.'
-              })
-            }
-
-            // Registro inmutable de auditoría
-            const auditRef = adminDb.collection('audit_logs').doc()
-            transaction.set(auditRef, {
-              id: auditRef.id,
-              action: 'DISPUTE_RESOLVED',
-              actorUid: adminUid,
-              actorRole: 'super_admin',
-              targetUid: disputeData.playerUid || 'unknown_player',
-              targetOrderId: disputeData.orderId || disputeId,
-              amountCoins,
-              amountFiat: amountCoins / 100,
-              currency: 'USD',
-              notes: `Arbitraje a favor del jugador (${disputeId}): ${resolutionNotes || 'Dictamen favorable emitido.'}`,
-              timestamp: now
-            })
           } else {
-            // Dictamen a favor del cajero
-            if (cashierSnap && cashierSnap.exists && cashierRef) {
-              const currentFloat = Number((cashierSnap.data() as CashierProfileData)?.floatBalanceCoins || 0)
-              const newFloat = currentFloat + amountCoins
-              transaction.update(cashierRef, {
-                floatBalanceCoins: newFloat,
-                floatBalanceUSDT: newFloat / 100,
+            // DEPÓSITO A FAVOR DEL JUGADOR: Acreditar disponibles al jugador y debitar flotante del cajero
+            if (playerRef && playerSnap && playerSnap.exists) {
+              const playerData = playerSnap.data() as UserData
+              const currentCoins = Number(playerData.coins || 0)
+              const existingHistory = Array.isArray(playerData.walletHistory) ? playerData.walletHistory : []
+              const cleanHistory = [...existingHistory]
+              cleanHistory.unshift({
+                id: `tx_disp_dep_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                orderId: finalOrderId,
+                type: 'deposit',
+                amount: amountCoins,
+                description: `Depósito Acreditado por Dictamen Directivo (#${finalOrderId.slice(0, 8)})`,
+                timestamp: now,
+                dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+              })
+
+              transaction.update(playerRef, {
+                coins: currentCoins + amountCoins,
+                walletHistory: cleanHistory.slice(0, 50),
                 lastActiveAt: now
               })
             }
 
-            if (isWithdrawOrder && playerSnap && playerSnap.exists && playerRef) {
-              // En retiro a favor del cajero, el escrow retenido se descuenta formalmente porque el cajero ya pagó
+            transaction.set(orderRef, {
+              status: 'completed',
+              completedAt: now,
+              resolvedBy: adminName,
+              resolvedAt: now,
+              resolutionNotes: resolutionNotes || 'Depósito validado y acreditado a favor del jugador.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Depósito acreditado a favor del jugador.`,
+              lastMessageTime: now
+            }, { merge: true })
+
+            if (cashierRef && cashierSnap && cashierSnap.exists) {
+              const cData = (cashierSnap.data() || {}) as CashierProfileData
+              const prevFloatCoins = Number(cData.floatBalanceCoins ?? Math.round(Number(cData.floatBalanceUSDT || 0) * 100))
+              const prevFloatUSDT = Number(cData.floatBalanceUSDT ?? (prevFloatCoins / 100))
+              const newFloatCoins = Math.max(0, prevFloatCoins - amountCoins)
+              const newFloatUSDT = parseFloat((newFloatCoins / 100).toFixed(2))
+
+              transaction.update(cashierRef, {
+                floatBalanceCoins: newFloatCoins,
+                floatBalanceUSDT: newFloatUSDT,
+                lastActiveAt: now
+              })
+
+              const shiftLedgerRef = adminDb.collection('cashier_shifts_ledger').doc()
+              transaction.set(shiftLedgerRef, {
+                id: shiftLedgerRef.id,
+                cashierUid,
+                type: 'dispute_deduction',
+                amountUSDT: -(amountCoins / 100),
+                amountFiatUSD: -(amountCoins / 100),
+                amountCoins: -amountCoins,
+                previousBalanceUSDT: prevFloatUSDT,
+                newBalanceUSDT: newFloatUSDT,
+                resultingBalanceUSDT: newFloatUSDT,
+                resultingBalanceCoins: newFloatCoins,
+                orderId: finalOrderId,
+                notes: `Deducción de flotante por depósito validado a favor del jugador (#${finalOrderId.slice(0, 8)}): ${resolutionNotes || ''}`,
+                timestamp: now
+              })
+
+              if (configSnap && configSnap.exists) {
+                const confData = configSnap.data() as { accounts?: CashierAccountConfig[] }
+                const accounts = Array.isArray(confData?.accounts) ? confData.accounts : []
+                const updatedAccounts = accounts.map((acc: CashierAccountConfig) => {
+                  if (acc.uid === cashierUid) {
+                    return {
+                      ...acc,
+                      floatBalanceCoins: newFloatCoins,
+                      floatBalanceUSDT: newFloatUSDT,
+                      lastActiveAt: now
+                    }
+                  }
+                  return acc
+                })
+                transaction.update(configRef, { accounts: updatedAccounts, updatedAt: now })
+              }
+            }
+
+            transaction.set(globalLedgerRef, {
+              id: 'global_ledger',
+              playerCustodyCoins: admin.firestore.FieldValue.increment(amountCoins),
+              playerCustodyUSD: admin.firestore.FieldValue.increment(amountCoins / 100),
+              cashierFloatsCoins: admin.firestore.FieldValue.increment(-amountCoins),
+              cashierFloatsUSD: admin.firestore.FieldValue.increment(-(amountCoins / 100)),
+              lastAuditedAt: now
+            }, { merge: true })
+          }
+
+          transaction.update(disputeRef, {
+            status: 'resolved_player',
+            resolvedBy: adminName,
+            resolvedByUid: adminUid,
+            resolvedAt: now,
+            resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Fondos aplicados con éxito.'
+          })
+
+          const auditRef = adminDb.collection('audit_logs').doc()
+          transaction.set(auditRef, {
+            id: auditRef.id,
+            action: 'DISPUTE_RESOLVED',
+            actorUid: adminUid,
+            actorRole: 'super_admin',
+            targetUid: disputeData.playerUid || 'unknown_player',
+            targetOrderId: finalOrderId,
+            amountCoins,
+            amountFiat: amountUSDT,
+            currency: 'USD',
+            notes: `Arbitraje a favor del jugador (${disputeId}): ${resolutionNotes || 'Dictamen favorable emitido.'}`,
+            timestamp: now
+          })
+
+        } else {
+          // --- A FAVOR DEL CAJERO ---
+          if (isWithdrawOrder) {
+            // RETIRO A FAVOR DEL CAJERO: El cajero ya pagó, se descuenta la retención de Escrow y la orden se marca completada
+            if (playerRef && playerSnap && playerSnap.exists) {
               const playerData = playerSnap.data() as UserData
-              const currentEscrow = Number(playerData?.escrowLockedCoins || 0)
+              const currentEscrow = Number(playerData.escrowLockedCoins || 0)
               transaction.update(playerRef, {
                 escrowLockedCoins: Math.max(0, currentEscrow - amountCoins),
                 lastActiveAt: now
               })
             }
 
-            transaction.update(disputeRef, {
-              status: 'resolved_cashier',
+            transaction.set(orderRef, {
+              status: 'completed',
+              isEscrowLocked: false,
+              completedAt: now,
               resolvedBy: adminName,
-              resolvedByUid: adminUid,
               resolvedAt: now,
-              resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el cajero. Fondos de garantía liberados.'
-            })
+              resolutionNotes: resolutionNotes || 'Dictamen favorable para el cajero. Fondos transferidos validados.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro completado a favor del cajero.`,
+              lastMessageTime: now
+            }, { merge: true })
 
-            if (orderRef) {
-              transaction.update(orderRef, {
-                status: isWithdrawOrder ? 'completed' : 'cancelled',
-                isEscrowLocked: false,
-                completedAt: now,
-                resolvedBy: adminName,
-                resolvedAt: now,
-                resolutionNotes: resolutionNotes || 'Resuelto a favor del cajero.'
-              })
-            }
-
-            // Arqueo en el ledger de turnos del cajero
             if (cashierUid) {
               const shiftLedgerRef = adminDb.collection('cashier_shifts_ledger').doc()
               transaction.set(shiftLedgerRef, {
@@ -1218,38 +1401,425 @@ export async function resolveDisputeCaseAtomics(params: {
                 timestamp: now
               })
             }
-
-            // Registro inmutable de auditoría
-            const auditRef = adminDb.collection('audit_logs').doc()
-            transaction.set(auditRef, {
-              id: auditRef.id,
-              action: 'DISPUTE_RESOLVED',
-              actorUid: adminUid,
-              actorRole: 'super_admin',
-              targetUid: cashierUid || 'unknown_cashier',
-              targetOrderId: disputeData.orderId || disputeId,
-              amountCoins,
-              amountFiat: amountCoins / 100,
-              currency: 'USD',
-              notes: `Arbitraje a favor del cajero (${disputeId}): ${resolutionNotes || 'Garantía liberada con éxito.'}`,
-              timestamp: now
-            })
+          } else {
+            // DEPÓSITO A FAVOR DEL CAJERO: Comprobante falso o no recibido. Orden CANCELADA.
+            transaction.set(orderRef, {
+              status: 'cancelled',
+              completedAt: now,
+              resolvedBy: adminName,
+              resolvedAt: now,
+              resolutionNotes: resolutionNotes || 'Depósito rechazado tras revisión de comprobante.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Depósito rechazado por la administración.`,
+              lastMessageTime: now
+            }, { merge: true })
           }
+
+          transaction.update(disputeRef, {
+            status: 'resolved_cashier',
+            resolvedBy: adminName,
+            resolvedByUid: adminUid,
+            resolvedAt: now,
+            resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el cajero. Garantía liberada.'
+          })
+
+          const auditRef = adminDb.collection('audit_logs').doc()
+          transaction.set(auditRef, {
+            id: auditRef.id,
+            action: 'DISPUTE_RESOLVED',
+            actorUid: adminUid,
+            actorRole: 'super_admin',
+            targetUid: cashierUid || 'unknown_cashier',
+            targetOrderId: finalOrderId,
+            amountCoins,
+            amountFiat: amountUSDT,
+            currency: 'USD',
+            notes: `Arbitraje a favor del cajero (${disputeId}): ${resolutionNotes || 'Garantía liberada con éxito.'}`,
+            timestamp: now
+          })
         }
-        return { success: true, message: `Veredicto ejecutado: ${verdict}` }
+
+        return { success: true, message: `Veredicto ejecutado con éxito: ${verdict}` }
       })
     } catch (e: unknown) {
-      console.warn('[resolveDisputeCaseAtomics] Fallback a cliente SDK:', getErrorMessage(e))
+      console.warn('[resolveDisputeCaseAtomics] Fallback a cliente SDK modular:', getErrorMessage(e))
     }
   }
 
-  // Fallback motor híbrido SDK
+  // 2. CAPA 2: Motor Modular Firestore runTransaction (Cliente / Service Respaldo)
+  if (db) {
+    try {
+      return await runTransaction(db, async (transaction) => {
+        const disputeDocRef = doc(db, 'dispute_cases', disputeId)
+        const dispSnap = await transaction.get(disputeDocRef)
+
+        if (!dispSnap.exists()) {
+          throw new Error(`La disputa #${disputeId} no existe.`)
+        }
+
+        const dData = dispSnap.data() as DisputeData
+        const finalOrderId = dData.orderId && dData.orderId !== 'none' ? dData.orderId : disputeId
+        const orderDocRef = doc(db, 'cashier_orders', finalOrderId)
+        const userDocRef = dData.playerUid ? doc(db, 'users', dData.playerUid) : null
+        const cashierUid = dData.cashierUid && dData.cashierUid !== 'staff_support' ? dData.cashierUid : null
+        const cashierDocRef = cashierUid ? doc(db, 'cashier_profiles', cashierUid) : null
+        const configDocRef = doc(db, 'system_config', 'cashier_accounts')
+        const globalLedgerDocRef = doc(db, 'system_treasury', 'global_ledger')
+
+        const [orderSnap, userSnap, cashierSnap, configSnap] = await Promise.all([
+          transaction.get(orderDocRef),
+          userDocRef ? transaction.get(userDocRef) : Promise.resolve(null),
+          cashierDocRef ? transaction.get(cashierDocRef) : Promise.resolve(null),
+          transaction.get(configDocRef)
+        ])
+
+        const orderData = (orderSnap && orderSnap.exists() ? orderSnap.data() : null) as ExtendedCashierOrder | null
+        const isWithdrawOrder = orderData?.type === 'withdraw' || dData.orderType === 'withdraw'
+        const amountCoins = Number(dData.amountSugarCoins || orderData?.amountSugarCoins || 0)
+        const amountUSDT = Number(dData.amountFiat || orderData?.amountFiat || (amountCoins / 100))
+
+        const existingSupportMsgs = Array.isArray(orderData?.supportMessages) ? orderData.supportMessages : []
+        const officialNoticeMsg = {
+          id: `msg_disp_${now}`,
+          orderId: finalOrderId,
+          senderUid: adminUid,
+          senderName: `Super Admin (${adminName})`,
+          senderRole: 'admin',
+          message: `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${verdict === 'favor_player' ? 'favor del JUGADOR' : 'favor del CAJERO'} por Super Admin ${adminName}.\n\nResolución: ${resolutionNotes || (verdict === 'favor_player' ? 'Dictamen favorable para el jugador.' : 'Dictamen favorable para el cajero.')}\n\nEstatus: ${isWithdrawOrder ? 'Retiro liquidado y completado formalmente.' : (verdict === 'favor_player' ? 'Depósito acreditado y completado.' : 'Depósito desestimado y cancelado.')}`,
+          timestamp: now
+        }
+
+        if (verdict === 'favor_player') {
+          if (isWithdrawOrder) {
+            // RETIRO A FAVOR DEL JUGADOR: Quemar Escrow y debitar flotante del cajero
+            if (userDocRef && userSnap && userSnap.exists()) {
+              const uData = userSnap.data() as UserData
+              const currentCoins = Number(uData.coins || 0)
+              const currentEscrow = Number(uData.escrowLockedCoins || 0)
+              const newEscrow = Math.max(0, currentEscrow - amountCoins)
+              const deficit = amountCoins - currentEscrow
+              const newCoins = deficit > 0 ? Math.max(0, currentCoins - deficit) : currentCoins
+
+              const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+              const cleanHistory: PlayerWalletTransaction[] = []
+              let matched = false
+              for (const tx of existingHistory) {
+                if (tx.orderId === finalOrderId || (tx.description && tx.description.includes(finalOrderId.slice(0, 8)))) {
+                  if (!matched) {
+                    matched = true
+                    cleanHistory.push({
+                      ...tx,
+                      orderId: finalOrderId,
+                      type: 'withdraw',
+                      amount: -amountCoins,
+                      description: `Retiro Liquidado por Arbitraje Directivo (#${finalOrderId.slice(0, 8)})`
+                    })
+                  }
+                } else {
+                  cleanHistory.push(tx)
+                }
+              }
+              if (!matched) {
+                cleanHistory.unshift({
+                  id: `tx_disp_wit_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                  orderId: finalOrderId,
+                  type: 'withdraw',
+                  amount: -amountCoins,
+                  description: `Retiro Liquidado por Arbitraje Directivo (#${finalOrderId.slice(0, 8)})`,
+                  timestamp: now,
+                  dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                })
+              }
+
+              transaction.set(userDocRef, {
+                coins: newCoins,
+                escrowLockedCoins: newEscrow,
+                walletHistory: cleanHistory.slice(0, 50),
+                lastActiveAt: now
+              }, { merge: true })
+            }
+
+            transaction.set(orderDocRef, {
+              status: 'completed',
+              isEscrowLocked: false,
+              completedAt: now,
+              resolvedBy: adminName,
+              resolvedAt: now,
+              resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Retiro liquidado.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro liquidado a favor del jugador.`,
+              lastMessageTime: now
+            }, { merge: true })
+
+            if (cashierDocRef && cashierSnap && cashierSnap.exists()) {
+              const cData = cashierSnap.data() as CashierProfileData
+              const prevFloatCoins = Number(cData.floatBalanceCoins ?? Math.round(Number(cData.floatBalanceUSDT || 0) * 100))
+              const prevFloatUSDT = Number(cData.floatBalanceUSDT ?? (prevFloatCoins / 100))
+              const newFloatCoins = Math.max(0, prevFloatCoins - amountCoins)
+              const newFloatUSDT = parseFloat((newFloatCoins / 100).toFixed(2))
+
+              transaction.set(cashierDocRef, {
+                floatBalanceCoins: newFloatCoins,
+                floatBalanceUSDT: newFloatUSDT,
+                totalPaidWithdrawalsCoins: increment(amountCoins),
+                totalPaidWithdrawalsUSDT: increment(amountCoins / 100),
+                lastActiveAt: now
+              }, { merge: true })
+
+              const shiftRef = doc(collection(db, 'cashier_shifts_ledger'))
+              transaction.set(shiftRef, {
+                id: shiftRef.id,
+                cashierUid,
+                type: 'dispute_deduction',
+                amountUSDT: -(amountCoins / 100),
+                amountFiatUSD: -(amountCoins / 100),
+                amountCoins: -amountCoins,
+                previousBalanceUSDT: prevFloatUSDT,
+                newBalanceUSDT: newFloatUSDT,
+                resultingBalanceUSDT: newFloatUSDT,
+                resultingBalanceCoins: newFloatCoins,
+                orderId: finalOrderId,
+                notes: `Deducción por arbitraje directivo de retiro #${finalOrderId.slice(0, 8)} a favor del jugador por Super Admin ${adminName}: ${resolutionNotes || ''}`,
+                timestamp: now
+              })
+
+              if (configSnap && configSnap.exists()) {
+                const confData = configSnap.data() as { accounts?: CashierAccountConfig[] }
+                const accounts = Array.isArray(confData?.accounts) ? confData.accounts : []
+                const updatedAccounts = accounts.map((acc: CashierAccountConfig) => {
+                  if (acc.uid === cashierUid) {
+                    return {
+                      ...acc,
+                      floatBalanceCoins: newFloatCoins,
+                      floatBalanceUSDT: newFloatUSDT,
+                      totalPaidWithdrawalsUSDT: (acc.totalPaidWithdrawalsUSDT || 0) + (amountCoins / 100),
+                      lastActiveAt: now
+                    }
+                  }
+                  return acc
+                })
+                transaction.set(configDocRef, { accounts: updatedAccounts, updatedAt: now }, { merge: true })
+              }
+            }
+
+            transaction.set(globalLedgerDocRef, {
+              id: 'global_ledger',
+              cashierFloatsUSD: increment(-(amountCoins / 100)),
+              cashierFloatsCoins: increment(-amountCoins),
+              playerCustodyCoins: increment(-amountCoins),
+              playerCustodyUSD: increment(-(amountCoins / 100)),
+              lastAuditedAt: now
+            }, { merge: true })
+
+          } else {
+            // DEPÓSITO A FAVOR DEL JUGADOR
+            if (userDocRef && userSnap && userSnap.exists()) {
+              const uData = userSnap.data() as UserData
+              const currentCoins = Number(uData.coins || 0)
+              const existingHistory = Array.isArray(uData.walletHistory) ? uData.walletHistory : []
+              const cleanHistory = [...existingHistory]
+              cleanHistory.unshift({
+                id: `tx_disp_dep_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                orderId: finalOrderId,
+                type: 'deposit',
+                amount: amountCoins,
+                description: `Depósito Acreditado por Dictamen Directivo (#${finalOrderId.slice(0, 8)})`,
+                timestamp: now,
+                dateStr: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+              })
+
+              transaction.set(userDocRef, {
+                coins: currentCoins + amountCoins,
+                walletHistory: cleanHistory.slice(0, 50),
+                lastActiveAt: now
+              }, { merge: true })
+            }
+
+            transaction.set(orderDocRef, {
+              status: 'completed',
+              completedAt: now,
+              resolvedBy: adminName,
+              resolvedAt: now,
+              resolutionNotes: resolutionNotes || 'Depósito validado y acreditado a favor del jugador.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Depósito acreditado a favor del jugador.`,
+              lastMessageTime: now
+            }, { merge: true })
+
+            if (cashierDocRef && cashierSnap && cashierSnap.exists()) {
+              const cData = cashierSnap.data() as CashierProfileData
+              const prevFloatCoins = Number(cData.floatBalanceCoins ?? Math.round(Number(cData.floatBalanceUSDT || 0) * 100))
+              const prevFloatUSDT = Number(cData.floatBalanceUSDT ?? (prevFloatCoins / 100))
+              const newFloatCoins = Math.max(0, prevFloatCoins - amountCoins)
+              const newFloatUSDT = parseFloat((newFloatCoins / 100).toFixed(2))
+
+              transaction.set(cashierDocRef, {
+                floatBalanceCoins: newFloatCoins,
+                floatBalanceUSDT: newFloatUSDT,
+                lastActiveAt: now
+              }, { merge: true })
+
+              const shiftRef = doc(collection(db, 'cashier_shifts_ledger'))
+              transaction.set(shiftRef, {
+                id: shiftRef.id,
+                cashierUid,
+                type: 'dispute_deduction',
+                amountUSDT: -(amountCoins / 100),
+                amountFiatUSD: -(amountCoins / 100),
+                amountCoins: -amountCoins,
+                previousBalanceUSDT: prevFloatUSDT,
+                newBalanceUSDT: newFloatUSDT,
+                resultingBalanceUSDT: newFloatUSDT,
+                resultingBalanceCoins: newFloatCoins,
+                orderId: finalOrderId,
+                notes: `Deducción de flotante por depósito validado a favor del jugador (#${finalOrderId.slice(0, 8)}): ${resolutionNotes || ''}`,
+                timestamp: now
+              })
+
+              if (configSnap && configSnap.exists()) {
+                const confData = configSnap.data() as { accounts?: CashierAccountConfig[] }
+                const accounts = Array.isArray(confData?.accounts) ? confData.accounts : []
+                const updatedAccounts = accounts.map((acc: CashierAccountConfig) => {
+                  if (acc.uid === cashierUid) {
+                    return {
+                      ...acc,
+                      floatBalanceCoins: newFloatCoins,
+                      floatBalanceUSDT: newFloatUSDT,
+                      lastActiveAt: now
+                    }
+                  }
+                  return acc
+                })
+                transaction.set(configDocRef, { accounts: updatedAccounts, updatedAt: now }, { merge: true })
+              }
+            }
+
+            transaction.set(globalLedgerDocRef, {
+              id: 'global_ledger',
+              playerCustodyCoins: increment(amountCoins),
+              playerCustodyUSD: increment(amountCoins / 100),
+              cashierFloatsCoins: increment(-amountCoins),
+              cashierFloatsUSD: increment(-(amountCoins / 100)),
+              lastAuditedAt: now
+            }, { merge: true })
+          }
+
+          transaction.set(disputeDocRef, {
+            status: 'resolved_player',
+            resolvedBy: adminName,
+            resolvedByUid: adminUid,
+            resolvedAt: now,
+            resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el jugador. Fondos aplicados con éxito.'
+          }, { merge: true })
+
+          const auditRef = doc(collection(db, 'audit_logs'))
+          transaction.set(auditRef, {
+            id: auditRef.id,
+            action: 'DISPUTE_RESOLVED',
+            actorUid: adminUid,
+            actorRole: 'super_admin',
+            targetUid: dData.playerUid || 'unknown_player',
+            targetOrderId: finalOrderId,
+            amountCoins,
+            amountFiat: amountUSDT,
+            currency: 'USD',
+            notes: `Arbitraje a favor del jugador (${disputeId}): ${resolutionNotes || 'Dictamen favorable emitido.'}`,
+            timestamp: now
+          })
+
+        } else {
+          // --- A FAVOR DEL CAJERO ---
+          if (isWithdrawOrder) {
+            if (userDocRef && userSnap && userSnap.exists()) {
+              const uData = userSnap.data() as UserData
+              const currentEscrow = Number(uData.escrowLockedCoins || 0)
+              transaction.set(userDocRef, {
+                escrowLockedCoins: Math.max(0, currentEscrow - amountCoins),
+                lastActiveAt: now
+              }, { merge: true })
+            }
+
+            transaction.set(orderDocRef, {
+              status: 'completed',
+              isEscrowLocked: false,
+              completedAt: now,
+              resolvedBy: adminName,
+              resolvedAt: now,
+              resolutionNotes: resolutionNotes || 'Dictamen favorable para el cajero. Fondos transferidos validados.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Retiro completado a favor del cajero.`,
+              lastMessageTime: now
+            }, { merge: true })
+
+            if (cashierUid) {
+              const shiftRef = doc(collection(db, 'cashier_shifts_ledger'))
+              transaction.set(shiftRef, {
+                id: shiftRef.id,
+                cashierUid,
+                type: 'dispute_resolution',
+                amountUSDT: amountCoins / 100,
+                amountFiatUSD: amountCoins / 100,
+                amountCoins,
+                notes: `Resolución de disputa #${disputeId} a favor del cajero por Super Admin ${adminName}`,
+                timestamp: now
+              })
+            }
+          } else {
+            transaction.set(orderDocRef, {
+              status: 'cancelled',
+              completedAt: now,
+              resolvedBy: adminName,
+              resolvedAt: now,
+              resolutionNotes: resolutionNotes || 'Depósito rechazado tras revisión de comprobante.',
+              supportMessages: [...existingSupportMsgs, officialNoticeMsg],
+              lastMessage: `⚖️ [DICTAMEN DIRECTIVO]: Depósito rechazado por la administración.`,
+              lastMessageTime: now
+            }, { merge: true })
+          }
+
+          transaction.set(disputeDocRef, {
+            status: 'resolved_cashier',
+            resolvedBy: adminName,
+            resolvedByUid: adminUid,
+            resolvedAt: now,
+            resolutionNotes: resolutionNotes || 'Dictamen favorable emitido para el cajero. Garantía liberada.'
+          }, { merge: true })
+
+          const auditRef = doc(collection(db, 'audit_logs'))
+          transaction.set(auditRef, {
+            id: auditRef.id,
+            action: 'DISPUTE_RESOLVED',
+            actorUid: adminUid,
+            actorRole: 'super_admin',
+            targetUid: cashierUid || 'unknown_cashier',
+            targetOrderId: finalOrderId,
+            amountCoins,
+            amountFiat: amountUSDT,
+            currency: 'USD',
+            notes: `Arbitraje a favor del cajero (${disputeId}): ${resolutionNotes || 'Garantía liberada con éxito.'}`,
+            timestamp: now
+          })
+        }
+
+        return { success: true, message: `Veredicto ejecutado con éxito: ${verdict}` }
+      })
+    } catch (modularErr: unknown) {
+      console.warn('[resolveDisputeCaseAtomics] Fallback secuencial:', getErrorMessage(modularErr))
+    }
+  }
+
+  // 3. CAPA 3: Fallback secuencial de última instancia
   try {
     const dispDocRef = doc(db, 'dispute_cases', disputeId)
     const dispSnap = await getDoc(dispDocRef)
     const dData = (dispSnap.exists() ? dispSnap.data() : {}) as DisputeData
     const finalOrderId = dData.orderId || disputeId
     const amountCoins = Number(dData.amountSugarCoins || 0)
+
+    const orderDocRef = doc(db, 'cashier_orders', finalOrderId)
+    const orderSnap = await getDoc(orderDocRef)
+    const orderData = orderSnap.exists() ? (orderSnap.data() as ExtendedCashierOrder) : null
+    const isWithdrawOrder = orderData?.type === 'withdraw' || dData.orderType === 'withdraw'
 
     await setDoc(dispDocRef, {
       status: verdict === 'favor_player' ? 'resolved_player' : 'resolved_cashier',
@@ -1259,29 +1829,110 @@ export async function resolveDisputeCaseAtomics(params: {
       resolutionNotes: resolutionNotes || `Veredicto: ${verdict}`
     }, { merge: true })
 
-    const orderDocRef = doc(db, 'cashier_orders', finalOrderId)
-    await updateDoc(orderDocRef, {
-      status: verdict === 'favor_player' ? 'completed' : 'cancelled',
-      isEscrowLocked: false,
-      completedAt: now,
-      resolutionNotes: resolutionNotes || `Veredicto: ${verdict}`,
-      resolvedBy: adminName,
-      resolvedAt: now
-    }).catch(() => {})
+    if (verdict === 'favor_player') {
+      if (isWithdrawOrder) {
+        if (dData.playerUid) {
+          const userRef = doc(db, 'users', dData.playerUid)
+          const uSnap = await getDoc(userRef)
+          if (uSnap.exists()) {
+            const uData = uSnap.data() as UserData
+            const curEscrow = Number(uData.escrowLockedCoins || 0)
+            const curCoins = Number(uData.coins || 0)
+            const nEscrow = Math.max(0, curEscrow - amountCoins)
+            const deficit = amountCoins - curEscrow
+            const nCoins = deficit > 0 ? Math.max(0, curCoins - deficit) : curCoins
+            await updateDoc(userRef, {
+              coins: nCoins,
+              escrowLockedCoins: nEscrow,
+              lastActiveAt: now
+            }).catch(() => {})
+          }
+        }
 
-    if (verdict === 'favor_player' && dData.playerUid) {
-      const userRef = doc(db, 'users', dData.playerUid)
-      await updateDoc(userRef, {
-        coins: increment(amountCoins),
-        lastActiveAt: now
-      }).catch(() => {})
-    } else if (verdict === 'favor_cashier' && dData.cashierUid) {
-      const cRef = doc(db, 'cashier_profiles', dData.cashierUid)
-      await updateDoc(cRef, {
-        floatBalanceCoins: increment(amountCoins),
-        floatBalanceUSDT: increment(amountCoins / 100),
-        lastActiveAt: now
-      }).catch(() => {})
+        await setDoc(orderDocRef, {
+          status: 'completed',
+          isEscrowLocked: false,
+          completedAt: now,
+          resolutionNotes: resolutionNotes || `Veredicto: ${verdict}`,
+          resolvedBy: adminName,
+          resolvedAt: now
+        }, { merge: true }).catch(() => {})
+
+        if (dData.cashierUid && dData.cashierUid !== 'staff_support') {
+          const cRef = doc(db, 'cashier_profiles', dData.cashierUid)
+          const cSnap = await getDoc(cRef)
+          if (cSnap.exists()) {
+            const cData = cSnap.data() as CashierProfileData
+            const prevFloat = Number(cData.floatBalanceCoins || 0)
+            const nFloat = Math.max(0, prevFloat - amountCoins)
+            const nFloatUSDT = parseFloat((nFloat / 100).toFixed(2))
+            await updateDoc(cRef, {
+              floatBalanceCoins: nFloat,
+              floatBalanceUSDT: nFloatUSDT,
+              lastActiveAt: now
+            }).catch(() => {})
+
+            const sRef = doc(collection(db, 'cashier_shifts_ledger'))
+            await setDoc(sRef, {
+              id: sRef.id,
+              cashierUid: dData.cashierUid,
+              type: 'dispute_deduction',
+              amountUSDT: -(amountCoins / 100),
+              amountCoins: -amountCoins,
+              resultingBalanceCoins: nFloat,
+              resultingBalanceUSDT: nFloatUSDT,
+              orderId: finalOrderId,
+              notes: `Deducción por disputa resuelta a favor del jugador (#${finalOrderId.slice(0, 8)})`,
+              timestamp: now
+            }).catch(() => {})
+          }
+        }
+      } else {
+        if (dData.playerUid) {
+          const userRef = doc(db, 'users', dData.playerUid)
+          await updateDoc(userRef, {
+            coins: increment(amountCoins),
+            lastActiveAt: now
+          }).catch(() => {})
+        }
+
+        await setDoc(orderDocRef, {
+          status: 'completed',
+          completedAt: now,
+          resolutionNotes: resolutionNotes || `Veredicto: ${verdict}`,
+          resolvedBy: adminName,
+          resolvedAt: now
+        }, { merge: true }).catch(() => {})
+      }
+    } else {
+      if (isWithdrawOrder) {
+        if (dData.playerUid) {
+          const userRef = doc(db, 'users', dData.playerUid)
+          const uSnap = await getDoc(userRef)
+          if (uSnap.exists()) {
+            const uData = uSnap.data() as UserData
+            const curEscrow = Number(uData.escrowLockedCoins || 0)
+            await updateDoc(userRef, {
+              escrowLockedCoins: Math.max(0, curEscrow - amountCoins),
+              lastActiveAt: now
+            }).catch(() => {})
+          }
+        }
+        await setDoc(orderDocRef, {
+          status: 'completed',
+          isEscrowLocked: false,
+          completedAt: now,
+          resolvedBy: adminName,
+          resolvedAt: now
+        }, { merge: true }).catch(() => {})
+      } else {
+        await setDoc(orderDocRef, {
+          status: 'cancelled',
+          completedAt: now,
+          resolvedBy: adminName,
+          resolvedAt: now
+        }, { merge: true }).catch(() => {})
+      }
     }
 
     const auditRef = doc(collection(db, 'audit_logs'))

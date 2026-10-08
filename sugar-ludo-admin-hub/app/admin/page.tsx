@@ -129,12 +129,12 @@ export default function AdminDashboardPage() {
             const vaultUSD = playerBalancesUSD + houseNetProfitsUSD
             const vaultCoins = Math.round(vaultUSD * 100)
 
-            // Respetar auditoría autoritativa de ledger si existe; si la custodia es 0, el flotante en custodia es estrictamente 0
+            // Respetar auditoría autoritativa de ledger si existe o total consolidado de cajeros
             const auditedFloatsUSD = data.cashierFloatsUSD !== undefined ? Number(data.cashierFloatsUSD) : totalFloatsUSD
             const auditedFloatsCoins = data.cashierFloatsCoins !== undefined ? Number(data.cashierFloatsCoins) : totalFloatsCoins
 
-            const effectiveFloatsUSD = playerBalancesUSD > 0 ? Math.min(playerBalancesUSD, Math.max(0, auditedFloatsUSD)) : 0
-            const effectiveFloatsCoins = playerBalancesUSD > 0 ? Math.min(playerBalancesCoins, Math.max(0, auditedFloatsCoins)) : 0
+            const effectiveFloatsUSD = Math.max(0, auditedFloatsUSD)
+            const effectiveFloatsCoins = Math.max(0, auditedFloatsCoins)
 
             setVault({
               totalVaultUSD: vaultUSD,

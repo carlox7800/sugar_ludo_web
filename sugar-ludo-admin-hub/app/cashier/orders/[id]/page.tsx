@@ -770,6 +770,8 @@ Conserva este mensaje como comprobante formal de la transacción.`
             <PayoutActionButton
               isWithdraw={isWithdraw}
               isCompleted={isCompleted}
+              isCancelled={isCancelled}
+              status={order.status}
               hasSufficientFloat={hasSufficientFloat}
               cashierFloatUSDT={cashierFloatUSDT}
               netPayoutUSD={netPayoutUSD}

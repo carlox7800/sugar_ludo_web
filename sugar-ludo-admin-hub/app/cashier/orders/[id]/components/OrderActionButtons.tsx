@@ -461,6 +461,8 @@ export const OrderActionButtons: React.FC<OrderActionButtonsProps> = ({
 export interface PayoutActionButtonProps {
   isWithdraw: boolean
   isCompleted: boolean
+  isCancelled?: boolean
+  status?: string
   hasSufficientFloat: boolean
   cashierFloatUSDT: number
   netPayoutUSD: number
@@ -472,6 +474,8 @@ export interface PayoutActionButtonProps {
 export const PayoutActionButton: React.FC<PayoutActionButtonProps> = ({
   isWithdraw,
   isCompleted,
+  isCancelled = false,
+  status,
   hasSufficientFloat,
   cashierFloatUSDT,
   netPayoutUSD,
@@ -479,7 +483,16 @@ export const PayoutActionButton: React.FC<PayoutActionButtonProps> = ({
   onOpenPayout,
   onEscalateDispute
 }) => {
-  if (!isWithdraw || isCompleted) return null
+  if (
+    !isWithdraw ||
+    isCompleted ||
+    isCancelled ||
+    status === 'completed' ||
+    status === 'cancelled' ||
+    status === 'disputed'
+  ) {
+    return null
+  }
 
   const isBlocked = fraudAudit?.status === 'blocked'
   const isLowTurnover = fraudAudit?.status === 'low_turnover'
