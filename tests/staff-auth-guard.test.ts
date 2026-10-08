@@ -236,6 +236,82 @@ describe('Suite: Endurecimiento de Seguridad & Staff Auth Guard (v9.6.0)', () =>
     assert.equal(json.code, 'SESSION_SUPERSEDED')
     assert.equal(json.success, false)
   })
+
+  it('NO FALSO POSITIVO EN RECARGA: acción directiva de super admin no invalida sesión de cajero concurrente', async () => {
+    const {
+      registerActiveCashierSession,
+      registerActiveAdminSession,
+      isStaffSessionSuperseded,
+      createStaffSessionToken,
+      CASHIER_SESSION_COOKIE_NAME,
+      ADMIN_SESSION_COOKIE_NAME
+    } = await import('../sugar-ludo-admin-hub/lib/session-manager.ts')
+    const { verifyStaffAuth } = await import('../sugar-ludo-admin-hub/lib/api-auth-guard.ts')
+
+    const cashierUid = 'csh_qa_carlos_001'
+    const cashierSessionId = 'sess_cashier_tab1'
+    const adminUid = 'adm_super_carlos_001'
+    const adminSessionId = 'sess_admin_tab2'
+
+    // Registrar sesiones activas en el backend para ambos roles
+    registerActiveCashierSession(cashierUid, cashierSessionId)
+    registerActiveAdminSession(adminUid, adminSessionId)
+
+    // Generar tokens legítimos de sesión
+    const { token: cashierToken } = createStaffSessionToken({
+      uid: cashierUid,
+      email: 'carlos.cajero@sugarludo.com',
+      role: 'cashier',
+      name: 'Carlos Cajero',
+      sessionId: cashierSessionId,
+      accountType: 'cashier'
+    })
+
+    const { token: adminToken } = createStaffSessionToken({
+      uid: adminUid,
+      email: 'admin@sugarludo.com',
+      role: 'super_admin',
+      name: 'Carlos Super Admin',
+      sessionId: adminSessionId,
+      accountType: 'admin'
+    })
+
+    // Ambas cookies coexisten en el navegador
+    const multiCookie = `${CASHIER_SESSION_COOKIE_NAME}=${cashierToken}; ${ADMIN_SESSION_COOKIE_NAME}=${adminToken}`
+
+    // Petición del Super Admin a /api/cashier/orders/recharge/action
+    const adminRechargeReq = new Request('https://admin.sugarludo.com/api/cashier/orders/recharge/action', {
+      method: 'POST',
+      headers: {
+        'cookie': multiCookie,
+        'x-staff-uid': adminUid,
+        'x-staff-session-id': adminSessionId,
+        'x-staff-role': 'super_admin',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: 'recharge_float',
+        cashierUid,
+        amountUSDT: 50,
+        notes: 'Recarga QA'
+      })
+    })
+
+    const authResult = await verifyStaffAuth(adminRechargeReq, ['admin', 'super_admin', 'financial_admin', 'support_admin'])
+
+    // Debe autorizarse con la sesión del Super Admin
+    assert.equal(authResult.authorized, true, 'La acción directiva del Super Admin debe ser autorizada')
+    assert.ok(authResult.user)
+    assert.equal(authResult.user.uid, adminUid)
+    assert.equal(authResult.user.role, 'super_admin')
+
+    // La sesión del cajero en la otra pestaña debe permanecer 100% válida e intacta
+    assert.equal(
+      isStaffSessionSuperseded(cashierUid, cashierSessionId, 'cashier'),
+      false,
+      'La sesión del cajero no debe ser superada ni invalidada por la recarga del Super Admin'
+    )
+  })
 })
 
 

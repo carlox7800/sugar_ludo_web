@@ -121,18 +121,52 @@ export async function verifyStaffAuth(
   request: Request,
   allowedRoles?: StaffRole[]
 ): Promise<AuthVerificationResult> {
-  // Deducir dominio de rol esperado a partir de la ruta o de allowedRoles
   const urlPath = request.url ? new URL(request.url, 'http://localhost').pathname : ''
-  const isCashierRoute = urlPath.startsWith('/api/cashier')
-  const isExplicitCashierRole = allowedRoles && allowedRoles.length === 1 && allowedRoles[0] === 'cashier'
-  const roleDomain: 'admin' | 'cashier' = (isCashierRoute || isExplicitCashierRole) ? 'cashier' : 'admin'
+  const headerStaffRole = normalizeStaffRole(request.headers.get('x-staff-role') || request.headers.get('X-Staff-Role') || '')
+  const headerStaffUid = (request.headers.get('x-staff-uid') || request.headers.get('X-Staff-Uid') || '').trim()
+  const headerStaffEmail = (request.headers.get('x-staff-email') || request.headers.get('X-Staff-Email') || '').toLowerCase().trim()
+  const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
+
+  // Deducir dominio de rol esperado con estricta segregación:
+  // Si allowedRoles está definido y solo incluye roles administrativos (no incluye 'cashier'),
+  // el dominio es 100% administrativo ('admin'), incluso si el endpoint está bajo /api/cashier/orders/recharge/*
+  const hasAllowedRoles = Array.isArray(allowedRoles) && allowedRoles.length > 0
+  const allowsOnlyAdmin = hasAllowedRoles && allowedRoles.every(r => r !== 'cashier')
+  const allowsOnlyCashier = hasAllowedRoles && allowedRoles.length === 1 && allowedRoles[0] === 'cashier'
+  const isCashierRoute = urlPath.startsWith('/api/cashier') && !urlPath.includes('/recharge') && !urlPath.includes('/admin')
+
+  let roleDomain: 'admin' | 'cashier'
+  if (allowsOnlyAdmin) {
+    roleDomain = 'admin'
+  } else if (allowsOnlyCashier) {
+    roleDomain = 'cashier'
+  } else if (headerStaffRole) {
+    roleDomain = headerStaffRole === 'cashier' ? 'cashier' : 'admin'
+  } else if (isCashierRoute) {
+    roleDomain = 'cashier'
+  } else {
+    roleDomain = 'admin'
+  }
 
   // A) Verificación prioritaria vía Cookie HttpOnly Segura segregada (Fase 1)
-  const sessionCookieToken = extractStaffSessionCookie(request, roleDomain)
+  let sessionCookieToken = extractStaffSessionCookie(request, roleDomain)
+  let activeDomain = roleDomain
+
+  // Si no se encontró cookie en el dominio prioritario pero la ruta permite ambos roles,
+  // probar el dominio complementario antes de caer al token Bearer
+  if (!sessionCookieToken && hasAllowedRoles && allowedRoles.includes('cashier') && allowedRoles.some(r => r !== 'cashier')) {
+    const altDomain: 'admin' | 'cashier' = roleDomain === 'admin' ? 'cashier' : 'admin'
+    const altToken = extractStaffSessionCookie(request, altDomain)
+    if (altToken) {
+      sessionCookieToken = altToken
+      activeDomain = altDomain
+    }
+  }
+
   if (sessionCookieToken) {
-    const sessionRes = verifyStaffSessionToken(sessionCookieToken, roleDomain)
+    const sessionRes = verifyStaffSessionToken(sessionCookieToken, activeDomain)
     if (!sessionRes.valid) {
-      const clearCookie = roleDomain === 'cashier' ? buildClearCashierSessionCookie() : buildClearAdminSessionCookie()
+      const clearCookie = activeDomain === 'cashier' ? buildClearCashierSessionCookie() : buildClearAdminSessionCookie()
       return {
         authorized: false,
         errorResponse: NextResponse.json(
@@ -156,12 +190,9 @@ export async function verifyStaffAuth(
       const payload = sessionRes.payload
 
       // Control estricto de sesión única activa (Single Active Session) segregado por rol
-      const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
-      const headerStaffUid = (request.headers.get('x-staff-uid') || request.headers.get('X-Staff-Uid') || '').trim()
-
-      const lookupKeys = [payload.uid, headerStaffUid, payload.email].filter((k): k is string => Boolean(k))
+      const lookupKeys = [payload.uid, payload.email].filter((k): k is string => Boolean(k))
       let activeStaffSession: { sessionId: string; updatedAt: number } | undefined
-      const getActiveSessionFn = (payload.accountType === 'cashier' || payload.role === 'cashier' || roleDomain === 'cashier')
+      const getActiveSessionFn = (payload.accountType === 'cashier' || payload.role === 'cashier' || activeDomain === 'cashier')
         ? getActiveCashierSession
         : getActiveAdminSession
 
@@ -170,11 +201,29 @@ export async function verifyStaffAuth(
         if (activeStaffSession) break
       }
 
-      const isCookieSuperseded = activeStaffSession && activeStaffSession.sessionId !== payload.sessionId
-      const isHeaderSuperseded = activeStaffSession && headerSessionId && activeStaffSession.sessionId !== headerSessionId
+      // La cookie propia fue superada por un nuevo login del mismo usuario
+      const isCookieSuperseded = Boolean(activeStaffSession && activeStaffSession.sessionId !== payload.sessionId)
+
+      // El headerSessionId solo puede invalidar si pertenece a la misma identidad y al mismo rol
+      const isSameIdentityHeader = Boolean(
+        headerStaffUid && (
+          headerStaffUid.toLowerCase() === payload.uid.toLowerCase() ||
+          (headerStaffEmail && payload.email && headerStaffEmail === payload.email.toLowerCase())
+        )
+      )
+      const isSameRoleHeader = !headerStaffRole || (
+        activeDomain === 'cashier' ? headerStaffRole === 'cashier' : headerStaffRole !== 'cashier'
+      )
+      const isHeaderSuperseded = Boolean(
+        isSameIdentityHeader &&
+        isSameRoleHeader &&
+        activeStaffSession &&
+        headerSessionId &&
+        activeStaffSession.sessionId !== headerSessionId
+      )
 
       if (isCookieSuperseded || isHeaderSuperseded) {
-        const clearCookie = (payload.accountType === 'cashier' || payload.role === 'cashier' || roleDomain === 'cashier')
+        const clearCookie = (payload.accountType === 'cashier' || payload.role === 'cashier' || activeDomain === 'cashier')
           ? buildClearCashierSessionCookie()
           : buildClearAdminSessionCookie()
         return {
@@ -199,40 +248,50 @@ export async function verifyStaffAuth(
       if (allowedRoles && allowedRoles.length > 0) {
         const hasRole = roleMatches(payload.role, allowedRoles)
         if (!hasRole) {
+          // Si esta cookie no tiene el rol pero la petición trae Authorization Bearer token,
+          // permitir continuar al fallback de Bearer en lugar de rechazar con 403 prematuramente
+          const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
+          if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return {
+              authorized: false,
+              errorResponse: NextResponse.json(
+                {
+                  success: false,
+                  error: `Permisos insuficientes. Se requiere uno de los siguientes roles: ${allowedRoles.join(', ')}`
+                },
+                { status: 403, headers: corsHeaders }
+              )
+            }
+          }
+        } else {
           return {
-            authorized: false,
-            errorResponse: NextResponse.json(
-              {
-                success: false,
-                error: `Permisos insuficientes. Se requiere uno de los siguientes roles: ${allowedRoles.join(', ')}`
-              },
-              { status: 403, headers: corsHeaders }
-            )
+            authorized: true,
+            user: {
+              uid: payload.uid,
+              role: payload.role,
+              email: payload.email,
+              name: payload.name
+            }
           }
         }
-      }
-
-      return {
-        authorized: true,
-        user: {
-          uid: payload.uid,
-          role: payload.role,
-          email: payload.email,
-          name: payload.name
+      } else {
+        return {
+          authorized: true,
+          user: {
+            uid: payload.uid,
+            role: payload.role,
+            email: payload.email,
+            name: payload.name
+          }
         }
       }
     }
   }
 
   // B) Verificación vía Encabezado Authorization Bearer (Fallback / API Clients)
-  const headerStaffUid = (request.headers.get('x-staff-uid') || request.headers.get('X-Staff-Uid') || '').trim()
-  const headerStaffEmail = (request.headers.get('x-staff-email') || request.headers.get('X-Staff-Email') || '').toLowerCase().trim()
-  const headerStaffRole = normalizeStaffRole(request.headers.get('x-staff-role') || request.headers.get('X-Staff-Role') || '')
-  const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
-
   // Control proactivo: Si el cliente envía identificación de sesión y la misma ya fue superada en el backend
   if (headerSessionId && (headerStaffUid || headerStaffEmail)) {
-    const isTargetCashier = roleDomain === 'cashier' || headerStaffRole === 'cashier'
+    const isTargetCashier = headerStaffRole ? headerStaffRole === 'cashier' : roleDomain === 'cashier'
     const getActiveSessionFn = isTargetCashier ? getActiveCashierSession : getActiveAdminSession
     const lookupKeys = [headerStaffUid, headerStaffEmail].filter(Boolean)
     let activeSession: { sessionId: string; updatedAt: number } | undefined
@@ -522,8 +581,8 @@ export async function verifyStaffAuth(
   }
 
   // 2.1 Control de sesión única activa para Staff segregado por rol (Cajeros vs Administradores)
-  const lookupKeys = [verifiedUser.uid, headerStaffUid, verifiedUser.email, headerStaffEmail].filter((k): k is string => Boolean(k))
-  const isCashierUser = verifiedUser.role === 'cashier' || roleDomain === 'cashier'
+  const lookupKeys = [verifiedUser.uid, verifiedUser.email].filter((k): k is string => Boolean(k))
+  const isCashierUser = verifiedUser.role === 'cashier'
   const getActiveSessionFn = isCashierUser ? getActiveCashierSession : getActiveAdminSession
 
   let activeStaffSession: { sessionId: string; updatedAt: number } | undefined
@@ -532,7 +591,15 @@ export async function verifyStaffAuth(
     if (activeStaffSession) break
   }
 
-  if (activeStaffSession && headerSessionId && activeStaffSession.sessionId !== headerSessionId) {
+  const isSameRoleHeader = !headerStaffRole || (
+    isCashierUser ? headerStaffRole === 'cashier' : headerStaffRole !== 'cashier'
+  )
+  const isSameIdentityHeader = Boolean(
+    !headerStaffUid || headerStaffUid.toLowerCase() === verifiedUser.uid.toLowerCase() ||
+    (!headerStaffEmail || (verifiedUser.email && headerStaffEmail === verifiedUser.email.toLowerCase()))
+  )
+
+  if (activeStaffSession && headerSessionId && isSameIdentityHeader && isSameRoleHeader && activeStaffSession.sessionId !== headerSessionId) {
     const clearCookie = isCashierUser ? buildClearCashierSessionCookie() : buildClearAdminSessionCookie()
     return {
       authorized: false,
