@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CashierOrder, OrderType } from '../../types/cashier'
@@ -35,6 +35,7 @@ export default function CashierMainDeskPage() {
   const [orders, setOrders] = useState<CashierOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const ordersUnsubscribeRef = useRef<(() => void) | null>(null)
+  const isSessionTerminatedRef = useRef<boolean>(false)
   const [currentStatus, setCurrentStatus] = useState<FilterStatus>('pending')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'all'>('today')
@@ -197,31 +198,42 @@ export default function CashierMainDeskPage() {
     }
   }, [activeCashierSession])
 
-  // Verificación reactiva de sesión única activa (Single Active Session detection)
-  useEffect(() => {
-    if (!currentCashier?.uid) return
-    const activeUid = normalizeCashierUid(currentCashier.uid)
-    let isTerminated = false
+  const terminateCashierSession = useCallback((reason?: string) => {
+    if (isSessionTerminatedRef.current) return
+    isSessionTerminatedRef.current = true
 
-    const handleSessionSuperseded = (msg?: string) => {
-      if (isTerminated) return
-      isTerminated = true
-      logout(msg || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.', 'cashier')
-      router.push('/')
+    if (ordersUnsubscribeRef.current) {
+      try {
+        ordersUnsubscribeRef.current()
+      } catch {}
+      ordersUnsubscribeRef.current = null
     }
 
+    const alertMsg = reason || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
+    logout(alertMsg, 'cashier')
+    router.push('/')
+  }, [logout, router])
+
+  // Verificación reactiva de sesión única activa (Single Active Session detection)
+  useEffect(() => {
+    if (!currentCashier?.uid || isSessionTerminatedRef.current) return
+    const activeUid = normalizeCashierUid(currentCashier.uid)
+
     const checkSessionStatus = async () => {
-      if (isTerminated) return
+      if (isSessionTerminatedRef.current) return
       try {
         const headers = await getStaffAuthHeadersAsync('cashier')
         const res = await fetch('/api/cashier/orders?limit=1', {
-          headers
+          headers,
+          credentials: 'same-origin'
         })
         if (res.status === 401) {
           const data = await res.json().catch(() => null)
-          if (data?.code === 'SESSION_SUPERSEDED') {
-            handleSessionSuperseded(data?.error)
-          }
+          const alertMsg = data?.code === 'SESSION_SUPERSEDED'
+            ? (data?.error || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+            : (data?.error || 'Sesión no autorizada o expirada. Inicie sesión nuevamente.')
+          terminateCashierSession(alertMsg)
+          return
         }
       } catch {}
     }
@@ -246,7 +258,7 @@ export default function CashierMainDeskPage() {
               currentCashier.sessionId &&
               currentCashier.sessionId !== sessionId
             ) {
-              handleSessionSuperseded()
+              terminateCashierSession()
             }
           }
         }
@@ -258,7 +270,7 @@ export default function CashierMainDeskPage() {
       window.removeEventListener('focus', onFocus)
       if (channel) channel.close()
     }
-  }, [currentCashier?.uid, currentCashier?.sessionId])
+  }, [currentCashier?.uid, currentCashier?.sessionId, terminateCashierSession])
 
   // Escuchar actualizaciones de saldo flotante en tiempo real desde Firestore (cashier_profiles/{uid})
   useEffect(() => {
@@ -357,15 +369,11 @@ export default function CashierMainDeskPage() {
           cashierLogger.error(`Error HTTP ${res.status} al consultar /api/cashier/orders`)
           if (res.status === 401) {
             const errData = await res.json().catch(() => null)
-            const errCode = errData?.code || ''
-            if (errCode === 'SESSION_SUPERSEDED' || errCode.startsWith('SESSION_EXPIRED') || errCode === 'SESSION_INVALID') {
-              const alertMsg = errCode === 'SESSION_SUPERSEDED'
-                ? 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
-                : (errData?.error || 'Sesión expirada por motivos de seguridad.')
-              logout(alertMsg, 'cashier')
-              router.push('/')
-              return
-            }
+            const alertMsg = errData?.code === 'SESSION_SUPERSEDED'
+              ? (errData?.error || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+              : (errData?.error || 'Sesión expirada o no autorizada.')
+            terminateCashierSession(alertMsg)
+            return
           }
         }
       }
@@ -377,6 +385,8 @@ export default function CashierMainDeskPage() {
   }
 
   useEffect(() => {
+    if (isSessionTerminatedRef.current) return
+
     cashierLogger.info(`Bandeja principal de cajero montada`, {
       cajero: currentCashier.name,
       uid: currentCashier.uid,
@@ -404,9 +414,9 @@ export default function CashierMainDeskPage() {
       }
     } catch {}
 
-    // 2. Realtime subscription to Firestore (Spark Plan Cost $0 with limit & auto-pause)
+    // 2. Realtime subscription to Firestore (Spark Plan Cost $0 with limit & stable singleton)
     const startOrdersListener = () => {
-      if (typeof document !== 'undefined' && document.hidden) return
+      if (isSessionTerminatedRef.current) return
       if (ordersUnsubscribeRef.current) return
 
       try {
@@ -428,27 +438,16 @@ export default function CashierMainDeskPage() {
             code: err?.code,
             message: err?.message
           })
+          if (err?.code === 'permission-denied' || err?.code === 'unauthenticated') {
+            terminateCashierSession('Permisos revocados o sesión invalidada en la base de datos.')
+          }
         })
       } catch (e: any) {
         cashierLogger.error(`Excepción al conectar listener de cashier_orders`, { message: e?.message })
       }
     }
 
-    const handleVisibility = () => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        if (ordersUnsubscribeRef.current) {
-          ordersUnsubscribeRef.current()
-          ordersUnsubscribeRef.current = null
-        }
-      } else {
-        startOrdersListener()
-      }
-    }
-
     startOrdersListener()
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibility)
-    }
 
     return () => {
       if (channel) channel.close()
@@ -456,11 +455,8 @@ export default function CashierMainDeskPage() {
         ordersUnsubscribeRef.current()
         ordersUnsubscribeRef.current = null
       }
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibility)
-      }
     }
-  }, [])
+  }, [terminateCashierSession])
 
   const handleApprove = async (orderId: string) => {
     const targetOrder = orders.find((o) => o.id === orderId)

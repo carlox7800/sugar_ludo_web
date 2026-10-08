@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { CashierOrder, OrderType } from '../../../types/cashier'
 import { CashierManagementProfile } from '../../../types/admin-expanded'
@@ -17,10 +18,12 @@ import { collection, onSnapshot, query, limit } from 'firebase/firestore'
 import { ArrowLeft, CreditCard, Wallet, Search, RefreshCw, CheckCircle, Clock, LayoutList, LayoutGrid } from 'lucide-react'
 
 export default function CashierOrdersPage() {
+  const router = useRouter()
   const { cashierList, logout, activeCashierSession, setActiveCashierSession } = useAdminAuth()
   const [orders, setOrders] = useState<CashierOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const ordersUnsubscribeRef = useRef<(() => void) | null>(null)
+  const isSessionTerminatedRef = useRef<boolean>(false)
   const [currentStatus, setCurrentStatus] = useState<FilterStatus>('pending')
   const [currentType, setCurrentType] = useState<'all' | OrderType>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -109,31 +112,42 @@ export default function CashierOrdersPage() {
     }
   }, [activeCashierSession])
 
-  // Verificación reactiva de sesión única activa (Single Active Session detection)
-  useEffect(() => {
-    if (!currentCashier?.uid) return
-    const activeUid = normalizeCashierUid(currentCashier.uid)
-    let isTerminated = false
+  const terminateCashierSession = useCallback((reason?: string) => {
+    if (isSessionTerminatedRef.current) return
+    isSessionTerminatedRef.current = true
 
-    const handleSessionSuperseded = (msg?: string) => {
-      if (isTerminated) return
-      isTerminated = true
-      logout?.(msg || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.', 'cashier')
-      if (typeof window !== 'undefined') window.location.href = '/'
+    if (ordersUnsubscribeRef.current) {
+      try {
+        ordersUnsubscribeRef.current()
+      } catch {}
+      ordersUnsubscribeRef.current = null
     }
 
+    const alertMsg = reason || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.'
+    logout?.(alertMsg, 'cashier')
+    router.push('/')
+  }, [logout, router])
+
+  // Verificación reactiva de sesión única activa (Single Active Session detection)
+  useEffect(() => {
+    if (!currentCashier?.uid || isSessionTerminatedRef.current) return
+    const activeUid = normalizeCashierUid(currentCashier.uid)
+
     const checkSessionStatus = async () => {
-      if (isTerminated) return
+      if (isSessionTerminatedRef.current) return
       try {
         const headers = await getStaffAuthHeadersAsync('cashier')
         const res = await fetch('/api/cashier/orders?limit=1', {
-          headers
+          headers,
+          credentials: 'same-origin'
         })
         if (res.status === 401) {
           const data = await res.json().catch(() => null)
-          if (data?.code === 'SESSION_SUPERSEDED') {
-            handleSessionSuperseded(data?.error)
-          }
+          const alertMsg = data?.code === 'SESSION_SUPERSEDED'
+            ? (data?.error || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+            : (data?.error || 'Sesión no autorizada o expirada. Inicie sesión nuevamente.')
+          terminateCashierSession(alertMsg)
+          return
         }
       } catch {}
     }
@@ -156,7 +170,7 @@ export default function CashierOrdersPage() {
               currentCashier.sessionId &&
               currentCashier.sessionId !== sessionId
             ) {
-              handleSessionSuperseded()
+              terminateCashierSession()
             }
           }
         }
@@ -168,9 +182,10 @@ export default function CashierOrdersPage() {
       window.removeEventListener('focus', onFocus)
       if (channel) channel.close()
     }
-  }, [currentCashier?.uid, currentCashier?.sessionId])
+  }, [currentCashier?.uid, currentCashier?.sessionId, terminateCashierSession])
 
   const fetchOrders = async () => {
+    if (isSessionTerminatedRef.current) return
     setIsLoading(true)
     try {
       // 1. Cargar desde localStorage como fuente inmediata
@@ -184,7 +199,8 @@ export default function CashierOrdersPage() {
       // 2. Cargar desde API
       const headers = await getStaffAuthHeadersAsync('cashier')
       const res = await fetch('/api/cashier/orders', {
-        headers
+        headers,
+        credentials: 'same-origin'
       })
       if (res.ok) {
         const data = await res.json()
@@ -193,11 +209,11 @@ export default function CashierOrdersPage() {
         }
       } else if (res.status === 401) {
         const errData = await res.json().catch(() => null)
-        if (errData?.code === 'SESSION_SUPERSEDED') {
-          logout?.('Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.', 'cashier')
-          if (typeof window !== 'undefined') window.location.href = '/'
-          return
-        }
+        const alertMsg = errData?.code === 'SESSION_SUPERSEDED'
+          ? (errData?.error || 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.')
+          : (errData?.error || 'Sesión expirada o no autorizada.')
+        terminateCashierSession(alertMsg)
+        return
       }
     } catch (e) {
       console.warn('Error fetching orders:', e)
@@ -207,6 +223,7 @@ export default function CashierOrdersPage() {
   }
 
   useEffect(() => {
+    if (isSessionTerminatedRef.current) return
     fetchOrders()
 
     // 1. Escuchar canal BroadcastChannel local
@@ -240,9 +257,9 @@ export default function CashierOrdersPage() {
       }
     } catch {}
 
-    // 2. Suscripción en tiempo real a Firestore (Spark Cost $0 con limit y auto-pausa)
+    // 2. Suscripción en tiempo real a Firestore (Spark Cost $0 con limit 25 y singleton estable)
     const startOrdersListener = () => {
-      if (typeof document !== 'undefined' && document.hidden) return
+      if (isSessionTerminatedRef.current) return
       if (ordersUnsubscribeRef.current) return
 
       try {
@@ -258,27 +275,16 @@ export default function CashierOrdersPage() {
           }
         }, (err) => {
           console.warn('[CashierOrders] Firestore onSnapshot notice:', err.message)
+          if (err?.code === 'permission-denied' || err?.code === 'unauthenticated') {
+            terminateCashierSession('Permisos revocados o sesión invalidada en la base de datos.')
+          }
         })
       } catch (e) {
         console.warn('[CashierOrders] Listener setup error:', e)
       }
     }
 
-    const handleVisibility = () => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        if (ordersUnsubscribeRef.current) {
-          ordersUnsubscribeRef.current()
-          ordersUnsubscribeRef.current = null
-        }
-      } else {
-        startOrdersListener()
-      }
-    }
-
     startOrdersListener()
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibility)
-    }
 
     // 3. SSE Stream
     let sseSource: EventSource | null = null
@@ -316,11 +322,8 @@ export default function CashierOrdersPage() {
         ordersUnsubscribeRef.current = null
       }
       if (sseSource) sseSource.close()
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibility)
-      }
     }
-  }, [])
+  }, [terminateCashierSession])
 
   // Receipt Modal State
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<CashierOrder | null>(null)

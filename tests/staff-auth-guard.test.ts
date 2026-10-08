@@ -205,6 +205,37 @@ describe('Suite: Endurecimiento de Seguridad & Staff Auth Guard (v9.6.0)', () =>
     assert.equal(extractStaffSessionCookie(fakeAdminReq, 'admin'), 'token_admin_xyz')
     assert.equal(extractStaffSessionCookie(fakeCashierReq, 'cashier'), 'token_cashier_abc')
   })
+
+  it('PROACTIVE SUPERSEDED: verifyStaffAuth detecta sesión superada por headers X-Staff-* sin cookie ni bearer', async () => {
+    const { registerActiveCashierSession } = await import('../sugar-ludo-admin-hub/lib/session-manager.ts')
+    const { verifyStaffAuth } = await import('../sugar-ludo-admin-hub/lib/api-auth-guard.ts')
+
+    const cashierUid = 'carlos_cajero_qa_test'
+    // Registrar nueva sesión activa en Firefox
+    registerActiveCashierSession(cashierUid, 'session_firefox_new')
+
+    // Request entrante desde Chrome con la sesión vieja y sin cookie/bearer
+    const staleChromeReq = new Request('https://admin.sugarludo.com/api/cashier/orders?limit=1', {
+      headers: {
+        'x-staff-uid': cashierUid,
+        'x-staff-session-id': 'session_chrome_old',
+        'x-staff-role': 'cashier'
+      }
+    })
+
+    const authResult = await verifyStaffAuth(staleChromeReq, {
+      requiredRole: 'cashier',
+      roleDomain: 'cashier'
+    })
+
+    assert.equal(authResult.authorized, false)
+    assert.ok(authResult.errorResponse)
+    assert.equal(authResult.errorResponse.status, 401)
+
+    const json = await authResult.errorResponse.json()
+    assert.equal(json.code, 'SESSION_SUPERSEDED')
+    assert.equal(json.success, false)
+  })
 })
 
 

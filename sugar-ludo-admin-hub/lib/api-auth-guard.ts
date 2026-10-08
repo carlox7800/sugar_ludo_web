@@ -225,6 +225,44 @@ export async function verifyStaffAuth(
   }
 
   // B) Verificación vía Encabezado Authorization Bearer (Fallback / API Clients)
+  const headerStaffUid = (request.headers.get('x-staff-uid') || request.headers.get('X-Staff-Uid') || '').trim()
+  const headerStaffEmail = (request.headers.get('x-staff-email') || request.headers.get('X-Staff-Email') || '').toLowerCase().trim()
+  const headerStaffRole = normalizeStaffRole(request.headers.get('x-staff-role') || request.headers.get('X-Staff-Role') || '')
+  const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
+
+  // Control proactivo: Si el cliente envía identificación de sesión y la misma ya fue superada en el backend
+  if (headerSessionId && (headerStaffUid || headerStaffEmail)) {
+    const isTargetCashier = roleDomain === 'cashier' || headerStaffRole === 'cashier'
+    const getActiveSessionFn = isTargetCashier ? getActiveCashierSession : getActiveAdminSession
+    const lookupKeys = [headerStaffUid, headerStaffEmail].filter(Boolean)
+    let activeSession: { sessionId: string; updatedAt: number } | undefined
+    for (const k of lookupKeys) {
+      activeSession = getActiveSessionFn(k)
+      if (activeSession) break
+    }
+
+    if (activeSession && activeSession.sessionId !== headerSessionId) {
+      const clearCookie = isTargetCashier ? buildClearCashierSessionCookie() : buildClearAdminSessionCookie()
+      return {
+        authorized: false,
+        errorResponse: NextResponse.json(
+          {
+            success: false,
+            error: 'Sesión invalidada: Se ha iniciado sesión desde otro dispositivo o navegador.',
+            code: 'SESSION_SUPERSEDED'
+          },
+          {
+            status: 401,
+            headers: {
+              ...corsHeaders,
+              'Set-Cookie': clearCookie
+            }
+          }
+        )
+      }
+    }
+  }
+
   const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -233,7 +271,8 @@ export async function verifyStaffAuth(
       errorResponse: NextResponse.json(
         {
           success: false,
-          error: 'Acceso no autorizado. Se requiere sesión activa o token Bearer en el encabezado Authorization.'
+          error: 'Acceso no autorizado. Se requiere sesión activa o token Bearer en el encabezado Authorization.',
+          code: 'SESSION_INVALID'
         },
         { status: 401, headers: corsHeaders }
       )
@@ -251,11 +290,6 @@ export async function verifyStaffAuth(
       )
     }
   }
-
-  // Metadatos de correlación de sesión provistos por el cliente autenticado
-  const headerStaffUid = (request.headers.get('x-staff-uid') || request.headers.get('X-Staff-Uid') || '').trim()
-  const headerStaffEmail = (request.headers.get('x-staff-email') || request.headers.get('X-Staff-Email') || '').toLowerCase().trim()
-  const headerStaffRole = normalizeStaffRole(request.headers.get('x-staff-role') || request.headers.get('X-Staff-Role') || '')
 
   let verifiedUser: AuthenticatedStaffUser | null = null
 
@@ -488,7 +522,6 @@ export async function verifyStaffAuth(
   }
 
   // 2.1 Control de sesión única activa para Staff segregado por rol (Cajeros vs Administradores)
-  const headerSessionId = (request.headers.get('x-staff-session-id') || request.headers.get('X-Staff-Session-Id') || '').trim()
   const lookupKeys = [verifiedUser.uid, headerStaffUid, verifiedUser.email, headerStaffEmail].filter((k): k is string => Boolean(k))
   const isCashierUser = verifiedUser.role === 'cashier' || roleDomain === 'cashier'
   const getActiveSessionFn = isCashierUser ? getActiveCashierSession : getActiveAdminSession

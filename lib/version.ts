@@ -1,5 +1,5 @@
 // Fuente centralizada de verdad para la versión del sistema Sugar Ludo Web
 import packageJson from '../package.json' with { type: 'json' }
 
-export const APP_VERSION: string = (packageJson && packageJson.version) ? packageJson.version : '9.8.10'
+export const APP_VERSION: string = (packageJson && packageJson.version) ? packageJson.version : '9.8.11'
 export const APP_VERSION_TAG: string = 'v' + APP_VERSION
