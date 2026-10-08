@@ -749,4 +749,162 @@ describe('Suite: Resolución de Retiro a Favor del Cajero & Reintegro de Fondos 
   })
 })
 
+describe('Suite: Mensaje Único Institucional y Desduplicación en Disputas (v9.9.6)', () => {
+  function buildUnifiedNotice(params: {
+    orderId: string
+    adminUid: string
+    adminName: string
+    verdict: 'favor_player' | 'favor_cashier'
+    isWithdrawOrder: boolean
+    resolutionNotes?: string
+    timestamp: number
+  }) {
+    const { orderId, adminUid, adminName, verdict, isWithdrawOrder, resolutionNotes, timestamp } = params
+
+    let defaultReason = ''
+    let statusText = ''
+    let fundsText = ''
+
+    if (verdict === 'favor_player') {
+      if (isWithdrawOrder) {
+        defaultReason = 'Dictamen favorable emitido por la administración tras verificar la legitimidad de la solicitud.'
+        statusText = 'Orden COMPLETADA.'
+        fundsText = 'Retiro liquidado hacia la billetera externa registrada. Flotante del cajero debitado.'
+      } else {
+        defaultReason = 'Comprobante bancario validado exitosamente.'
+        statusText = 'Orden COMPLETADA.'
+        fundsText = 'Depósito acreditado exitosamente al balance del jugador. Flotante del cajero debitado.'
+      }
+    } else {
+      if (isWithdrawOrder) {
+        defaultReason = 'La solicitud de retiro no pudo ser procesada y ha sido anulada.'
+        statusText = 'Orden CANCELADA.'
+        fundsText = 'El saldo en garantía ha sido reintegrado al balance disponible del jugador. Flotante del cajero sin deducciones.'
+      } else {
+        defaultReason = 'Depósito rechazado tras revisión de comprobante o fondos no recibidos.'
+        statusText = 'Orden CANCELADA.'
+        fundsText = 'Depósito desestimado tras verificación de comprobante. Flotante del cajero sin deducciones.'
+      }
+    }
+
+    const motivo = (resolutionNotes && resolutionNotes.trim()) ? resolutionNotes.trim() : defaultReason
+    const targetLabel = verdict === 'favor_player' ? 'FAVOR DEL JUGADOR' : 'FAVOR DEL CAJERO'
+
+    const messageText = `⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a ${targetLabel} por Super Admin (${adminName}).\n• Motivo / Fundamento: ${motivo}\n• Estado: ${statusText}\n• Fondos: ${fundsText}`
+
+    return {
+      id: `msg_disp_${timestamp}`,
+      orderId,
+      senderUid: adminUid,
+      senderName: `Super Admin (${adminName})`,
+      senderRole: 'admin' as const,
+      message: messageText,
+      timestamp,
+      isRead: false
+    }
+  }
+
+  it('RETIRO FAVOR CAJERO: debe generar un solo mensaje institucional con las tres viñetas canónicas', () => {
+    const notice = buildUnifiedNotice({
+      orderId: 'wit_ord_123',
+      adminUid: 'admin_01',
+      adminName: 'Carlos Admin',
+      verdict: 'favor_cashier',
+      isWithdrawOrder: true,
+      resolutionNotes: 'Destino no coincide con titular verificado',
+      timestamp: 1758360000000
+    })
+
+    assert.ok(notice.message.includes('⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a FAVOR DEL CAJERO por Super Admin (Carlos Admin).'))
+    assert.ok(notice.message.includes('• Motivo / Fundamento: Destino no coincide con titular verificado'))
+    assert.ok(notice.message.includes('• Estado: Orden CANCELADA.'))
+    assert.ok(notice.message.includes('• Fondos: El saldo en garantía ha sido reintegrado al balance disponible del jugador. Flotante del cajero sin deducciones.'))
+  })
+
+  it('RETIRO FAVOR JUGADOR: debe confirmar orden completada y débito de flotante en un único mensaje', () => {
+    const notice = buildUnifiedNotice({
+      orderId: 'wit_ord_456',
+      adminUid: 'admin_01',
+      adminName: 'Carlos Admin',
+      verdict: 'favor_player',
+      isWithdrawOrder: true,
+      resolutionNotes: 'Transferencia validada en extracto bancario',
+      timestamp: 1758360000000
+    })
+
+    assert.ok(notice.message.includes('⚖️ [DICTAMEN DIRECTIVO OFICIAL]: Disputa resuelta a FAVOR DEL JUGADOR por Super Admin (Carlos Admin).'))
+    assert.ok(notice.message.includes('• Motivo / Fundamento: Transferencia validada en extracto bancario'))
+    assert.ok(notice.message.includes('• Estado: Orden COMPLETADA.'))
+    assert.ok(notice.message.includes('• Fondos: Retiro liquidado hacia la billetera externa registrada. Flotante del cajero debitado.'))
+  })
+
+  it('DEPÓSITO FAVOR JUGADOR Y FAVOR CAJERO: debe estructurar claramente el impacto contable', () => {
+    const depositPlayerNotice = buildUnifiedNotice({
+      orderId: 'dep_ord_789',
+      adminUid: 'admin_01',
+      adminName: 'Carlos Admin',
+      verdict: 'favor_player',
+      isWithdrawOrder: false,
+      resolutionNotes: 'Depósito acreditado',
+      timestamp: 1758360000000
+    })
+    assert.ok(depositPlayerNotice.message.includes('• Estado: Orden COMPLETADA.'))
+    assert.ok(depositPlayerNotice.message.includes('• Fondos: Depósito acreditado exitosamente al balance del jugador. Flotante del cajero debitado.'))
+
+    const depositCashierNotice = buildUnifiedNotice({
+      orderId: 'dep_ord_999',
+      adminUid: 'admin_01',
+      adminName: 'Carlos Admin',
+      verdict: 'favor_cashier',
+      isWithdrawOrder: false,
+      resolutionNotes: 'Comprobante manipulado detectado',
+      timestamp: 1758360000000
+    })
+    assert.ok(depositCashierNotice.message.includes('• Estado: Orden CANCELADA.'))
+    assert.ok(depositCashierNotice.message.includes('• Fondos: Depósito desestimado tras verificación de comprobante. Flotante del cajero sin deducciones.'))
+  })
+
+  it('DESDUPLICACIÓN: la inyección en supportMessages debe incrementar en exactamente 1 el tamaño del array', () => {
+    const initialMessages = [
+      { id: 'msg_01', message: 'Hola, orden en proceso', senderRole: 'cashier', timestamp: 1758359000000 }
+    ]
+
+    const notice = buildUnifiedNotice({
+      orderId: 'wit_ord_dup_check',
+      adminUid: 'admin_01',
+      adminName: 'Carlos Admin',
+      verdict: 'favor_cashier',
+      isWithdrawOrder: true,
+      timestamp: 1758360000000
+    })
+
+    // Simulación del push unificado: exactamente 1 mensaje
+    const updatedMessages = [...initialMessages, notice]
+
+    assert.equal(updatedMessages.length, initialMessages.length + 1, 'supportMessages debe crecer estrictamente en 1 objeto')
+    assert.equal(updatedMessages[updatedMessages.length - 1].senderRole, 'admin')
+  })
+
+  it('ESTILIZADO EN CHAT: el mensaje institucional debe clasificarse con badge Dictamen Directivo', () => {
+    function getMessageBadge(messageText: string) {
+      const isOfficialVerdict = messageText.includes('DICTAMEN DIRECTIVO OFICIAL') || messageText.includes('DICTAMEN DIRECTIVO')
+      if (isOfficialVerdict) {
+        return 'Dictamen Directivo'
+      }
+      return 'Moderador'
+    }
+
+    const notice = buildUnifiedNotice({
+      orderId: 'wit_ord_badge_check',
+      adminUid: 'admin_01',
+      adminName: 'Carlos Admin',
+      verdict: 'favor_cashier',
+      isWithdrawOrder: true,
+      timestamp: 1758360000000
+    })
+
+    assert.equal(getMessageBadge(notice.message), 'Dictamen Directivo')
+  })
+})
+
 

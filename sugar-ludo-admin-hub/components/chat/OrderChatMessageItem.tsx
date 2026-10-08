@@ -22,25 +22,33 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
     minute: '2-digit'
   })
 
+  const isOfficialVerdict = Boolean(
+    message.message.includes('DICTAMEN DIRECTIVO OFICIAL') ||
+    message.message.includes('DICTAMEN DIRECTIVO')
+  )
+
   const isRefundNotice = Boolean(
-    message.message.includes('devueltos a tu saldo disponible') ||
-    message.message.includes('reintegrados a tu saldo') ||
-    message.message.includes('fondos en garantía fueron devueltos') ||
-    message.message.includes('fondos en garantía devueltos') ||
-    message.message.includes('DICTAMEN DIRECTIVO - JUGADOR')
+    !isOfficialVerdict && (
+      message.message.includes('devueltos a tu saldo disponible') ||
+      message.message.includes('reintegrados a tu saldo') ||
+      message.message.includes('fondos en garantía fueron devueltos') ||
+      message.message.includes('fondos en garantía devueltos')
+    )
   )
 
   const isFavorableResolution = Boolean(
-    !isRefundNotice && (
-      message.message.includes('favor del JUGADOR') ||
-      message.message.includes('Retiro liquidado formalmente') ||
-      message.message.includes('sin deducción de tu saldo flotante') ||
-      message.message.includes('DICTAMEN DIRECTIVO - CAJERO') ||
-      message.message.includes('Dictamen favorable emitido') ||
-      message.message.includes('VALIDADO CON ÉXITO') ||
-      message.message.includes('LIQUIDADO Y TRANSFERIDO') ||
-      (isAdmin && (message.message.includes('Dictamen favorable') || message.message.includes('acreditado y completado')))
-    )
+    isOfficialVerdict ||
+    message.message.includes('FAVOR DEL JUGADOR') ||
+    message.message.includes('FAVOR DEL CAJERO') ||
+    message.message.includes('favor del JUGADOR') ||
+    message.message.includes('favor del CAJERO') ||
+    message.message.includes('Retiro liquidado formalmente') ||
+    message.message.includes('Retiro liquidado hacia la billetera') ||
+    message.message.includes('sin deducción de tu saldo flotante') ||
+    message.message.includes('Dictamen favorable emitido') ||
+    message.message.includes('VALIDADO CON ÉXITO') ||
+    message.message.includes('LIQUIDADO Y TRANSFERIDO') ||
+    (isAdmin && (message.message.includes('Dictamen favorable') || message.message.includes('acreditado y completado')))
   )
 
   if (isSystem) {
@@ -113,6 +121,11 @@ export function OrderChatMessageItem({ message, isCurrentUser, isRead = false, o
             <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[9px] font-black uppercase border border-cyan-500/40 shadow-sm flex items-center gap-1">
               <RefreshCw className="size-2.5" />
               <span>Garantía Reembolsada</span>
+            </span>
+          ) : isOfficialVerdict ? (
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-black uppercase border border-emerald-500/40 shadow-sm flex items-center gap-1">
+              <Shield className="size-2.5" />
+              <span>Dictamen Directivo</span>
             </span>
           ) : isFavorableResolution ? (
             <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-black uppercase border border-emerald-500/40 shadow-sm">
